@@ -4,10 +4,11 @@ import hashlib
 import json
 import platform
 import subprocess
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, BinaryIO, Iterable
 
 from .base import PhotoItem, PhotoSource, SourceIdentity, SourceStorage
 
@@ -20,6 +21,7 @@ class JsonLineBridge:
     """Small request/response bridge; media bytes never travel through JSON."""
 
     def __init__(self, command: list[str], runner=subprocess.Popen) -> None:
+        self._closed = False
         self._process = runner(
             command,
             stdin=subprocess.PIPE,
@@ -30,6 +32,8 @@ class JsonLineBridge:
         )
 
     def request(self, operation: str, **arguments: Any) -> dict[str, Any]:
+        if self._closed:
+            raise AndroidSourceUnavailable("native helper is closed")
         if self._process.stdin is None or self._process.stdout is None:
             raise AndroidSourceUnavailable("native helper pipes are unavailable")
         self._process.stdin.write(json.dumps({"operation": operation, **arguments}) + "\n")
@@ -43,10 +47,14 @@ class JsonLineBridge:
         return response
 
     def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         if self._process.stdin:
             self._process.stdin.close()
-        self._process.terminate()
-        self._process.wait(timeout=5)
+        if self._process.poll() is None:
+            self._process.terminate()
+            self._process.wait(timeout=5)
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
@@ -69,6 +77,7 @@ def _media_type(format_code: int, name: str) -> str:
 class AndroidMacMtpSource(PhotoSource):
     bridge: JsonLineBridge
     _identity: SourceIdentity
+    helper: Path | None = None
 
     @classmethod
     def from_helper(cls, helper: Path) -> "AndroidMacMtpSource":
@@ -96,7 +105,7 @@ class AndroidMacMtpSource(PhotoSource):
             usb_vendor_id=device.get("vid"),
             usb_product_id=device.get("pid"),
         )
-        return cls(bridge, identity)
+        return cls(bridge, identity, helper)
 
     def identity(self) -> SourceIdentity:
         return self._identity
@@ -114,11 +123,43 @@ class AndroidMacMtpSource(PhotoSource):
         return self._item(self.bridge.request("object_info", object_id=int(object_id))["item"])
 
     def capabilities(self) -> frozenset[str]:
-        return frozenset({"identity", "list_storages", "list_children", "stat_item"})
+        return frozenset({"identity", "list_storages", "list_children", "stat_item", "stream_object"})
+
+    def stream_object(self, object_id: str, sink: BinaryIO) -> dict[str, int | float]:
+        if self.helper is None:
+            raise AndroidSourceUnavailable("stream helper path is unavailable")
+        self.close()
+        started = time.monotonic()
+        process = subprocess.Popen(
+            [str(self.helper), "--stream", str(int(object_id))],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        bytes_received = 0
+        try:
+            if process.stdout is None:
+                raise AndroidSourceUnavailable("native stream stdout is unavailable")
+            while chunk := process.stdout.read(256 * 1024):
+                sink.write(chunk)
+                bytes_received += len(chunk)
+        finally:
+            process.stdout.close() if process.stdout else None
+        stderr = process.stderr.read().decode(errors="replace") if process.stderr else ""
+        return_code = process.wait(timeout=30)
+        if return_code != 0:
+            raise AndroidSourceUnavailable(stderr.strip() or f"native stream exited with {return_code}")
+        elapsed = time.monotonic() - started
+        return {
+            "bytes_received": bytes_received,
+            "elapsed_seconds": elapsed,
+            "bytes_per_second": bytes_received / elapsed if elapsed else 0.0,
+        }
 
     def close(self) -> None:
         try:
             self.bridge.request("close_device")
+        except (AndroidSourceUnavailable, OSError, ValueError):
+            pass
         finally:
             self.bridge.close()
 

@@ -21,9 +21,10 @@ native helper.
 
 ## Data protocol
 
-Media bytes must not be encoded as JSON. The future open_object_stream
-operation will use a separate bounded binary stream. The first milestone only
-exercises discovery and metadata.
+Media bytes must not be encoded as JSON. The stream_object operation is a
+separate helper invocation with object bytes on stdout and diagnostics on
+stderr. Python reads in 256 KiB chunks into the caller-provided sink. The
+complete object is never held in memory.
 
 ## Availability
 

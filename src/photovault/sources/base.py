@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterable, Protocol
+from typing import BinaryIO, Iterable, Protocol
 
 
 @dataclass(frozen=True)
@@ -47,3 +47,5 @@ class PhotoSource(Protocol):
     def stat_item(self, object_id: str) -> PhotoItem: ...
 
     def capabilities(self) -> frozenset[str]: ...
+
+    def stream_object(self, object_id: str, sink: BinaryIO) -> dict[str, int | float]: ...

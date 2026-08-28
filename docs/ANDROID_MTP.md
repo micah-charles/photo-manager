@@ -18,5 +18,7 @@ The Pixel requires 0xFFFFFFFF for the storage-root GetObjectHandles query but
 reports root-child parent 0 in ObjectInfo. DCIM and Camera report MTP
 Association format 0x3001.
 
-No object bytes have yet been streamed through PhotoVault. No source-side
-write operation is allowed.
+The native helper includes a bounded GetObject stream mode for the next
+hardware test. It emits object bytes directly to a binary sink and retains
+the same read-only/source-side safety boundary. No source-side write
+operation is allowed.

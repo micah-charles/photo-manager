@@ -99,6 +99,9 @@ def parser() -> argparse.ArgumentParser:
     listing = android_sub.add_parser("list", help="list a logical Android MTP path")
     listing.add_argument("logical_path", nargs="?", default="")
     listing.add_argument("--helper", type=Path, default=_default_android_helper())
+    stream = android_sub.add_parser("stream", help="stream one object to a discard sink")
+    stream.add_argument("object_id")
+    stream.add_argument("--helper", type=Path, default=_default_android_helper())
     sub.add_parser("gui", help="launch the optional PySide6 desktop UI")
     return p
 
@@ -131,6 +134,13 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
             elif args.android_command == "storages":
                 for storage in source.list_storages():
                     print(f"STORAGE\t{storage.storage_id}\t{storage.name}\t{storage.capacity_bytes}\t{storage.free_bytes}")
+            elif args.android_command == "stream":
+                import os
+
+                item = source.stat_item(args.object_id)
+                with open(os.devnull, "wb") as sink:
+                    metrics = source.stream_object(args.object_id, sink)
+                print(f"STREAM\t{item.object_id}\t{item.name}\t{metrics['bytes_received']}\t{metrics['elapsed_seconds']:.3f}\t{metrics['bytes_per_second']:.0f}")
             else:
                 parent_id = None
                 for component in [part for part in args.logical_path.split("/") if part]:

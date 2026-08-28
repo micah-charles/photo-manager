@@ -3,6 +3,7 @@
 #import <IOUSBHost/IOUSBHost.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <string.h>
+#import <stdlib.h>
 
 static const NSUInteger kMax = 1024 * 1024;
 static const uint32_t kRootQuery = 0xffffffff;
@@ -90,4 +91,17 @@ static NSDictionary *ObjectInfo(uint32_t handle) {
 static NSDictionary *Children(NSNumber *parent) {
     uint32_t query=parent ? parent.unsignedIntValue : kRootQuery;NSError*e=nil;NSData*d=nil;if(!Command(0x1007,gTx++,@[@65537,@0,@(query)],&d,&e))return Error(e.localizedDescription);if(d.length<4)return Error(@"ObjectHandles truncated");const uint8_t*p=d.bytes;uint32_t n=U32(p);if(n>10000||d.length<4+n*4)return Error(@"ObjectHandles invalid");NSMutableArray*a=[NSMutableArray array];for(uint32_t i=0;i<n;i++){uint32_t h=U32((const uint8_t*)d.bytes+4+i*4);NSDictionary*info=ObjectInfo(h);if(!info[@"ok"])return info;[a addObject:info[@"item"]];}return @{@"ok":@YES,@"items":a};
 }
-int main(void){@autoreleasepool{char line[65536];while(fgets(line,sizeof(line),stdin)){NSData*d=[[NSString stringWithUTF8String:line] dataUsingEncoding:NSUTF8StringEncoding];NSDictionary*r=[NSJSONSerialization JSONObjectWithData:d options:0 error:nil];NSString*op=r[@"operation"];if([op isEqual:@"open_device"]){NSError*e=nil;if(gOpen)Close();if(Open(&e))Reply(DeviceInfo());else Reply(Error(e.localizedDescription));}else if([op isEqual:@"list_storages"])Reply(Storages());else if([op isEqual:@"list_children"]){id value=r[@"parent_id"];Reply(Children(value==[NSNull null]?nil:value));}else if([op isEqual:@"object_info"])Reply(ObjectInfo([r[@"object_id"] unsignedIntValue]));else if([op isEqual:@"close_device"]){Close();Reply(@{@"ok":@YES});}else Reply(Error(@"unknown operation"));}Close();}return 0;}
+static BOOL StreamObject(uint32_t handle, NSError **error) {
+    NSMutableData *cmd=[NSMutableData data]; P32(cmd,16); uint8_t commandType[2]={1,0}; [cmd appendBytes:commandType length:2]; uint8_t c[2]={9,0x10}; [cmd appendBytes:c length:2]; uint32_t tx=gTx++; P32(cmd,tx); P32(cmd,handle);
+    NSUInteger sent=0; NSError *e=nil;
+    if (![gOut sendIORequestWithData:cmd bytesTransferred:&sent completionTimeout:kTimeout error:&e]) { if(error)*error=e; return NO; }
+    NSData *first=nil; if(!Receive(&first,&e)){if(error)*error=e;return NO;}
+    if(first.length<12){if(error)*error=[NSError errorWithDomain:@"MTP" code:30 userInfo:@{NSLocalizedDescriptionKey:@"GetObject response header truncated"}];return NO;}
+    const uint8_t *p=first.bytes; uint32_t total=U32(p); uint16_t type=U16(p+4), code=U16(p+6); uint32_t responseTx=U32(p+8);
+    if(total<12 || type!=2 || code!=0x1009 || responseTx!=tx){if(error)*error=[NSError errorWithDomain:@"MTP" code:31 userInfo:@{NSLocalizedDescriptionKey:@"invalid GetObject data header"}];return NO;}
+    uint64_t remaining=(uint64_t)total-12; NSUInteger firstPayload=first.length-12; NSUInteger emit=(NSUInteger)MIN((uint64_t)firstPayload,remaining);
+    if(emit && fwrite((const uint8_t *)first.bytes+12,1,emit,stdout)!=emit){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;} remaining-=emit;
+    while(remaining){NSData *chunk=nil;if(!Receive(&chunk,&e)){if(error)*error=e;return NO;}if(chunk.length==0){if(error)*error=[NSError errorWithDomain:@"MTP" code:33 userInfo:@{NSLocalizedDescriptionKey:@"empty GetObject data chunk"}];return NO;}NSUInteger n=(NSUInteger)MIN((uint64_t)chunk.length,remaining);if(fwrite(chunk.bytes,1,n,stdout)!=n){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;}remaining-=n;}
+    fflush(stdout); NSData *status=nil;if(!Receive(&status,&e)){if(error)*error=e;return NO;}uint16_t stype,scode;uint32_t stx;NSData *sp;if(!Parse(status,&stype,&scode,&stx,&sp,&e)||stype!=3||scode!=0x2001||stx!=tx){if(error)*error=e;return NO;}return YES;
+}
+int main(int argc,const char **argv){@autoreleasepool{if(argc==3&&strcmp(argv[1],"--stream")==0){NSError*e=nil;BOOL ok=Open(&e)&&StreamObject((uint32_t)strtoul(argv[2],NULL,10),&e);if(!ok)fprintf(stderr,"android-mtp stream failed: %s\n",e.localizedDescription.UTF8String);Close();return ok?0:3;}char line[65536];while(fgets(line,sizeof(line),stdin)){NSData*d=[[NSString stringWithUTF8String:line] dataUsingEncoding:NSUTF8StringEncoding];NSDictionary*r=[NSJSONSerialization JSONObjectWithData:d options:0 error:nil];NSString*op=r[@"operation"];if([op isEqual:@"open_device"]){NSError*e=nil;if(gOpen)Close();if(Open(&e))Reply(DeviceInfo());else Reply(Error(e.localizedDescription));}else if([op isEqual:@"list_storages"])Reply(Storages());else if([op isEqual:@"list_children"]){id value=r[@"parent_id"];Reply(Children(value==[NSNull null]?nil:value));}else if([op isEqual:@"object_info"])Reply(ObjectInfo([r[@"object_id"] unsignedIntValue]));else if([op isEqual:@"close_device"]){Close();Reply(@{@"ok":@YES});}else Reply(Error(@"unknown operation"));}Close();}return 0;}

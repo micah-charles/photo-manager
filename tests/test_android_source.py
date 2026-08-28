@@ -42,7 +42,7 @@ class AndroidSourceTests(unittest.TestCase):
     def test_capabilities_are_explicit(self) -> None:
         source = AndroidMacMtpSource(FakeBridge(), SourceIdentity("id", "Google", "Pixel", "Pixel", "test"))
         self.assertIn("list_children", source.capabilities())
-        self.assertNotIn("open_read_stream", source.capabilities())
+        self.assertIn("stream_object", source.capabilities())
 
 
 if __name__ == "__main__":
