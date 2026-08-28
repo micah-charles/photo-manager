@@ -17,7 +17,8 @@ Date: 2026-08-28
 
 ## Required new components
 
-- A capability-based PhotoSource contract for non-filesystem sources.
+- A capability-based PhotoSource contract for non-filesystem sources, with
+  streaming represented as an optional readable capability.
 - Android source identity and normalized object metadata types.
 - A macOS-only native IOUSBHost/MTP helper reached through a narrow JSON
   control protocol for discovery and metadata.
