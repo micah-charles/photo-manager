@@ -1,7 +1,8 @@
 # Android integration final report
 
-Status: in progress; canonical real-device stream/import and packaged-app
-validation remain open.
+Status: blocked on external validation; canonical real-device stream/import
+requires a fresh Pixel USB session in the user's unsandboxed Terminal, and
+packaged-app validation requires the optional PyInstaller environment.
 
 ## Architecture
 
@@ -51,8 +52,12 @@ private filenames, EXIF, location metadata, or photo content is committed.
 
 ## Remaining blockers
 
-The canonical helper, stream, and controlled import still require real Pixel
-Terminal validation. The packaged app requires clean-machine
-signing/notarization/App Sandbox validation. The UI currently exposes
-read-only discovery/storage information; folder browsing/import controls can
-follow successful hardware stream validation.
+The canonical helper was built and the local CLI/test paths are ready, but
+current direct attempts return `Unable to send IO` before discovery. This is
+an external IOUSBHost/device-session condition, not a permission change made
+by PhotoVault. Reconnect the Pixel, select File Transfer, and run the
+canonical commands from a normal Terminal. The packaged app requires
+PyInstaller installation plus clean-machine signing/notarization/App Sandbox
+validation. The UI currently exposes read-only discovery/storage information;
+folder browsing/import controls can follow successful hardware stream
+validation.
