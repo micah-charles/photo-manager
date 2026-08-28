@@ -109,7 +109,11 @@ def parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = parser().parse_args()
     if args.command == "android":
-        return _dispatch(args, None)
+        connection = connect(args.catalog)
+        try:
+            return _dispatch(args, connection)
+        finally:
+            connection.close()
     connection = connect(args.catalog)
 
     try:
@@ -121,6 +125,7 @@ def main() -> int:
 def _dispatch(args: argparse.Namespace, connection) -> int:
     if args.command == "android":
         from photovault.sources.android import AndroidMacMtpSource, AndroidSourceUnavailable
+        from photovault.catalog.sources import record_source_items, register_source
 
         try:
             source = AndroidMacMtpSource.from_helper(args.helper)
@@ -128,6 +133,7 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
             print(f"ANDROID_UNAVAILABLE\t{exc}")
             return 2
         try:
+            register_source(connection, source.identity())
             if args.android_command == "devices":
                 identity = source.identity()
                 print(f"DEVICE\t{identity.display_name}\t{identity.model}\t{identity.adapter}")
@@ -149,8 +155,10 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
                         print(f"NOT_FOUND\t{args.logical_path}")
                         return 1
                     parent_id = match.object_id
-                for item in source.list_children(parent_id):
+                items = list(source.list_children(parent_id))
+                for item in items:
                     print(f"ITEM\t{item.object_id}\t{item.name}\t{item.media_type}\t{item.size_bytes}\t{item.modified_at}")
+                record_source_items(connection, source.identity().source_id, items, args.logical_path)
             return 0
         finally:
             source.close()
