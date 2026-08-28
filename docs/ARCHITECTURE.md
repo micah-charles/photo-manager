@@ -10,6 +10,13 @@ backup services: audit, reconcile, copy, folder audit, quarantine
 catalog scanner + hashing + SQLite repositories
         |
 platform providers (macOS volume UUID, Windows volume serial/GUID adapter)
+
+Android MTP is an optional source provider, not a second application. The
+desktop flow is UI/CLI -> application services -> PhotoSource, with
+AndroidMacMtpSource -> JSON control bridge -> native IOUSBHost/MTP helper.
+The native helper owns device/session/object transport only. Python retains
+copy policy, SHA-256 integrity, catalog/history, thumbnails, and destinations.
+Android support is currently macOS-only and optional.
 ```
 
 Original files remain ordinary filesystem files. SQLite stores catalog metadata and operation history locally; thumbnail/cache and catalog backup policies will be added separately. The GUI is an integrity-first shell: Disks, Backup Sets, Operations, Copy Plans and Timeline have tables; Disks can be registered and Backup Sets can be created/membered without touching media; Scan, Redundancy Audit, Reconciliation, Folder Safety Audit, Visual Duplicates, Places, Quarantine and Undo Quarantine expose the existing services.

@@ -45,3 +45,8 @@ PYTHONPATH=src python3 -m photovault.cli --catalog /tmp/photovault.db volume-ref
 ```
 
 The catalog is metadata only. Originals remain ordinary filesystem files.
+
+Optional macOS Android support is being integrated as a PhotoSource provider,
+not a separate application. The current native IOUSBHost helper supports
+device, storage, and lazy MTP folder metadata diagnostics; media streaming,
+copy integration, and packaged distribution remain in development.

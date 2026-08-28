@@ -13,6 +13,15 @@ from photovault.backup.sets import add_member, create_backup_set
 from photovault.database.connection import connect
 
 
+def _default_android_helper() -> Path:
+    import sys
+
+    bundled_root = getattr(sys, "_MEIPASS", None)
+    if bundled_root:
+        return Path(bundled_root) / "native" / "macos" / "android_mtp" / "photovault-android-mtp"
+    return Path("native/macos/android_mtp/photovault-android-mtp")
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="photovault")
     p.add_argument("--catalog", type=Path, default=Path("~/.photovault/catalog.db"))
@@ -81,12 +90,23 @@ def parser() -> argparse.ArgumentParser:
     quarantine.add_argument("--dry-run", action="store_true")
     undo = sub.add_parser("undo-quarantine", help="restore a completed quarantine operation")
     undo.add_argument("operation_id")
+    android = sub.add_parser("android", help="inspect an Android MTP source on macOS")
+    android_sub = android.add_subparsers(dest="android_command", required=True)
+    devices = android_sub.add_parser("devices", help="list connected Android devices")
+    devices.add_argument("--helper", type=Path, default=_default_android_helper())
+    storages = android_sub.add_parser("storages", help="list Android storage roots")
+    storages.add_argument("--helper", type=Path, default=_default_android_helper())
+    listing = android_sub.add_parser("list", help="list a logical Android MTP path")
+    listing.add_argument("logical_path", nargs="?", default="")
+    listing.add_argument("--helper", type=Path, default=_default_android_helper())
     sub.add_parser("gui", help="launch the optional PySide6 desktop UI")
     return p
 
 
 def main() -> int:
     args = parser().parse_args()
+    if args.command == "android":
+        return _dispatch(args, None)
     connection = connect(args.catalog)
 
     try:
@@ -96,6 +116,34 @@ def main() -> int:
 
 
 def _dispatch(args: argparse.Namespace, connection) -> int:
+    if args.command == "android":
+        from photovault.sources.android import AndroidMacMtpSource, AndroidSourceUnavailable
+
+        try:
+            source = AndroidMacMtpSource.from_helper(args.helper)
+        except AndroidSourceUnavailable as exc:
+            print(f"ANDROID_UNAVAILABLE\t{exc}")
+            return 2
+        try:
+            if args.android_command == "devices":
+                identity = source.identity()
+                print(f"DEVICE\t{identity.display_name}\t{identity.model}\t{identity.adapter}")
+            elif args.android_command == "storages":
+                for storage in source.list_storages():
+                    print(f"STORAGE\t{storage.storage_id}\t{storage.name}\t{storage.capacity_bytes}\t{storage.free_bytes}")
+            else:
+                parent_id = None
+                for component in [part for part in args.logical_path.split("/") if part]:
+                    match = next((item for item in source.list_children(parent_id) if item.name == component and item.is_collection), None)
+                    if match is None:
+                        print(f"NOT_FOUND\t{args.logical_path}")
+                        return 1
+                    parent_id = match.object_id
+                for item in source.list_children(parent_id):
+                    print(f"ITEM\t{item.object_id}\t{item.name}\t{item.media_type}\t{item.size_bytes}\t{item.modified_at}")
+            return 0
+        finally:
+            source.close()
     if args.command == "register":
         print(register_volume(connection, args.root))
     elif args.command == "scan":

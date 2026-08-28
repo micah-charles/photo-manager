@@ -1,10 +1,11 @@
 __pycache__/
 *.py[cod]
+.pytest_cache/
 .venv/
+.DS_Store
 *.db
 *.db-shm
 *.db-wal
-.DS_Store
 .PhotoVaultQuarantine/
 build/
 dist/
@@ -12,3 +13,4 @@ dist/
 .pyinstaller/
 *.egg-info/
 *.ses
+native/macos/android_mtp/photovault-android-mtp
