@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
-from photovault.sources.base import PhotoSource
+from photovault.sources.base import ReadablePhotoSource
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,7 @@ def _safe_destination(root: Path, relative_path: str) -> Path:
 
 
 def stream_source_to_file(
-    source: PhotoSource,
+    source: ReadablePhotoSource,
     item: SourceImportItem,
     destination_root: Path,
 ) -> dict[str, int | float | str]:

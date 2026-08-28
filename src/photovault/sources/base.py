@@ -48,4 +48,6 @@ class PhotoSource(Protocol):
 
     def capabilities(self) -> frozenset[str]: ...
 
+
+class ReadablePhotoSource(PhotoSource, Protocol):
     def stream_object(self, object_id: str, sink: BinaryIO) -> dict[str, int | float]: ...
