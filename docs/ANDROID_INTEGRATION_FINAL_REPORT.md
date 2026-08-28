@@ -33,7 +33,7 @@ thumbnails, duplicate intelligence, and destinations.
 - Level 9 — CODE READY, HARDWARE PENDING: source/catalog/history integration.
 - Level 10 — PENDING: small multi-file import.
 - Level 11 — PENDING: incremental already-imported detection.
-- Level 12 — PENDING: basic PySide6 Android source UI.
+- Level 12 — CODE READY, UI HARDWARE PENDING: basic PySide6 Android source page with background discovery worker.
 - Level 13 — PENDING: packaged application validation.
 
 ## Tests

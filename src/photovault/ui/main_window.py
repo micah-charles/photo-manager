@@ -70,6 +70,33 @@ if QT_AVAILABLE:
                 if connection is not None:
                     connection.close()
 
+    class AndroidDiscoveryWorker(QObject):
+        """Discover Android source metadata away from the PySide6 UI thread."""
+
+        completed = Signal(object)
+        failed = Signal(str)
+
+        def __init__(self, helper: Path):
+            super().__init__()
+            self.helper = helper
+
+        @Slot()
+        def run(self) -> None:
+            source = None
+            try:
+                from photovault.sources.android import AndroidMacMtpSource
+
+                source = AndroidMacMtpSource.from_helper(self.helper)
+                self.completed.emit({
+                    "identity": source.identity(),
+                    "storages": list(source.list_storages()),
+                })
+            except Exception as exc:
+                self.failed.emit(f"{type(exc).__name__}: {exc}")
+            finally:
+                if source is not None:
+                    source.close()
+
     class OperationWorker(QObject):
         """Execute an already reviewed copy/quarantine plan off the GUI thread."""
 
@@ -119,6 +146,8 @@ if QT_AVAILABLE:
             self._catalog_path = Path(database_path) if database_path else None
             self._scan_thread: QThread | None = None
             self._scan_worker: ScanWorker | None = None
+            self._android_thread: QThread | None = None
+            self._android_worker: AndroidDiscoveryWorker | None = None
             self._operation_thread: QThread | None = None
             self._operation_worker: OperationWorker | None = None
             self._operation_kind: str | None = None
@@ -147,7 +176,24 @@ if QT_AVAILABLE:
             title = QLabel(label)
             title.setStyleSheet("font-size: 24px; font-weight: 600; padding: 8px 0;")
             layout.addWidget(title)
-            if label == "Scan":
+            if label == "Android Devices":
+                form = QFormLayout()
+                from photovault.cli.main import _default_android_helper
+
+                self.android_helper = QLineEdit(str(_default_android_helper()))
+                form.addRow("Native helper", self.android_helper)
+                layout.addLayout(form)
+                button = QPushButton("Discover Android source")
+                button.clicked.connect(self._discover_android)
+                self.android_discover_button = button
+                layout.addWidget(button)
+                self.android_result = QLabel("Android support is optional and macOS-only.")
+                self.android_result.setWordWrap(True)
+                layout.addWidget(self.android_result)
+                table = QTableWidget()
+                self._tables[label] = table
+                layout.addWidget(table)
+            elif label == "Scan":
                 form = QFormLayout()
                 self.scan_volume_id = QLineEdit()
                 self.scan_root = QLineEdit()
@@ -417,6 +463,46 @@ if QT_AVAILABLE:
             self._scan_thread.finished.connect(self._scan_thread_finished)
             self._scan_thread.finished.connect(self._scan_thread.deleteLater)
             self._scan_thread.start()
+
+        def _discover_android(self) -> None:
+            if self._android_thread is not None and self._android_thread.isRunning():
+                return
+            self.android_discover_button.setEnabled(False)
+            self.android_result.setText("Discovering Android source in background…")
+            self._android_thread = QThread(self)
+            self._android_worker = AndroidDiscoveryWorker(Path(self.android_helper.text().strip()))
+            self._android_worker.moveToThread(self._android_thread)
+            self._android_thread.started.connect(self._android_worker.run)
+            self._android_worker.completed.connect(self._android_completed)
+            self._android_worker.failed.connect(self._android_failed)
+            self._android_worker.completed.connect(self._android_thread.quit)
+            self._android_worker.failed.connect(self._android_thread.quit)
+            self._android_worker.completed.connect(self._android_worker.deleteLater)
+            self._android_worker.failed.connect(self._android_worker.deleteLater)
+            self._android_thread.finished.connect(self._android_thread_finished)
+            self._android_thread.finished.connect(self._android_thread.deleteLater)
+            self._android_thread.start()
+
+        def _android_completed(self, result: object) -> None:
+            identity = result["identity"]
+            storages = result["storages"]
+            self.android_result.setText(
+                f"{identity.display_name} connected via {identity.adapter}. "
+                f"{len(storages)} storage(s) discovered."
+            )
+            self._fill_table(
+                self._tables["Android Devices"],
+                ["Storage ID", "Name", "Capacity", "Free"],
+                [(storage.storage_id, storage.name, storage.capacity_bytes, storage.free_bytes) for storage in storages],
+            )
+
+        def _android_failed(self, message: str) -> None:
+            self.android_result.setText(f"Android discovery failed: {message}")
+
+        def _android_thread_finished(self) -> None:
+            self.android_discover_button.setEnabled(True)
+            self._android_worker = None
+            self._android_thread = None
 
         def _scan_completed(self, result: object) -> None:
             values = result
