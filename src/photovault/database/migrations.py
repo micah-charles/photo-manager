@@ -254,6 +254,38 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX idx_embeddings_model ON embeddings(model);
         """,
     ),
+    (
+        9,
+        """
+        CREATE TABLE source_profiles (
+            id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL UNIQUE,
+            manufacturer TEXT NOT NULL,
+            model TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            adapter TEXT NOT NULL,
+            usb_vendor_id INTEGER,
+            usb_product_id INTEGER,
+            first_seen TEXT NOT NULL,
+            last_seen TEXT NOT NULL
+        );
+
+        CREATE TABLE source_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id TEXT NOT NULL REFERENCES source_profiles(source_id) ON DELETE CASCADE,
+            object_id TEXT NOT NULL,
+            logical_path TEXT NOT NULL,
+            name TEXT NOT NULL,
+            media_type TEXT NOT NULL,
+            size_bytes INTEGER,
+            created_at TEXT,
+            modified_at TEXT,
+            last_seen TEXT NOT NULL,
+            UNIQUE(source_id, logical_path)
+        );
+        CREATE INDEX idx_source_items_source ON source_items(source_id);
+        """,
+    ),
 ]
 
 
