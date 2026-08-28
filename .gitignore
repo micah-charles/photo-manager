@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+.PhotoVaultQuarantine/
+build/
+dist/
+*.spec
+.pyinstaller/
+*.egg-info/
+*.ses

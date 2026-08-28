@@ -1,0 +1,41 @@
+name: PhotoVault CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e '.[photo-intelligence]'
+      - run: python -m unittest discover -s tests -v
+      - run: python -m compileall -q src tests scripts
+
+  packaging-smoke:
+    needs: tests
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[desktop,packaging]'
+      - run: python scripts/build_app.py --clean
+      - name: Smoke-test Windows executable
+        if: runner.os == 'Windows'
+        run: dist/PhotoVault/PhotoVault.exe --help
+      - name: Smoke-test macOS app executable
+        if: runner.os == 'macOS'
+        run: dist/PhotoVault.app/Contents/MacOS/PhotoVault --help
