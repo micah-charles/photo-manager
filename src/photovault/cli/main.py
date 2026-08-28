@@ -102,6 +102,12 @@ def parser() -> argparse.ArgumentParser:
     stream = android_sub.add_parser("stream", help="stream one object to a discard sink")
     stream.add_argument("object_id")
     stream.add_argument("--helper", type=Path, default=_default_android_helper())
+    import_one = android_sub.add_parser("import-one", help="copy one Android object with verification")
+    import_one.add_argument("object_id")
+    import_one.add_argument("destination_root", type=Path)
+    import_one.add_argument("--destination-volume", required=True)
+    import_one.add_argument("--relative-path")
+    import_one.add_argument("--helper", type=Path, default=_default_android_helper())
     sub.add_parser("gui", help="launch the optional PySide6 desktop UI")
     return p
 
@@ -147,6 +153,19 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
                 with open(os.devnull, "wb") as sink:
                     metrics = source.stream_object(args.object_id, sink)
                 print(f"STREAM\t{item.object_id}\t{item.name}\t{metrics['bytes_received']}\t{metrics['elapsed_seconds']:.3f}\t{metrics['bytes_per_second']:.0f}")
+            elif args.android_command == "import-one":
+                from photovault.backup.source_import import SourceImportItem, import_source_item
+
+                item = source.stat_item(args.object_id)
+                relative_path = args.relative_path or item.name
+                result = import_source_item(
+                    connection,
+                    source,
+                    SourceImportItem(item.object_id, relative_path, item.size_bytes, media_type=item.media_type),
+                    args.destination_root,
+                    args.destination_volume,
+                )
+                print(f"IMPORT\t{result['operation_id']}\t{result['asset_id']}\t{result['bytes_written']}\t{result['sha256']}")
             else:
                 parent_id = None
                 for component in [part for part in args.logical_path.split("/") if part]:
