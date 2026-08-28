@@ -115,6 +115,7 @@ class AndroidMacMtpSource(PhotoSource):
             yield SourceStorage(storage["storage_id"], storage.get("name", "Internal storage"), storage.get("capacity_bytes"), storage.get("free_bytes"))
 
     def list_children(self, parent_id: str | None) -> Iterable[PhotoItem]:
+        list(self.list_storages())
         parent = None if parent_id is None else int(parent_id)
         for item in self.bridge.request("list_children", parent_id=parent).get("items", []):
             yield self._item(item)
@@ -128,6 +129,7 @@ class AndroidMacMtpSource(PhotoSource):
     def stream_object(self, object_id: str, sink: BinaryIO) -> dict[str, int | float]:
         if self.helper is None:
             raise AndroidSourceUnavailable("stream helper path is unavailable")
+        list(self.list_storages())
         self.close()
         started = time.monotonic()
         process = subprocess.Popen(

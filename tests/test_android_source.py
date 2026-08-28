@@ -37,7 +37,7 @@ class AndroidSourceTests(unittest.TestCase):
         self.assertEqual(photo.media_type, "IMAGE")
         self.assertEqual(photo.size_bytes, 123)
         self.assertEqual(photo.created_at, datetime(2026, 8, 28, 12, 0))
-        self.assertEqual(bridge.requests[1], ("list_children", {"parent_id": 10}))
+        self.assertEqual(bridge.requests[2], ("list_children", {"parent_id": 10}))
 
     def test_capabilities_are_explicit(self) -> None:
         source = AndroidMacMtpSource(FakeBridge(), SourceIdentity("id", "Google", "Pixel", "Pixel", "test"))
