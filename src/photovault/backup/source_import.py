@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
+import sqlite3
+import uuid
 
+from photovault.catalog.sources import register_source
+from photovault.catalog.scanner import utc_now
 from photovault.sources.base import ReadablePhotoSource
 
 
@@ -16,6 +21,7 @@ class SourceImportItem:
     relative_path: str
     size_bytes: int | None
     expected_sha256: str | None = None
+    media_type: str = "IMAGE"
 
 
 def _safe_destination(root: Path, relative_path: str) -> Path:
@@ -74,4 +80,71 @@ def stream_source_to_file(
     except Exception:
         if partial.exists():
             partial.unlink()
+        raise
+
+
+def import_source_item(
+    connection: sqlite3.Connection,
+    source: ReadablePhotoSource,
+    item: SourceImportItem,
+    destination_root: Path,
+    destination_volume_id: str,
+) -> dict[str, int | float | str]:
+    """Import one source object using the existing operation/catalog model."""
+    identity = source.identity()
+    register_source(connection, identity)
+    destination = _safe_destination(destination_root, item.relative_path)
+    operation_id = "op_" + uuid.uuid4().hex
+    source_path = f"android://{identity.source_id}/{item.object_id}/{item.relative_path}"
+    connection.execute(
+        "INSERT INTO operations(id, operation_type, created_at, status, dry_run, details_json) VALUES (?, 'IMPORT', ?, 'RUNNING', 0, ?)",
+        (operation_id, utc_now(), json.dumps({"source_id": identity.source_id, "items": 1, "bytes": item.size_bytes or 0}, sort_keys=True)),
+    )
+    cursor = connection.execute(
+        "INSERT INTO operation_items(operation_id, source_path, destination_path, result) VALUES (?, ?, ?, 'RUNNING')",
+        (operation_id, source_path, str(destination)),
+    )
+    operation_item_id = cursor.lastrowid
+    connection.commit()
+    try:
+        result = stream_source_to_file(source, item, destination_root)
+        actual_hash = str(result["sha256"])
+        existing = connection.execute("SELECT asset_id FROM exact_hashes WHERE sha256=?", (actual_hash,)).fetchone()
+        asset_id = existing[0] if existing else "asset_" + uuid.uuid4().hex
+        if existing is None:
+            now = utc_now()
+            connection.execute(
+                "INSERT INTO assets(id, media_type, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                (asset_id, item.media_type, now, now),
+            )
+            connection.execute(
+                "INSERT INTO exact_hashes(asset_id, sha256, byte_count, hashed_at) VALUES (?, ?, ?, ?)",
+                (asset_id, actual_hash, result["bytes_written"], now),
+            )
+        stat = destination.stat()
+        connection.execute(
+            """
+            INSERT INTO asset_locations(asset_id, volume_id, relative_path, filename, size_bytes, modified_ns)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (asset_id, destination_volume_id, item.relative_path, destination.name, stat.st_size, stat.st_mtime_ns),
+        )
+        connection.execute(
+            "UPDATE operation_items SET asset_id=?, expected_sha256=?, result='COPIED', verification_result='VERIFIED' WHERE id=?",
+            (asset_id, actual_hash, operation_item_id),
+        )
+        connection.execute(
+            "INSERT INTO verification_history(operation_item_id, asset_id, path, expected_sha256, actual_sha256, result, verified_at) VALUES (?, ?, ?, ?, ?, 'VERIFIED', ?)",
+            (operation_item_id, asset_id, str(destination), actual_hash, actual_hash, utc_now()),
+        )
+        connection.execute("UPDATE operations SET completed_at=?, status='COMPLETED' WHERE id=?", (utc_now(), operation_id))
+        connection.commit()
+        return {**result, "operation_id": operation_id, "asset_id": asset_id}
+    except Exception as exc:
+        connection.execute(
+            "UPDATE operation_items SET result='FAILED', verification_result='FAILED', error_message=? WHERE id=?",
+            (str(exc), operation_item_id),
+        )
+        connection.execute("UPDATE operations SET completed_at=?, status='FAILED' WHERE id=?", (utc_now(), operation_id))
+        connection.commit()
         raise

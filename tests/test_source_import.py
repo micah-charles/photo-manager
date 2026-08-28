@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from photovault.backup.source_import import SourceImportItem, stream_source_to_file
+from photovault.backup.source_import import SourceImportItem, import_source_item, stream_source_to_file
 from photovault.catalog.sources import record_source_items, register_source
 from photovault.database.connection import connect
 from photovault.sources.base import PhotoItem, SourceIdentity
@@ -19,6 +19,9 @@ class FakeSource:
         for offset in range(0, len(self.payload), 3):
             sink.write(self.payload[offset : offset + 3])
         return {"bytes_received": len(self.payload), "bytes_per_second": 100.0, "elapsed_seconds": 0.01}
+
+    def identity(self):
+        return SourceIdentity("android_test", "Google", "Pixel 8 Pro", "Pixel 8 Pro", "test")
 
 
 class SourceImportTests(unittest.TestCase):
@@ -49,6 +52,24 @@ class SourceImportTests(unittest.TestCase):
             self.assertEqual(destination.read_bytes(), payload)
             self.assertEqual(result["bytes_written"], len(payload))
             self.assertFalse((root / "DCIM/Camera/photo.jpg.photomanager-partial").exists())
+
+    def test_import_records_verified_location_and_operation(self) -> None:
+        payload = b"catalogued Android object"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            connection = connect(root / "catalog.db")
+            register_source(connection, SourceIdentity("android_test", "Google", "Pixel 8 Pro", "Pixel 8 Pro", "test"))
+            connection.execute(
+                "INSERT INTO volumes(id, display_name, identity_kind, identity_value, first_seen, last_seen, status) VALUES ('vol_dest', 'Destination', 'test', 'dest', datetime('now'), datetime('now'), 'CONNECTED')"
+            )
+            connection.commit()
+            result = import_source_item(connection, FakeSource(payload), SourceImportItem("675", "DCIM/Camera/photo.jpg", len(payload), media_type="IMAGE"), root / "destination", "vol_dest")
+            self.assertTrue((root / "destination/DCIM/Camera/photo.jpg").exists())
+            self.assertEqual(result["bytes_written"], len(payload))
+            self.assertEqual(connection.execute("SELECT status FROM operations WHERE id=?", (result["operation_id"],)).fetchone()[0], "COMPLETED")
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM verification_history WHERE result='VERIFIED'").fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM asset_locations WHERE volume_id='vol_dest'").fetchone()[0], 1)
+            connection.close()
 
     def test_mismatch_removes_partial_and_never_publishes_final(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
