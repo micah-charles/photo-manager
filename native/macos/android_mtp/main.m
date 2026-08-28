@@ -104,4 +104,17 @@ static BOOL StreamObject(uint32_t handle, NSError **error) {
     while(remaining){NSData *chunk=nil;if(!Receive(&chunk,&e)){if(error)*error=e;return NO;}if(chunk.length==0){if(error)*error=[NSError errorWithDomain:@"MTP" code:33 userInfo:@{NSLocalizedDescriptionKey:@"empty GetObject data chunk"}];return NO;}NSUInteger n=(NSUInteger)MIN((uint64_t)chunk.length,remaining);if(fwrite(chunk.bytes,1,n,stdout)!=n){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;}remaining-=n;}
     fflush(stdout); NSData *status=nil;if(!Receive(&status,&e)){if(error)*error=e;return NO;}uint16_t stype,scode;uint32_t stx;NSData *sp;if(!Parse(status,&stype,&scode,&stx,&sp,&e)||stype!=3||scode!=0x2001||stx!=tx){if(error)*error=e;return NO;}return YES;
 }
-int main(int argc,const char **argv){@autoreleasepool{if(argc==3&&strcmp(argv[1],"--stream")==0){NSError*e=nil;BOOL ok=Open(&e)&&StreamObject((uint32_t)strtoul(argv[2],NULL,10),&e);if(!ok)fprintf(stderr,"android-mtp stream failed: %s\n",e.localizedDescription.UTF8String);Close();return ok?0:3;}char line[65536];while(fgets(line,sizeof(line),stdin)){NSData*d=[[NSString stringWithUTF8String:line] dataUsingEncoding:NSUTF8StringEncoding];NSDictionary*r=[NSJSONSerialization JSONObjectWithData:d options:0 error:nil];NSString*op=r[@"operation"];if([op isEqual:@"open_device"]){NSError*e=nil;if(gOpen)Close();if(Open(&e))Reply(DeviceInfo());else Reply(Error(e.localizedDescription));}else if([op isEqual:@"list_storages"])Reply(Storages());else if([op isEqual:@"list_children"]){id value=r[@"parent_id"];Reply(Children(value==[NSNull null]?nil:value));}else if([op isEqual:@"object_info"])Reply(ObjectInfo([r[@"object_id"] unsignedIntValue]));else if([op isEqual:@"close_device"]){Close();Reply(@{@"ok":@YES});}else Reply(Error(@"unknown operation"));}Close();}return 0;}
+static BOOL PrepareForObjectRead(NSError **error) {
+    NSDictionary *device=DeviceInfo();
+    if (![device[@"ok"] boolValue]) {
+        if (error) *error=[NSError errorWithDomain:@"MTP" code:40 userInfo:@{NSLocalizedDescriptionKey:device[@"error"] ?: @"DeviceInfo failed"}];
+        return NO;
+    }
+    NSDictionary *storages=Storages();
+    if (![storages[@"ok"] boolValue]) {
+        if (error) *error=[NSError errorWithDomain:@"MTP" code:41 userInfo:@{NSLocalizedDescriptionKey:storages[@"error"] ?: @"Storage setup failed"}];
+        return NO;
+    }
+    return YES;
+}
+int main(int argc,const char **argv){@autoreleasepool{if(argc==3&&strcmp(argv[1],"--stream")==0){NSError*e=nil;BOOL ok=Open(&e)&&PrepareForObjectRead(&e)&&StreamObject((uint32_t)strtoul(argv[2],NULL,10),&e);if(!ok)fprintf(stderr,"android-mtp stream failed: %s\n",e.localizedDescription.UTF8String);Close();return ok?0:3;}char line[65536];while(fgets(line,sizeof(line),stdin)){NSData*d=[[NSString stringWithUTF8String:line] dataUsingEncoding:NSUTF8StringEncoding];NSDictionary*r=[NSJSONSerialization JSONObjectWithData:d options:0 error:nil];NSString*op=r[@"operation"];if([op isEqual:@"open_device"]){NSError*e=nil;if(gOpen)Close();if(Open(&e))Reply(DeviceInfo());else Reply(Error(e.localizedDescription));}else if([op isEqual:@"list_storages"])Reply(Storages());else if([op isEqual:@"list_children"]){id value=r[@"parent_id"];Reply(Children(value==[NSNull null]?nil:value));}else if([op isEqual:@"object_info"])Reply(ObjectInfo([r[@"object_id"] unsignedIntValue]));else if([op isEqual:@"close_device"]){Close();Reply(@{@"ok":@YES});}else Reply(Error(@"unknown operation"));}Close();}return 0;}
