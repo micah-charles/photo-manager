@@ -5,7 +5,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from photovault.backup.source_import import SourceImportItem, import_source_item, stream_source_to_file
+from photovault.backup.source_import import (
+    SourceImportItem,
+    SourceImportStatus,
+    import_source_item,
+    import_source_items,
+    plan_source_import,
+    stream_source_to_file,
+)
 from photovault.catalog.sources import record_source_items, register_source
 from photovault.database.connection import connect
 from photovault.sources.base import PhotoItem, SourceIdentity
@@ -83,6 +90,38 @@ class SourceImportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(ValueError):
                 stream_source_to_file(FakeSource(b"x"), SourceImportItem("1", "../outside.jpg", 1), Path(directory))
+
+    def test_incremental_plan_recognizes_completed_source_item(self) -> None:
+        payload = b"incremental payload"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            connection = connect(root / "catalog.db")
+            connection.execute(
+                "INSERT INTO volumes(id, display_name, identity_kind, identity_value, first_seen, last_seen, status) VALUES ('vol_dest', 'Destination', 'test', 'dest', datetime('now'), datetime('now'), 'CONNECTED')"
+            )
+            connection.commit()
+            item = SourceImportItem("675", "DCIM/Camera/photo.jpg", len(payload), media_type="IMAGE")
+            import_source_item(connection, FakeSource(payload), item, root / "destination", "vol_dest")
+            plan = plan_source_import(connection, FakeSource(payload), [item], root / "destination", "vol_dest")
+            self.assertEqual(plan[0].status, SourceImportStatus.ALREADY_IMPORTED)
+            connection.close()
+
+    def test_batch_import_skips_completed_and_imports_new_items(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            connection = connect(root / "catalog.db")
+            connection.execute(
+                "INSERT INTO volumes(id, display_name, identity_kind, identity_value, first_seen, last_seen, status) VALUES ('vol_dest', 'Destination', 'test', 'dest', datetime('now'), datetime('now'), 'CONNECTED')"
+            )
+            connection.commit()
+            source = FakeSource(b"batch payload")
+            first = SourceImportItem("1", "DCIM/Camera/a.jpg", len(source.payload))
+            import_source_item(connection, source, first, root / "destination", "vol_dest")
+            second = SourceImportItem("2", "DCIM/Camera/b.jpg", len(source.payload))
+            result = import_source_items(connection, source, [first, second], root / "destination", "vol_dest")
+            self.assertEqual((result["planned"], result["imported"], result["already_imported"]), (2, 1, 1))
+            self.assertTrue((root / "destination/DCIM/Camera/b.jpg").exists())
+            connection.close()
 
 
 if __name__ == "__main__":

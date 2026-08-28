@@ -5,10 +5,12 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import BinaryIO
 import sqlite3
 import uuid
+from datetime import datetime
 
 from photovault.catalog.sources import register_source
 from photovault.catalog.scanner import utc_now
@@ -22,6 +24,20 @@ class SourceImportItem:
     size_bytes: int | None
     expected_sha256: str | None = None
     media_type: str = "IMAGE"
+    modified_at: datetime | None = None
+
+
+class SourceImportStatus(StrEnum):
+    NEW = "NEW"
+    ALREADY_IMPORTED = "ALREADY_IMPORTED"
+    CONFLICT = "CONFLICT"
+
+
+@dataclass(frozen=True)
+class SourceImportDecision:
+    item: SourceImportItem
+    status: SourceImportStatus
+    reason: str
 
 
 def _safe_destination(root: Path, relative_path: str) -> Path:
@@ -30,6 +46,38 @@ def _safe_destination(root: Path, relative_path: str) -> Path:
     if candidate != resolved_root and resolved_root not in candidate.parents:
         raise ValueError("source path escapes destination root")
     return candidate
+
+
+def plan_source_import(
+    connection: sqlite3.Connection,
+    source: ReadablePhotoSource,
+    items: list[SourceImportItem],
+    destination_root: Path,
+    destination_volume_id: str,
+) -> list[SourceImportDecision]:
+    """Classify source items without reading phone bytes or changing files."""
+    identity = source.identity()
+    register_source(connection, identity)
+    decisions: list[SourceImportDecision] = []
+    for item in items:
+        destination = _safe_destination(destination_root, item.relative_path)
+        existing = connection.execute(
+            """
+            SELECT source_size_bytes, source_modified_at
+            FROM source_imports
+            WHERE source_id=? AND logical_path=? AND destination_volume_id=?
+            ORDER BY imported_at DESC LIMIT 1
+            """,
+            (identity.source_id, item.relative_path, destination_volume_id),
+        ).fetchone()
+        modified = item.modified_at.isoformat() if hasattr(item.modified_at, "isoformat") else None
+        if existing and destination.exists() and existing[0] == item.size_bytes and existing[1] == modified:
+            decisions.append(SourceImportDecision(item, SourceImportStatus.ALREADY_IMPORTED, "matching completed import exists"))
+        elif destination.exists():
+            decisions.append(SourceImportDecision(item, SourceImportStatus.CONFLICT, "destination exists but is not a matching completed import"))
+        else:
+            decisions.append(SourceImportDecision(item, SourceImportStatus.NEW, "no matching completed import exists"))
+    return decisions
 
 
 def stream_source_to_file(
@@ -137,6 +185,25 @@ def import_source_item(
             "INSERT INTO verification_history(operation_item_id, asset_id, path, expected_sha256, actual_sha256, result, verified_at) VALUES (?, ?, ?, ?, ?, 'VERIFIED', ?)",
             (operation_item_id, asset_id, str(destination), actual_hash, actual_hash, utc_now()),
         )
+        modified = item.modified_at.isoformat() if hasattr(item.modified_at, "isoformat") else None
+        connection.execute(
+            """
+            INSERT INTO source_imports(
+                source_id, logical_path, source_object_id, source_size_bytes,
+                source_modified_at, destination_volume_id, destination_relative_path,
+                sha256, operation_id, imported_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(source_id, logical_path, destination_volume_id, destination_relative_path)
+            DO UPDATE SET source_object_id=excluded.source_object_id,
+                source_size_bytes=excluded.source_size_bytes,
+                source_modified_at=excluded.source_modified_at,
+                sha256=excluded.sha256, operation_id=excluded.operation_id,
+                imported_at=excluded.imported_at
+            """,
+            (identity.source_id, item.relative_path, item.object_id, item.size_bytes,
+             modified, destination_volume_id, item.relative_path, actual_hash,
+             operation_id, utc_now()),
+        )
         connection.execute("UPDATE operations SET completed_at=?, status='COMPLETED' WHERE id=?", (utc_now(), operation_id))
         connection.commit()
         return {**result, "operation_id": operation_id, "asset_id": asset_id}
@@ -148,3 +215,29 @@ def import_source_item(
         connection.execute("UPDATE operations SET completed_at=?, status='FAILED' WHERE id=?", (utc_now(), operation_id))
         connection.commit()
         raise
+
+
+def import_source_items(
+    connection: sqlite3.Connection,
+    source: ReadablePhotoSource,
+    items: list[SourceImportItem],
+    destination_root: Path,
+    destination_volume_id: str,
+) -> dict[str, object]:
+    """Import only NEW items from a reviewed plan; source remains read-only."""
+    decisions = plan_source_import(connection, source, items, destination_root, destination_volume_id)
+    if any(decision.status == SourceImportStatus.CONFLICT for decision in decisions):
+        raise FileExistsError("import plan contains destination conflicts")
+    imported: list[dict[str, object]] = []
+    already_imported = 0
+    for decision in decisions:
+        if decision.status == SourceImportStatus.ALREADY_IMPORTED:
+            already_imported += 1
+            continue
+        imported.append(import_source_item(connection, source, decision.item, destination_root, destination_volume_id))
+    return {
+        "planned": len(decisions),
+        "imported": len(imported),
+        "already_imported": already_imported,
+        "results": imported,
+    }

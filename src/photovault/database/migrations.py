@@ -286,6 +286,27 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX idx_source_items_source ON source_items(source_id);
         """,
     ),
+    (
+        10,
+        """
+        CREATE TABLE source_imports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id TEXT NOT NULL REFERENCES source_profiles(source_id) ON DELETE CASCADE,
+            logical_path TEXT NOT NULL,
+            source_object_id TEXT NOT NULL,
+            source_size_bytes INTEGER,
+            source_modified_at TEXT,
+            destination_volume_id TEXT NOT NULL REFERENCES volumes(id) ON DELETE CASCADE,
+            destination_relative_path TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            operation_id TEXT NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+            imported_at TEXT NOT NULL,
+            UNIQUE(source_id, logical_path, destination_volume_id, destination_relative_path)
+        );
+        CREATE INDEX idx_source_imports_lookup
+            ON source_imports(source_id, logical_path, destination_volume_id);
+        """,
+    ),
 ]
 
 

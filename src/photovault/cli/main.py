@@ -108,6 +108,11 @@ def parser() -> argparse.ArgumentParser:
     import_one.add_argument("--destination-volume", required=True)
     import_one.add_argument("--relative-path")
     import_one.add_argument("--helper", type=Path, default=_default_android_helper())
+    import_folder = android_sub.add_parser("import-folder", help="review and import media from one Android folder")
+    import_folder.add_argument("logical_path")
+    import_folder.add_argument("destination_root", type=Path)
+    import_folder.add_argument("--destination-volume", required=True)
+    import_folder.add_argument("--helper", type=Path, default=_default_android_helper())
     sub.add_parser("gui", help="launch the optional PySide6 desktop UI")
     return p
 
@@ -161,11 +166,41 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
                 result = import_source_item(
                     connection,
                     source,
-                    SourceImportItem(item.object_id, relative_path, item.size_bytes, media_type=item.media_type),
+                    SourceImportItem(item.object_id, relative_path, item.size_bytes, media_type=item.media_type, modified_at=item.modified_at),
                     args.destination_root,
                     args.destination_volume,
                 )
                 print(f"IMPORT\t{result['operation_id']}\t{result['asset_id']}\t{result['bytes_written']}\t{result['sha256']}")
+            elif args.android_command == "import-folder":
+                from photovault.backup.source_import import (
+                    SourceImportItem,
+                    SourceImportStatus,
+                    import_source_items,
+                    plan_source_import,
+                )
+
+                parent_id = None
+                for component in [part for part in args.logical_path.split("/") if part]:
+                    match = next((item for item in source.list_children(parent_id) if item.name == component and item.is_collection), None)
+                    if match is None:
+                        print(f"NOT_FOUND\t{args.logical_path}")
+                        return 1
+                    parent_id = match.object_id
+                source_items = [item for item in source.list_children(parent_id) if not item.is_collection]
+                import_items = [SourceImportItem(
+                    item.object_id,
+                    f"{args.logical_path}/{item.name}",
+                    item.size_bytes,
+                    media_type=item.media_type,
+                    modified_at=item.modified_at,
+                ) for item in source_items]
+                decisions = plan_source_import(connection, source, import_items, args.destination_root, args.destination_volume)
+                for decision in decisions:
+                    print(f"PLAN\t{decision.status}\t{decision.item.object_id}\t{decision.item.relative_path}\t{decision.reason}")
+                if any(decision.status == SourceImportStatus.CONFLICT for decision in decisions):
+                    return 2
+                result = import_source_items(connection, source, import_items, args.destination_root, args.destination_volume)
+                print(f"IMPORT_SUMMARY\t{result['planned']}\t{result['imported']}\t{result['already_imported']}")
             else:
                 parent_id = None
                 for component in [part for part in args.logical_path.split("/") if part]:
