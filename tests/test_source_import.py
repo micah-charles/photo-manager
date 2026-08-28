@@ -6,7 +6,9 @@ import unittest
 from pathlib import Path
 
 from photovault.backup.source_import import SourceImportItem, stream_source_to_file
-from photovault.sources.base import SourceIdentity
+from photovault.catalog.sources import record_source_items, register_source
+from photovault.database.connection import connect
+from photovault.sources.base import PhotoItem, SourceIdentity
 
 
 class FakeSource:
@@ -20,6 +22,20 @@ class FakeSource:
 
 
 class SourceImportTests(unittest.TestCase):
+    def test_source_identity_and_inventory_are_persisted_separately(self) -> None:
+        identity = SourceIdentity("android_test", "Google", "Pixel 8 Pro", "Pixel 8 Pro", "test", 0x18D1, 0x4EE1)
+        item = PhotoItem("android_test", "675", "28", "photo.jpg", "IMAGE", 123)
+        with tempfile.TemporaryDirectory() as directory:
+            connection = connect(Path(directory) / "catalog.db")
+            register_source(connection, identity)
+            self.assertEqual(record_source_items(connection, identity.source_id, [item], "DCIM/Camera"), 1)
+            profile = connection.execute("SELECT source_id, model, usb_vendor_id FROM source_profiles").fetchone()
+            stored_item = connection.execute("SELECT object_id, logical_path, size_bytes FROM source_items").fetchone()
+            self.assertEqual(tuple(profile), ("android_test", "Pixel 8 Pro", 0x18D1))
+            self.assertEqual(tuple(stored_item), ("675", "DCIM/Camera/photo.jpg", 123))
+            self.assertNotIn("serial", {row[1] for row in connection.execute("PRAGMA table_info(source_profiles)")})
+            connection.close()
+
     def test_stream_is_hashed_and_renamed_atomically(self) -> None:
         payload = b"bounded source payload"
         with tempfile.TemporaryDirectory() as directory:
