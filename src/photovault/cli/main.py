@@ -98,6 +98,8 @@ def parser() -> argparse.ArgumentParser:
     storages.add_argument("--helper", type=Path, default=_default_android_helper())
     listing = android_sub.add_parser("list", help="list a logical Android MTP path")
     listing.add_argument("logical_path", nargs="?", default="")
+    listing.add_argument("--offset", type=int, default=0)
+    listing.add_argument("--limit", type=int, default=50)
     listing.add_argument("--helper", type=Path, default=_default_android_helper())
     stream = android_sub.add_parser("stream", help="stream one object to a discard sink")
     stream.add_argument("object_id")
@@ -181,7 +183,7 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
 
                 parent_id = None
                 for component in [part for part in args.logical_path.split("/") if part]:
-                    match = next((item for item in source.list_children(parent_id) if item.name == component and item.is_collection), None)
+                    match = source.find_child(parent_id, component)
                     if match is None:
                         print(f"NOT_FOUND\t{args.logical_path}")
                         return 1
@@ -204,12 +206,15 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
             else:
                 parent_id = None
                 for component in [part for part in args.logical_path.split("/") if part]:
-                    match = next((item for item in source.list_children(parent_id) if item.name == component and item.is_collection), None)
+                    match = source.find_child(parent_id, component)
                     if match is None:
                         print(f"NOT_FOUND\t{args.logical_path}")
                         return 1
                     parent_id = match.object_id
-                items = list(source.list_children(parent_id))
+                items, total, next_offset = source.list_children_page(
+                    parent_id, offset=args.offset, limit=args.limit
+                )
+                print(f"PAGE\t{args.offset}\t{len(items)}\t{total}\t{'' if next_offset is None else next_offset}")
                 for item in items:
                     print(f"ITEM\t{item.object_id}\t{item.name}\t{item.media_type}\t{item.size_bytes}\t{item.modified_at}")
                 record_source_items(connection, source.identity().source_id, items, args.logical_path)

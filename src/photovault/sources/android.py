@@ -86,6 +86,7 @@ class AndroidMacMtpSource(PhotoSource):
     bridge: JsonLineBridge
     _identity: SourceIdentity
     helper: Path | None = None
+    _storages: tuple[SourceStorage, ...] = ()
 
     @classmethod
     def from_helper(cls, helper: Path) -> "AndroidMacMtpSource":
@@ -113,31 +114,60 @@ class AndroidMacMtpSource(PhotoSource):
             usb_vendor_id=device.get("vid"),
             usb_product_id=device.get("pid"),
         )
-        return cls(bridge, identity, helper)
+        storages = tuple(
+            SourceStorage(
+                storage["storage_id"],
+                storage.get("name", "Internal storage"),
+                storage.get("capacity_bytes"),
+                storage.get("free_bytes"),
+            )
+            for storage in response.get("storages", [])
+        )
+        return cls(bridge, identity, helper, storages)
 
     def identity(self) -> SourceIdentity:
         return self._identity
 
     def list_storages(self) -> Iterable[SourceStorage]:
+        if self._storages:
+            yield from self._storages
+            return
         for storage in self.bridge.request("list_storages").get("storages", []):
             yield SourceStorage(storage["storage_id"], storage.get("name", "Internal storage"), storage.get("capacity_bytes"), storage.get("free_bytes"))
 
     def list_children(self, parent_id: str | None) -> Iterable[PhotoItem]:
-        list(self.list_storages())
+        offset = 0
+        while True:
+            items, _, next_offset = self.list_children_page(parent_id, offset=offset)
+            yield from items
+            if next_offset is None:
+                return
+            offset = next_offset
+
+    def list_children_page(
+        self, parent_id: str | None, *, offset: int = 0, limit: int = 50
+    ) -> tuple[list[PhotoItem], int, int | None]:
         parent = None if parent_id is None else int(parent_id)
-        for item in self.bridge.request("list_children", parent_id=parent).get("items", []):
-            yield self._item(item)
+        response = self.bridge.request(
+            "list_children", parent_id=parent, offset=offset, limit=limit
+        )
+        items = [self._item(item) for item in response.get("items", [])]
+        return items, response.get("total", len(items)), response.get("next_offset")
+
+    def find_child(self, parent_id: str | None, name: str) -> PhotoItem | None:
+        parent = None if parent_id is None else int(parent_id)
+        item = self.bridge.request("find_child", parent_id=parent, name=name).get("item")
+        return None if item is None else self._item(item)
 
     def stat_item(self, object_id: str) -> PhotoItem:
         return self._item(self.bridge.request("object_info", object_id=int(object_id))["item"])
 
     def capabilities(self) -> frozenset[str]:
-        return frozenset({"identity", "list_storages", "list_children", "stat_item", "stream_object"})
+        return frozenset({"identity", "list_storages", "list_children", "paged_children", "find_child", "stat_item", "stream_object"})
 
     def stream_object(self, object_id: str, sink: BinaryIO) -> dict[str, int | float]:
         if self.helper is None:
             raise AndroidSourceUnavailable("stream helper path is unavailable")
-        list(self.list_storages())
         self.close()
         started = time.monotonic()
         process = subprocess.Popen(

@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime
 
 from photovault.sources.android import AndroidMacMtpSource, JsonLineBridge
-from photovault.sources.base import SourceIdentity
+from photovault.sources.base import SourceIdentity, SourceStorage
 
 
 class FakeBridge:
@@ -16,7 +16,9 @@ class FakeBridge:
         if operation == "list_storages":
             return {"ok": True, "storages": [{"storage_id": 65537, "name": "Internal storage", "capacity_bytes": 10, "free_bytes": 5}]}
         if operation == "list_children":
-            return {"ok": True, "items": [{"object_id": 28, "parent_id": 10, "name": "Camera", "format": 0x3001}]}
+            return {"ok": True, "items": [{"object_id": 28, "parent_id": 10, "name": "Camera", "format": 0x3001}], "total": 1, "next_offset": None}
+        if operation == "find_child":
+            return {"ok": True, "item": {"object_id": 28, "parent_id": 10, "name": "Camera", "format": 0x3001}}
         if operation == "object_info":
             return {"ok": True, "item": {"object_id": 675, "parent_id": 28, "name": "photo.jpg", "format": 0x3801, "size_bytes": 123, "created_at": "20260828T120000", "modified_at": "20260828T120100"}}
         raise AssertionError(operation)
@@ -37,11 +39,37 @@ class AndroidSourceTests(unittest.TestCase):
         self.assertEqual(photo.media_type, "IMAGE")
         self.assertEqual(photo.size_bytes, 123)
         self.assertEqual(photo.created_at, datetime(2026, 8, 28, 12, 0))
-        self.assertEqual(bridge.requests[2], ("list_children", {"parent_id": 10}))
+        self.assertEqual(bridge.requests[1], ("list_children", {"parent_id": 10, "offset": 0, "limit": 50}))
+
+    def test_cached_storages_and_lazy_folder_lookup_preserve_session_sequence(self) -> None:
+        bridge = FakeBridge()
+        identity = SourceIdentity("android_test", "Google", "Pixel 8 Pro", "Pixel 8 Pro", "test")
+        storage = SourceStorage(65537, "Internal storage", 10, 5)
+        source = AndroidMacMtpSource(bridge, identity, _storages=(storage,))
+
+        self.assertEqual(list(source.list_storages()), [storage])
+        camera = source.find_child("10", "Camera")
+
+        self.assertIsNotNone(camera)
+        self.assertEqual(camera.object_id, "28")
+        self.assertEqual(bridge.requests, [("find_child", {"parent_id": 10, "name": "Camera"})])
+
+    def test_list_children_page_forwards_bounds(self) -> None:
+        bridge = FakeBridge()
+        source = AndroidMacMtpSource(bridge, SourceIdentity("id", "Google", "Pixel", "Pixel", "test"))
+
+        items, total, next_offset = source.list_children_page("28", offset=50, limit=25)
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(total, 1)
+        self.assertIsNone(next_offset)
+        self.assertEqual(bridge.requests, [("list_children", {"parent_id": 28, "offset": 50, "limit": 25})])
 
     def test_capabilities_are_explicit(self) -> None:
         source = AndroidMacMtpSource(FakeBridge(), SourceIdentity("id", "Google", "Pixel", "Pixel", "test"))
         self.assertIn("list_children", source.capabilities())
+        self.assertIn("paged_children", source.capabilities())
+        self.assertIn("find_child", source.capabilities())
         self.assertIn("stream_object", source.capabilities())
 
     def test_bridge_allows_helper_to_exit_cleanly_before_terminating(self) -> None:

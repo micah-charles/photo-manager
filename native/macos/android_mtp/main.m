@@ -14,6 +14,7 @@ static IOUSBHostInterface *gInterface;
 static IOUSBHostPipe *gIn;
 static IOUSBHostPipe *gOut;
 static BOOL gOpen = NO;
+static NSArray *gStorageCache;
 
 static uint16_t U16(const uint8_t *p) { return p[0] | ((uint16_t)p[1] << 8); }
 static uint32_t U32(const uint8_t *p) { return p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); }
@@ -99,8 +100,43 @@ static NSDictionary *Storages(void) {
 static NSDictionary *ObjectInfo(uint32_t handle) {
     NSError*e=nil;NSData*d=nil;if(!Command(0x1008,gTx++,@[@(handle)],&d,&e))return Error(e.localizedDescription);if(d.length<52)return Error(@"ObjectInfo truncated");const uint8_t*p=d.bytes;uint32_t parent=U32(p+38);uint16_t format=U16(p+4);uint32_t size=U32(p+8);NSUInteger o=52;NSString*n=MTPString(d,&o),*created=MTPString(d,&o),*modified=MTPString(d,&o),*keywords=MTPString(d,&o);if(!n||!created||!modified||!keywords)return Error(@"ObjectInfo strings truncated");return @{@"ok":@YES,@"item":@{@"object_id":@(handle),@"parent_id":@(parent),@"name":n,@"format":@(format),@"size_bytes":@(size),@"created_at":created,@"modified_at":modified}};
 }
-static NSDictionary *Children(NSNumber *parent) {
-    uint32_t query=parent ? parent.unsignedIntValue : kRootQuery;NSError*e=nil;NSData*d=nil;uint32_t handlesTx=gTx++;if(!Command(0x1007,handlesTx,@[@65537,@0,@(query)],&d,&e))return Error([NSString stringWithFormat:@"GetObjectHandles parent=%u tx=%u failed: %@",query,handlesTx,e.localizedDescription]);if(d.length<4)return Error(@"ObjectHandles truncated");const uint8_t*p=d.bytes;uint32_t n=U32(p);if(n>10000||d.length<4+n*4)return Error(@"ObjectHandles invalid");NSMutableArray*a=[NSMutableArray array];for(uint32_t i=0;i<n;i++){uint32_t h=U32((const uint8_t*)d.bytes+4+i*4);NSDictionary*info=ObjectInfo(h);if(!info[@"ok"])return Error([NSString stringWithFormat:@"GetObjectInfo index=%u/%u handle=%u failed: %@",i+1,n,h,info[@"error"]]);[a addObject:info[@"item"]];}return @{@"ok":@YES,@"items":a};
+static NSArray<NSNumber *> *ObjectHandles(NSNumber *parent, NSError **error) {
+    uint32_t query=parent ? parent.unsignedIntValue : kRootQuery;
+    NSData *data=nil;uint32_t tx=gTx++;
+    if(!Command(0x1007,tx,@[@65537,@0,@(query)],&data,error)) {
+        if(error&&*error)*error=[NSError errorWithDomain:@"MTP" code:20 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"GetObjectHandles parent=%u tx=%u failed: %@",query,tx,(*error).localizedDescription]}];
+        return nil;
+    }
+    if(data.length<4){if(error)*error=[NSError errorWithDomain:@"MTP" code:21 userInfo:@{NSLocalizedDescriptionKey:@"ObjectHandles truncated"}];return nil;}
+    const uint8_t*p=data.bytes;uint32_t count=U32(p);
+    if(count>10000||data.length<4+(NSUInteger)count*4){if(error)*error=[NSError errorWithDomain:@"MTP" code:22 userInfo:@{NSLocalizedDescriptionKey:@"ObjectHandles invalid"}];return nil;}
+    NSMutableArray *handles=[NSMutableArray arrayWithCapacity:count];
+    for(uint32_t i=0;i<count;i++)[handles addObject:@(U32((const uint8_t*)data.bytes+4+i*4))];
+    return handles;
+}
+static NSDictionary *FindChild(NSNumber *parent, NSString *name) {
+    NSError *error=nil;NSArray<NSNumber*>*handles=ObjectHandles(parent,&error);
+    if(!handles)return Error(error.localizedDescription);
+    for(NSUInteger index=0;index<handles.count;index++){
+        NSDictionary *info=ObjectInfo(handles[index].unsignedIntValue);
+        if(![info[@"ok"] boolValue])return Error([NSString stringWithFormat:@"GetObjectInfo index=%lu/%lu failed: %@",(unsigned long)index+1,(unsigned long)handles.count,info[@"error"]]);
+        NSDictionary *item=info[@"item"];
+        if([item[@"format"] unsignedIntValue]==0x3001&&[item[@"name"] caseInsensitiveCompare:name]==NSOrderedSame)return @{@"ok":@YES,@"item":item};
+    }
+    return @{@"ok":@YES,@"item":[NSNull null]};
+}
+static NSDictionary *Children(NSNumber *parent, NSUInteger offset, NSUInteger limit) {
+    NSError *error=nil;NSArray<NSNumber*>*handles=ObjectHandles(parent,&error);
+    if(!handles)return Error(error.localizedDescription);
+    NSUInteger start=MIN(offset,handles.count);NSUInteger end=MIN(start+MAX((NSUInteger)1,limit),handles.count);
+    NSMutableArray *items=[NSMutableArray arrayWithCapacity:end-start];
+    for(NSUInteger index=start;index<end;index++){
+        NSDictionary *info=ObjectInfo(handles[index].unsignedIntValue);
+        if(![info[@"ok"] boolValue])return Error([NSString stringWithFormat:@"GetObjectInfo index=%lu/%lu handle=%@ failed: %@",(unsigned long)index+1,(unsigned long)handles.count,handles[index],info[@"error"]]);
+        [items addObject:info[@"item"]];
+    }
+    id next=end<handles.count?@(end):[NSNull null];
+    return @{@"ok":@YES,@"items":items,@"total":@(handles.count),@"next_offset":next};
 }
 static BOOL StreamObject(uint32_t handle, NSError **error) {
     NSMutableData *cmd=[NSMutableData data]; P32(cmd,16); uint8_t commandType[2]={1,0}; [cmd appendBytes:commandType length:2]; uint8_t c[2]={9,0x10}; [cmd appendBytes:c length:2]; uint32_t tx=gTx++; P32(cmd,tx); P32(cmd,handle);
@@ -123,4 +159,36 @@ static BOOL PrepareForObjectRead(NSError **error) {
     }
     return YES;
 }
-int main(int argc,const char **argv){@autoreleasepool{if(argc==3&&strcmp(argv[1],"--stream")==0){NSError*e=nil;BOOL ok=Open(&e)&&PrepareForObjectRead(&e)&&StreamObject((uint32_t)strtoul(argv[2],NULL,10),&e);if(!ok)fprintf(stderr,"android-mtp stream failed: %s\n",e.localizedDescription.UTF8String);Close();return ok?0:3;}char line[65536];while(fgets(line,sizeof(line),stdin)){NSData*d=[[NSString stringWithUTF8String:line] dataUsingEncoding:NSUTF8StringEncoding];NSDictionary*r=[NSJSONSerialization JSONObjectWithData:d options:0 error:nil];NSString*op=r[@"operation"];if([op isEqual:@"open_device"]){NSError*e=nil;if(gOpen)Close();if(Open(&e))Reply(DeviceInfo());else Reply(Error(e.localizedDescription));}else if([op isEqual:@"list_storages"])Reply(Storages());else if([op isEqual:@"list_children"]){id value=r[@"parent_id"];Reply(Children(value==[NSNull null]?nil:value));}else if([op isEqual:@"object_info"])Reply(ObjectInfo([r[@"object_id"] unsignedIntValue]));else if([op isEqual:@"close_device"]){Close();Reply(@{@"ok":@YES});}else Reply(Error(@"unknown operation"));}Close();}return 0;}
+static NSDictionary *OpenControlSession(void) {
+    NSError *error=nil;if(gOpen)Close();
+    if(!Open(&error))return Error(error.localizedDescription);
+    NSDictionary *device=DeviceInfo();
+    if(![device[@"ok"] boolValue]){Close();return device;}
+    NSDictionary *storages=Storages();
+    if(![storages[@"ok"] boolValue]){Close();return storages;}
+    gStorageCache=storages[@"storages"];
+    NSDictionary *reply=@{@"ok":@YES,@"device":device[@"device"],@"storages":storages[@"storages"]};
+    Close();
+    if(!Open(&error))return Error([NSString stringWithFormat:@"fresh traversal session failed: %@",error.localizedDescription]);
+    return reply;
+}
+int main(int argc,const char **argv){
+    @autoreleasepool {
+        if(argc==3&&strcmp(argv[1],"--stream")==0){NSError*error=nil;BOOL ok=Open(&error)&&PrepareForObjectRead(&error)&&StreamObject((uint32_t)strtoul(argv[2],NULL,10),&error);if(!ok)fprintf(stderr,"android-mtp stream failed: %s\n",error.localizedDescription.UTF8String);Close();return ok?0:3;}
+        char line[65536];
+        while(fgets(line,sizeof(line),stdin)){
+            NSData *data=[[NSString stringWithUTF8String:line] dataUsingEncoding:NSUTF8StringEncoding];
+            NSDictionary *request=[NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            NSString *operation=request[@"operation"];
+            if([operation isEqual:@"open_device"])Reply(OpenControlSession());
+            else if([operation isEqual:@"list_storages"])Reply(@{@"ok":@YES,@"storages":gStorageCache ?: @[]});
+            else if([operation isEqual:@"find_child"]){id value=request[@"parent_id"];Reply(FindChild(value==[NSNull null]?nil:value,request[@"name"]));}
+            else if([operation isEqual:@"list_children"]){id value=request[@"parent_id"];Reply(Children(value==[NSNull null]?nil:value,[request[@"offset"] unsignedIntegerValue],[request[@"limit"] unsignedIntegerValue]));}
+            else if([operation isEqual:@"object_info"])Reply(ObjectInfo([request[@"object_id"] unsignedIntValue]));
+            else if([operation isEqual:@"close_device"]){Close();Reply(@{@"ok":@YES});}
+            else Reply(Error(@"unknown operation"));
+        }
+        Close();
+    }
+    return 0;
+}
