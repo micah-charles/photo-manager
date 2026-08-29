@@ -13,6 +13,13 @@ and CloseSession. Phase 1A passed lazy traversal of storage 65537 root ->
 DCIM -> Camera, locating 6,674 Camera objects and sampling 50 metadata
 records in about 6.07 seconds.
 
+The canonical Photo Manager CLI now reproduces that traversal against the
+same Pixel: root -> DCIM -> Camera returned a paged result of 50 from 6,674
+objects. Path components are resolved lazily and storage metadata is cached
+from the identity session so normal traversal retains the proven MTP
+transaction sequence. Camera listing is paged and does not fetch metadata for
+all objects automatically.
+
 Object handles are session metadata and are never permanent source identity.
 The Pixel requires 0xFFFFFFFF for the storage-root GetObjectHandles query but
 reports root-child parent 0 in ObjectInfo. DCIM and Camera report MTP

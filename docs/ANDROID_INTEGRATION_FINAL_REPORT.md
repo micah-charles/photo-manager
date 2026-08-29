@@ -1,8 +1,8 @@
 # Android integration final report
 
-Status: blocked on external validation; canonical real-device stream/import
-requires a fresh Pixel USB session in the user's unsandboxed Terminal, and
-packaged-app validation requires the optional PyInstaller environment.
+Status: real-device discovery, storage enumeration, and lazy DCIM/Camera
+listing pass from the canonical repository. Real-device stream/import and
+packaged-app validation remain pending.
 
 ## Architecture
 
@@ -27,7 +27,8 @@ thumbnails, duplicate intelligence, and destinations.
 - Level 2 — PASS: generic PhotoSource and normalized identity/item contracts.
 - Level 3 — PASS: native macOS Android helper migrated and arm64 compiled.
 - Level 4 — PASS: Pixel 8 Pro detected through PhotoVault CLI from the user's unsandboxed Terminal.
-- Level 5 — PENDING: DCIM/Camera listed through PhotoVault CLI.
+- Level 5 — PASS: canonical CLI resolved root -> DCIM -> Camera and returned
+  the first 50 of 6,674 Camera objects from the Pixel 8 Pro.
 - Level 6 — PENDING: one media object streamed and discarded on hardware.
 - Level 7 — CODE READY, HARDWARE PENDING: one controlled media object copied.
 - Level 8 — CODE READY, HARDWARE PENDING: SHA-256 verified copy.
@@ -40,9 +41,14 @@ thumbnails, duplicate intelligence, and destinations.
 ## Tests
 
 The baseline suite passed 47 tests before Android changes. The current suite
-passes 56 tests; four optional PySide6 tests are skipped because PySide6 is
-not installed. The native helper compiles as arm64. Hardware tests must run
-from the user's Terminal rather than the Codex sandbox.
+passes 59 tests; four optional PySide6 tests are skipped because PySide6 is
+not installed. The native helper compiles as arm64. Hardware tests run from
+the user's normal Terminal because the Codex process sandbox does not have a
+reliable claim on the Pixel MTP interface.
+
+Real-device Level 5 evidence: the canonical CLI returned `PAGE 0 50 6674 50`.
+The first three objects matched the proven POC handles and metadata samples.
+No private photo content or complete device serial was captured.
 
 ## Safety
 
@@ -50,14 +56,27 @@ No phone deletes, source writes, root, sudo, DeviceCapture, SIP change,
 Gatekeeper bypass, kext, or privileged daemon was introduced. No real serial,
 private filenames, EXIF, location metadata, or photo content is committed.
 
+## Resolved integration failure
+
+The first canonical implementation repeated storage queries before every
+folder listing and eagerly requested ObjectInfo for every child. This changed
+the known-good POC transaction sequence: the Camera GetObjectHandles request
+was delayed to transaction 40 and failed with `Unable to send IO`. The source
+now caches storage metadata, resolves each path component lazily, and pages
+Camera metadata in batches of 50. This restores the proven POC traversal
+shape and prevents an eager 6,674-object metadata crawl.
+
+The helper cleanup path also previously dereferenced a null optional payload
+while closing an MTP session. That crash could leave the device session in a
+state requiring a physical reconnect. Cleanup now accepts a null payload,
+destroys the IOUSBHost interface on every exit, and has native and Python
+regression coverage.
+
 ## Remaining blockers
 
-The canonical helper was built and the local CLI/test paths are ready, but
-current direct attempts return `Unable to send IO` before discovery. This is
-an external IOUSBHost/device-session condition, not a permission change made
-by PhotoVault. Reconnect the Pixel, select File Transfer, and run the
-canonical commands from a normal Terminal. The packaged app requires
+Levels 6–11 require the remaining safe real-device stream and controlled-copy
+tests. Level 12 needs UI hardware validation. The packaged app requires
 PyInstaller installation plus clean-machine signing/notarization/App Sandbox
-validation. The UI currently exposes read-only discovery/storage information;
+validation. The current UI exposes read-only discovery/storage information;
 folder browsing/import controls can follow successful hardware stream
 validation.
