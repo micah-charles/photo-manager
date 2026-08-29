@@ -1,7 +1,8 @@
 # Android integration final report
 
 Status: real-device discovery, storage enumeration, and lazy DCIM/Camera
-listing pass from the canonical repository. Real-device stream/import and
+listing pass from the canonical repository. Level 6 is blocked by a
+reproducible raw-IOUSBHost sustained-payload failure. Real-device import and
 packaged-app validation remain pending.
 
 ## Architecture
@@ -29,7 +30,10 @@ thumbnails, duplicate intelligence, and destinations.
 - Level 4 — PASS: Pixel 8 Pro detected through PhotoVault CLI from the user's unsandboxed Terminal.
 - Level 5 — PASS: canonical CLI resolved root -> DCIM -> Camera and returned
   the first 50 of 6,674 Camera objects from the Pixel 8 Pro.
-- Level 6 — PENDING: one media object streamed and discarded on hardware.
+- Level 6 — BLOCKED: same-session media streaming reaches valid payload bytes,
+  then the raw IOUSBHost bulk-IN path stops responding after cumulative
+  transfer. Full, partial, synchronous, asynchronous, 16 KiB, max-packet, and
+  kernel-backed-buffer controls have isolated the boundary.
 - Level 7 — CODE READY, HARDWARE PENDING: one controlled media object copied.
 - Level 8 — CODE READY, HARDWARE PENDING: SHA-256 verified copy.
 - Level 9 — CODE READY, HARDWARE PENDING: source/catalog/history integration.
@@ -41,7 +45,7 @@ thumbnails, duplicate intelligence, and destinations.
 ## Tests
 
 The baseline suite passed 47 tests before Android changes. The current suite
-passes 59 tests; four optional PySide6 tests are skipped because PySide6 is
+passes 60 tests; four optional PySide6 tests are skipped because PySide6 is
 not installed. The native helper compiles as arm64. Hardware tests run from
 the user's normal Terminal because the Codex process sandbox does not have a
 reliable claim on the Pixel MTP interface.
@@ -74,9 +78,10 @@ regression coverage.
 
 ## Remaining blockers
 
-Levels 6–11 require the remaining safe real-device stream and controlled-copy
-tests. Level 12 needs UI hardware validation. The packaged app requires
-PyInstaller installation plus clean-machine signing/notarization/App Sandbox
-validation. The current UI exposes read-only discovery/storage information;
-folder browsing/import controls can follow successful hardware stream
-validation.
+Level 6 requires a bounded mature-client control test and an explicit
+transport decision; see `ANDROID_MTP_TRANSPORT_REGRESSION_REPORT.md`. Levels
+7–11 remain gated by Level 6. Level 12 needs UI hardware validation. The
+packaged app requires PyInstaller installation plus clean-machine
+signing/notarization/App Sandbox validation. The current UI exposes read-only
+discovery/storage information; folder browsing/import controls can follow
+successful hardware stream validation.
