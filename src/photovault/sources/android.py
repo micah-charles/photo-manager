@@ -40,7 +40,11 @@ class JsonLineBridge:
         self._process.stdin.flush()
         line = self._process.stdout.readline()
         if not line:
-            raise AndroidSourceUnavailable("native helper exited without a response")
+            stderr = ""
+            if self._process.poll() is not None and self._process.stderr is not None:
+                stderr = self._process.stderr.read().strip()
+            detail = f": {stderr}" if stderr else ""
+            raise AndroidSourceUnavailable(f"native helper exited without a response{detail}")
         response = json.loads(line)
         if not response.get("ok", False):
             raise AndroidSourceUnavailable(response.get("error", "native helper request failed"))
