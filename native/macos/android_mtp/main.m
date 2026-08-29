@@ -8,7 +8,9 @@
 
 static const NSUInteger kMax = 1024 * 1024;
 static const uint32_t kRootQuery = 0xffffffff;
-static const NSTimeInterval kTimeout = 5.0;
+// The proven Pixel Camera handle query took 4.874s for 6,674 objects. A 5s
+// transport timeout leaves no practical scheduling margin on a loaded Mac.
+static const NSTimeInterval kTimeout = 15.0;
 static uint32_t gTx = 1;
 static IOUSBHostInterface *gInterface;
 static IOUSBHostPipe *gIn;
@@ -35,6 +37,9 @@ static NSError *StageError(NSString *stage, NSError *underlying) {
     NSString *detail=underlying.localizedDescription ?: @"unknown error";
     return [NSError errorWithDomain:@"MTP" code:50 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"%@: %@",stage,detail]}];
 }
+static NSError *CommandStageError(uint16_t operation, uint32_t transaction, NSString *stage, NSError *underlying) {
+    return StageError([NSString stringWithFormat:@"command 0x%04x tx=%u %@",operation,transaction,stage],underlying);
+}
 static void Reply(NSDictionary *obj) {
     NSData *data=[NSJSONSerialization dataWithJSONObject:obj options:0 error:nil];
     fwrite(data.bytes,1,data.length,stdout); fputc('\n',stdout); fflush(stdout);
@@ -58,12 +63,12 @@ static BOOL Command(uint16_t op, uint32_t tx, NSArray<NSNumber *> *params, NSDat
     NSMutableData *cmd=[NSMutableData data]; P32(cmd,12+(uint32_t)params.count*4); uint8_t commandType[2]={1,0}; [cmd appendBytes:commandType length:2]; uint8_t c[2]={op,op>>8}; [cmd appendBytes:c length:2]; P32(cmd,tx);
     for(NSNumber *n in params) P32(cmd,n.unsignedIntValue);
     NSMutableData *out=[cmd mutableCopy]; NSUInteger sent=0; NSError *e=nil;
-    if (![gOut sendIORequestWithData:out bytesTransferred:&sent completionTimeout:kTimeout error:&e]) { if(error)*error=e; return NO; }
-    NSData *raw; if(!Receive(&raw,error)) return NO; uint16_t ctype,code; uint32_t rtx; NSData *payload;
+    if (![gOut sendIORequestWithData:out bytesTransferred:&sent completionTimeout:kTimeout error:&e]) { if(error)*error=CommandStageError(op,tx,@"send",e); return NO; }
+    NSData *raw; NSError *receiveError=nil;if(!Receive(&raw,&receiveError)){if(error)*error=CommandStageError(op,tx,@"first receive",receiveError);return NO;} uint16_t ctype,code; uint32_t rtx; NSData *payload;
     if(!Parse(raw,&ctype,&code,&rtx,&payload,error) || rtx!=tx) return NO;
     if(ctype==2) {
         if (code!=op) { if(error)*error=[NSError errorWithDomain:@"MTP" code:3 userInfo:@{NSLocalizedDescriptionKey:@"unexpected data code"}]; return NO; }
-        PBStoreOptionalPayload(dataPayload,payload); if(!Receive(&raw,error)) return NO; if(!Parse(raw,&ctype,&code,&rtx,&payload,error)) return NO;
+        PBStoreOptionalPayload(dataPayload,payload); if(!Receive(&raw,&receiveError)){if(error)*error=CommandStageError(op,tx,@"response receive",receiveError);return NO;} if(!Parse(raw,&ctype,&code,&rtx,&payload,error)) return NO;
     } else PBStoreOptionalPayload(dataPayload,nil);
     if(ctype!=3 || code!=0x2001 || rtx!=tx) {
         NSString *response=code==0x2009 ? @"InvalidObjectHandle (0x2009)" : [NSString stringWithFormat:@"MTP response 0x%04x",code];
