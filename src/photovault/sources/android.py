@@ -23,6 +23,7 @@ def stream_test_folder(
     sink: BinaryIO,
     *,
     read_size: str = "16k",
+    transport: str = "synchronous",
     runner=subprocess.Popen,
 ) -> dict[str, int | float]:
     """Resolve and stream one JPEG in one native process and MTP session."""
@@ -32,7 +33,7 @@ def stream_test_folder(
         raise AndroidSourceUnavailable(f"native helper not found: {helper}")
     started = time.monotonic()
     process = runner(
-        [str(helper), "--stream-test", logical_path, "--read-size", read_size],
+        [str(helper), "--stream-test", logical_path, "--transport", transport, "--read-size", read_size],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )

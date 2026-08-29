@@ -55,10 +55,27 @@ class AndroidSourceTests(unittest.TestCase):
 
         sink = Sink()
         helper = Path(__file__)
-        metrics = stream_test_folder(helper, "DCIM/Camera", sink, runner=lambda *args, **kwargs: Process())
+        invocation = []
+
+        def runner(command, **kwargs):
+            invocation.append(command)
+            return Process()
+
+        metrics = stream_test_folder(
+            helper,
+            "DCIM/Camera",
+            sink,
+            read_size="16k",
+            transport="async-pingpong",
+            runner=runner,
+        )
 
         self.assertEqual(bytes(sink.data), b"abcdef")
         self.assertEqual(metrics["bytes_received"], 6)
+        self.assertEqual(
+            invocation[0][1:],
+            ["--stream-test", "DCIM/Camera", "--transport", "async-pingpong", "--read-size", "16k"],
+        )
 
     def test_normalizes_storage_and_object_metadata(self) -> None:
         bridge = FakeBridge()

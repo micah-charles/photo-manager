@@ -19,6 +19,19 @@ static IOUSBHostPipe *gOut;
 static BOOL gOpen = NO;
 static NSArray *gStorageCache;
 
+@interface PBAsyncReadState : NSObject {
+@public
+    dispatch_semaphore_t done;
+    IOReturn status;
+    NSUInteger actual;
+    NSUInteger requested;
+    NSMutableData *buffer;
+}
+@end
+@implementation PBAsyncReadState
+- (instancetype)init { if((self=[super init]))done=dispatch_semaphore_create(0);return self; }
+@end
+
 static uint16_t U16(const uint8_t *p) { return p[0] | ((uint16_t)p[1] << 8); }
 static uint32_t U32(const uint8_t *p) { return p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); }
 static uint64_t U64(const uint8_t *p) { uint64_t v=0; for (int i=0;i<8;i++) v |= (uint64_t)p[i] << (8*i); return v; }
@@ -65,6 +78,22 @@ static BOOL ReceiveStreamBuffer(NSMutableData *buffer, NSUInteger *actual, NSErr
         return NO;
     }
     if(actual)*actual=n;return YES;
+}
+static PBAsyncReadState *EnqueueStreamBuffer(NSMutableData *buffer, NSError **error) {
+    PBAsyncReadState *state=[PBAsyncReadState new];state->buffer=buffer;state->requested=buffer.length;
+    NSError *e=nil;
+    BOOL queued=[gIn enqueueIORequestWithData:buffer completionTimeout:kTimeout error:&e completionHandler:^(IOReturn completionStatus, NSUInteger bytesTransferred){state->status=completionStatus;state->actual=bytesTransferred;dispatch_semaphore_signal(state->done);}];
+    if(!queued){if(error)*error=StageError(@"enqueue async bulk-in",e);return nil;}
+    return state;
+}
+static BOOL WaitForStreamBuffer(PBAsyncReadState *state, NSError **error) {
+    dispatch_semaphore_wait(state->done,DISPATCH_TIME_FOREVER);
+    if(state->status==kIOReturnSuccess)return YES;
+    if(error)*error=[NSError errorWithDomain:@"MTP.Transport" code:state->status userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"async bulk-in endpoint=0x81 requested=%lu actual=%lu timeout=%.1fs buffer=%p IOReturn=0x%08x",(unsigned long)state->requested,(unsigned long)state->actual,kTimeout,state->buffer.bytes,state->status]}];
+    return NO;
+}
+static void AbortPendingStreamRead(PBAsyncReadState *state) {
+    if(!state)return;NSError *abortError=nil;[gIn abortWithError:&abortError];dispatch_semaphore_wait(state->done,DISPATCH_TIME_FOREVER);
 }
 static BOOL Parse(NSData *d, uint16_t *type, uint16_t *code, uint32_t *tx, NSData **payload, NSError **error) {
     if (d.length<12) { if(error)*error=[NSError errorWithDomain:@"MTP" code:1 userInfo:@{NSLocalizedDescriptionKey:@"short container"}]; return NO; }
@@ -164,7 +193,7 @@ static NSDictionary *Children(NSNumber *parent, NSUInteger offset, NSUInteger li
     id next=end<handles.count?@(end):[NSNull null];
     return @{@"ok":@YES,@"items":items,@"total":@(handles.count),@"next_offset":next};
 }
-static BOOL StreamObject(uint32_t handle, NSUInteger streamChunk, uint64_t *bytesWritten, NSError **error) {
+static BOOL StreamObject(uint32_t handle, NSUInteger streamChunk, NSString *transport, uint64_t *bytesWritten, NSError **error) {
     NSMutableData *cmd=[NSMutableData data]; P32(cmd,16); uint8_t commandType[2]={1,0}; [cmd appendBytes:commandType length:2]; uint8_t c[2]={9,0x10}; [cmd appendBytes:c length:2]; uint32_t tx=gTx++; P32(cmd,tx); P32(cmd,handle);
     NSUInteger sent=0; NSError *e=nil;
     if (![gOut sendIORequestWithData:cmd bytesTransferred:&sent completionTimeout:kTimeout error:&e]) { if(error)*error=StageError(@"GetObject command send",e); return NO; }
@@ -179,7 +208,29 @@ static BOOL StreamObject(uint32_t handle, NSUInteger streamChunk, uint64_t *byte
     fprintf(stderr,"MTP_STREAM_TRACE\tbuffer=kernel-reused\tread_size=%lu\tfirst_read=%lu\tcontainer_length=%u\tinitial_payload=%lu\n",(unsigned long)streamChunk,(unsigned long)first.length,total,(unsigned long)emit);
     if(emit && fwrite((const uint8_t *)first.bytes+12,1,emit,stdout)!=emit){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;} remaining-=emit;
     NSUInteger chunkIndex=0;uint64_t offset=emit;
-    while(remaining){NSUInteger requested=(NSUInteger)MIN((uint64_t)streamChunk,remaining);NSMutableData *activeBuffer=requested==streamChunk?streamBuffer:[gInterface ioDataWithCapacity:requested error:&e];if(!activeBuffer){if(error)*error=StageError(@"allocate final GetObject IO buffer",e);return NO;}NSUInteger actual=0;chunkIndex++;if(!ReceiveStreamBuffer(activeBuffer,&actual,&e)){if(error)*error=StageError([NSString stringWithFormat:@"GetObject data receive chunk=%lu offset=%llu remaining=%llu",(unsigned long)chunkIndex,offset,remaining],e);return NO;}if(actual==0){if(error)*error=[NSError errorWithDomain:@"MTP" code:33 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"empty GetObject data chunk=%lu offset=%llu remaining=%llu",(unsigned long)chunkIndex,offset,remaining]}];return NO;}NSUInteger n=(NSUInteger)MIN((uint64_t)actual,remaining);if(fwrite(activeBuffer.bytes,1,n,stdout)!=n){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;}remaining-=n;offset+=n;}
+    if([transport isEqualToString:@"async-pingpong"]&&remaining){
+        NSMutableData *bufferB=[gInterface ioDataWithCapacity:streamChunk error:&e];
+        if(!bufferB){if(error)*error=StageError(@"allocate second GetObject IO buffer",e);return NO;}
+        NSUInteger requested=(NSUInteger)MIN((uint64_t)streamChunk,remaining);
+        NSMutableData *firstContinuation=requested==streamChunk?streamBuffer:[gInterface ioDataWithCapacity:requested error:&e];
+        if(!firstContinuation){if(error)*error=StageError(@"allocate final GetObject IO buffer",e);return NO;}
+        PBAsyncReadState *current=EnqueueStreamBuffer(firstContinuation,&e);
+        if(!current){if(error)*error=e;return NO;}
+        while(current){
+            chunkIndex++;
+            if(!WaitForStreamBuffer(current,&e)){if(error)*error=StageError([NSString stringWithFormat:@"GetObject async receive chunk=%lu offset=%llu remaining=%llu",(unsigned long)chunkIndex,offset,remaining],e);return NO;}
+            if(current->actual==0){if(error)*error=[NSError errorWithDomain:@"MTP" code:33 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"empty async GetObject chunk=%lu offset=%llu remaining=%llu",(unsigned long)chunkIndex,offset,remaining]}];return NO;}
+            NSUInteger n=(NSUInteger)MIN((uint64_t)current->actual,remaining);uint64_t nextRemaining=remaining-n;
+            PBAsyncReadState *next=nil;
+            if(nextRemaining){NSUInteger nextRequested=(NSUInteger)MIN((uint64_t)streamChunk,nextRemaining);NSMutableData *candidate=current->buffer==streamBuffer?bufferB:streamBuffer;if(nextRequested!=streamChunk)candidate=[gInterface ioDataWithCapacity:nextRequested error:&e];if(!candidate){if(error)*error=StageError(@"allocate final async GetObject IO buffer",e);return NO;}next=EnqueueStreamBuffer(candidate,&e);if(!next){if(error)*error=e;return NO;}}
+            if(fwrite(current->buffer.bytes,1,n,stdout)!=n){AbortPendingStreamRead(next);if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;}
+            remaining=nextRemaining;offset+=n;
+            if(chunkIndex%64==0||!remaining)fprintf(stderr,"MTP_STREAM_ASYNC\tchunk=%lu\toffset=%llu\tremaining=%llu\tmax_pending=1\n",(unsigned long)chunkIndex,offset,remaining);
+            current=next;
+        }
+    }else{
+        while(remaining){NSUInteger requested=(NSUInteger)MIN((uint64_t)streamChunk,remaining);NSMutableData *activeBuffer=requested==streamChunk?streamBuffer:[gInterface ioDataWithCapacity:requested error:&e];if(!activeBuffer){if(error)*error=StageError(@"allocate final GetObject IO buffer",e);return NO;}NSUInteger actual=0;chunkIndex++;if(!ReceiveStreamBuffer(activeBuffer,&actual,&e)){if(error)*error=StageError([NSString stringWithFormat:@"GetObject data receive chunk=%lu offset=%llu remaining=%llu",(unsigned long)chunkIndex,offset,remaining],e);return NO;}if(actual==0){if(error)*error=[NSError errorWithDomain:@"MTP" code:33 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"empty GetObject data chunk=%lu offset=%llu remaining=%llu",(unsigned long)chunkIndex,offset,remaining]}];return NO;}NSUInteger n=(NSUInteger)MIN((uint64_t)actual,remaining);if(fwrite(activeBuffer.bytes,1,n,stdout)!=n){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;}remaining-=n;offset+=n;}
+    }
     fflush(stdout);NSUInteger statusLength=0;if(!ReceiveStreamBuffer(streamBuffer,&statusLength,&e)){if(error)*error=StageError(@"GetObject status receive",e);return NO;}if(statusLength==0&&!ReceiveStreamBuffer(streamBuffer,&statusLength,&e)){if(error)*error=StageError(@"GetObject status receive after ZLP",e);return NO;}NSData *status=[NSData dataWithBytes:streamBuffer.bytes length:statusLength];uint16_t stype,scode;uint32_t stx;NSData *sp;if(!Parse(status,&stype,&scode,&stx,&sp,&e)||stype!=3||scode!=0x2001||stx!=tx){if(error)*error=StageError(@"GetObject status parse",e);return NO;}if(bytesWritten)*bytesWritten=objectLength;return YES;
 }
 static BOOL PrepareForObjectRead(NSError **error) {
@@ -227,7 +278,7 @@ static NSUInteger EndpointMaxPacketSize(void) {
     const IOUSBHostIOSourceDescriptors *descriptors=gIn.descriptors;
     return descriptors ? (CFSwapInt16LittleToHost(descriptors->descriptor.wMaxPacketSize)&0x7ff) : 0;
 }
-static int StreamTest(NSString *logicalPath, NSString *readSize) {
+static int StreamTest(NSString *logicalPath, NSString *readSize, NSString *transport) {
     NSDictionary *opened=OpenControlSession();
     if(![opened[@"ok"] boolValue]){fprintf(stderr,"android-mtp stream-test failed: open_control_session: %s\n",[opened[@"error"] UTF8String]);Close();return 3;}
     NSDictionary *selected=FirstMediaInFolder(logicalPath);
@@ -236,21 +287,22 @@ static int StreamTest(NSString *logicalPath, NSString *readSize) {
     NSUInteger endpointPacket=EndpointMaxPacketSize();
     NSUInteger streamChunk=[readSize isEqualToString:@"max-packet"]?endpointPacket:kDefaultStreamChunk;
     if(streamChunk==0){fprintf(stderr,"android-mtp stream-test failed: invalid endpoint max packet size\n");Close();return 3;}
-    fprintf(stderr,"MTP_STREAM_CONFIG\tread_size_mode=%s\tendpoint_max_packet=%lu\n",readSize.UTF8String,(unsigned long)endpointPacket);
+    if([transport isEqualToString:@"async-pingpong"])streamChunk=kDefaultStreamChunk;
+    fprintf(stderr,"MTP_STREAM_CONFIG\ttransport=%s\tread_size_mode=%s\tread_size=%lu\tendpoint_max_packet=%lu\n",transport.UTF8String,readSize.UTF8String,(unsigned long)streamChunk,(unsigned long)endpointPacket);
     uint64_t transferred=0;NSError *error=nil;
-    BOOL ok=StreamObject([item[@"object_id"] unsignedIntValue],streamChunk,&transferred,&error);
+    BOOL ok=StreamObject([item[@"object_id"] unsignedIntValue],streamChunk,transport,&transferred,&error);
     if(!ok)fprintf(stderr,"android-mtp stream-test failed: %s\n",StageError(@"stream_object",error).localizedDescription.UTF8String);
     else fprintf(stderr,"PHOTOVAULT_STREAM_RESULT\t%llu\t%u\n",transferred,[item[@"size_bytes"] unsignedIntValue]);
     Close();return ok?0:3;
 }
 int main(int argc,const char **argv){
     @autoreleasepool {
-        if((argc==3||argc==5)&&strcmp(argv[1],"--stream-test")==0){NSString *readSize=argc==5?[NSString stringWithUTF8String:argv[4]]:@"16k";return StreamTest([NSString stringWithUTF8String:argv[2]],readSize);}
+        if((argc==3||argc==7)&&strcmp(argv[1],"--stream-test")==0){NSString *transport=argc==7?[NSString stringWithUTF8String:argv[4]]:@"synchronous";NSString *readSize=argc==7?[NSString stringWithUTF8String:argv[6]]:@"16k";return StreamTest([NSString stringWithUTF8String:argv[2]],readSize,transport);}
         if(argc==3&&strcmp(argv[1],"--stream")==0){
             NSError *error=nil;BOOL ok=Open(&error);
             if(!ok)error=StageError(@"open_session",error);
             else if(!PrepareForObjectRead(&error)){error=StageError(@"prepare_object_read",error);ok=NO;}
-            else if(!StreamObject((uint32_t)strtoul(argv[2],NULL,10),kDefaultStreamChunk,NULL,&error)){error=StageError(@"stream_object",error);ok=NO;}
+            else if(!StreamObject((uint32_t)strtoul(argv[2],NULL,10),kDefaultStreamChunk,@"synchronous",NULL,&error)){error=StageError(@"stream_object",error);ok=NO;}
             if(!ok)fprintf(stderr,"android-mtp stream failed: %s\n",error.localizedDescription.UTF8String);
             Close();return ok?0:3;
         }
