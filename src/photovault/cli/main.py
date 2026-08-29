@@ -214,6 +214,9 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
                     print(f"ITEM\t{item.object_id}\t{item.name}\t{item.media_type}\t{item.size_bytes}\t{item.modified_at}")
                 record_source_items(connection, source.identity().source_id, items, args.logical_path)
             return 0
+        except AndroidSourceUnavailable as exc:
+            print(f"ANDROID_UNAVAILABLE\t{exc}")
+            return 2
         finally:
             source.close()
     if args.command == "register":
