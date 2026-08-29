@@ -7,6 +7,7 @@
 #import "optional_payload.h"
 
 static const NSUInteger kMax = 1024 * 1024;
+static const NSUInteger kStreamChunk = 16 * 1024;
 static const uint32_t kRootQuery = 0xffffffff;
 // The proven Pixel Camera handle query took 4.874s for 6,674 objects. A 5s
 // transport timeout leaves no practical scheduling margin on a loaded Mac.
@@ -48,10 +49,14 @@ static io_service_t FindInterface(void) {
     CFMutableDictionaryRef m=[IOUSBHostInterface createMatchingDictionaryWithVendorID:@0x18d1 productID:@0x4ee1 bcdDevice:nil interfaceNumber:@0 configurationValue:@1 interfaceClass:@0x06 interfaceSubclass:@0x01 interfaceProtocol:@0x01 speed:nil productIDArray:nil];
     return m ? IOServiceGetMatchingService(kIOMainPortDefault,m) : IO_OBJECT_NULL;
 }
-static BOOL Receive(NSData **result, NSError **error) {
-    NSMutableData *buffer=[NSMutableData dataWithLength:kMax]; NSUInteger n=0; NSError *e=nil;
+static BOOL ReceiveSized(NSUInteger capacity, NSData **result, NSError **error) {
+    NSMutableData *buffer=[NSMutableData dataWithLength:capacity]; NSUInteger n=0; NSError *e=nil;
     if (![gIn sendIORequestWithData:buffer bytesTransferred:&n completionTimeout:kTimeout error:&e]) { if(error)*error=e; return NO; }
     [buffer setLength:n]; *result=buffer; return YES;
+}
+static BOOL Receive(NSData **result, NSError **error) { return ReceiveSized(kMax,result,error); }
+static BOOL ReceiveStreamChunk(NSUInteger capacity, NSData **result, NSError **error) {
+    return ReceiveSized(MIN(kStreamChunk,capacity),result,error);
 }
 static BOOL Parse(NSData *d, uint16_t *type, uint16_t *code, uint32_t *tx, NSData **payload, NSError **error) {
     if (d.length<12) { if(error)*error=[NSError errorWithDomain:@"MTP" code:1 userInfo:@{NSLocalizedDescriptionKey:@"short container"}]; return NO; }
@@ -155,14 +160,14 @@ static BOOL StreamObject(uint32_t handle, uint64_t *bytesWritten, NSError **erro
     NSMutableData *cmd=[NSMutableData data]; P32(cmd,16); uint8_t commandType[2]={1,0}; [cmd appendBytes:commandType length:2]; uint8_t c[2]={9,0x10}; [cmd appendBytes:c length:2]; uint32_t tx=gTx++; P32(cmd,tx); P32(cmd,handle);
     NSUInteger sent=0; NSError *e=nil;
     if (![gOut sendIORequestWithData:cmd bytesTransferred:&sent completionTimeout:kTimeout error:&e]) { if(error)*error=StageError(@"GetObject command send",e); return NO; }
-    NSData *first=nil; if(!Receive(&first,&e)){if(error)*error=StageError(@"GetObject first response",e);return NO;}
+    NSData *first=nil; if(!ReceiveStreamChunk(kStreamChunk,&first,&e)){if(error)*error=StageError(@"GetObject first response",e);return NO;}
     if(first.length<12){if(error)*error=[NSError errorWithDomain:@"MTP" code:30 userInfo:@{NSLocalizedDescriptionKey:@"GetObject response header truncated"}];return NO;}
     const uint8_t *p=first.bytes; uint32_t total=U32(p); uint16_t type=U16(p+4), code=U16(p+6); uint32_t responseTx=U32(p+8);
     if(total<12 || type!=2 || code!=0x1009 || responseTx!=tx){if(error)*error=[NSError errorWithDomain:@"MTP" code:31 userInfo:@{NSLocalizedDescriptionKey:@"invalid GetObject data header"}];return NO;}
     uint64_t objectLength=(uint64_t)total-12;uint64_t remaining=objectLength; NSUInteger firstPayload=first.length-12; NSUInteger emit=(NSUInteger)MIN((uint64_t)firstPayload,remaining);
     if(emit && fwrite((const uint8_t *)first.bytes+12,1,emit,stdout)!=emit){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;} remaining-=emit;
-    while(remaining){NSData *chunk=nil;if(!Receive(&chunk,&e)){if(error)*error=StageError(@"GetObject data receive",e);return NO;}if(chunk.length==0){if(error)*error=[NSError errorWithDomain:@"MTP" code:33 userInfo:@{NSLocalizedDescriptionKey:@"empty GetObject data chunk"}];return NO;}NSUInteger n=(NSUInteger)MIN((uint64_t)chunk.length,remaining);if(fwrite(chunk.bytes,1,n,stdout)!=n){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;}remaining-=n;}
-    fflush(stdout); NSData *status=nil;if(!Receive(&status,&e)){if(error)*error=StageError(@"GetObject status receive",e);return NO;}uint16_t stype,scode;uint32_t stx;NSData *sp;if(!Parse(status,&stype,&scode,&stx,&sp,&e)||stype!=3||scode!=0x2001||stx!=tx){if(error)*error=StageError(@"GetObject status parse",e);return NO;}if(bytesWritten)*bytesWritten=objectLength;return YES;
+    while(remaining){NSData *chunk=nil;if(!ReceiveStreamChunk((NSUInteger)MIN((uint64_t)kStreamChunk,remaining),&chunk,&e)){if(error)*error=StageError(@"GetObject data receive",e);return NO;}if(chunk.length==0){if(error)*error=[NSError errorWithDomain:@"MTP" code:33 userInfo:@{NSLocalizedDescriptionKey:@"empty GetObject data chunk"}];return NO;}NSUInteger n=(NSUInteger)MIN((uint64_t)chunk.length,remaining);if(fwrite(chunk.bytes,1,n,stdout)!=n){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;}remaining-=n;}
+    fflush(stdout); NSData *status=nil;if(!ReceiveStreamChunk(kStreamChunk,&status,&e)){if(error)*error=StageError(@"GetObject status receive",e);return NO;}if(status.length==0&&!ReceiveStreamChunk(kStreamChunk,&status,&e)){if(error)*error=StageError(@"GetObject status receive after ZLP",e);return NO;}uint16_t stype,scode;uint32_t stx;NSData *sp;if(!Parse(status,&stype,&scode,&stx,&sp,&e)||stype!=3||scode!=0x2001||stx!=tx){if(error)*error=StageError(@"GetObject status parse",e);return NO;}if(bytesWritten)*bytesWritten=objectLength;return YES;
 }
 static BOOL PrepareForObjectRead(NSError **error) {
     NSDictionary *storages=Storages();
