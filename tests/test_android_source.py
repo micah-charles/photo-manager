@@ -67,6 +67,8 @@ class AndroidSourceTests(unittest.TestCase):
             sink,
             read_size="16k",
             transport="async-pingpong",
+            mtp_mode="partial",
+            partial_size=65536,
             runner=runner,
         )
 
@@ -74,7 +76,7 @@ class AndroidSourceTests(unittest.TestCase):
         self.assertEqual(metrics["bytes_received"], 6)
         self.assertEqual(
             invocation[0][1:],
-            ["--stream-test", "DCIM/Camera", "--transport", "async-pingpong", "--read-size", "16k"],
+            ["--stream-test", "DCIM/Camera", "--mtp-mode", "partial", "--partial-size", "65536", "--transport", "async-pingpong", "--read-size", "16k"],
         )
 
     def test_normalizes_storage_and_object_metadata(self) -> None:

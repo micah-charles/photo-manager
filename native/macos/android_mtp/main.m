@@ -18,6 +18,8 @@ static IOUSBHostPipe *gIn;
 static IOUSBHostPipe *gOut;
 static BOOL gOpen = NO;
 static NSArray *gStorageCache;
+static BOOL gSupportsPartialObject = NO;
+static BOOL gSupportsPartialObject64 = NO;
 
 @interface PBAsyncReadState : NSObject {
 @public
@@ -144,10 +146,15 @@ static void Close(void) {
 static NSDictionary *DeviceInfo(void) {
     NSError *e=nil; NSData *d=nil; if(!Command(0x1001,gTx++,@[],&d,&e))return Error(e.localizedDescription);
     NSUInteger o=0;const uint8_t*p;if(!Bytes(d,&o,8,&p))return Error(@"DeviceInfo truncated"); NSString *ext=MTPString(d,&o);if(!ext||!Bytes(d,&o,2,&p))return Error(@"DeviceInfo header truncated");
-    for(int i=0;i<5;i++){if(!Bytes(d,&o,4,&p))return Error(@"DeviceInfo array truncated");uint32_t n=U32(p);if(n>4096||!Bytes(d,&o,n*2,&p))return Error(@"DeviceInfo array invalid");}
+    gSupportsPartialObject=NO;gSupportsPartialObject64=NO;
+    for(int i=0;i<5;i++){
+        if(!Bytes(d,&o,4,&p))return Error(@"DeviceInfo array truncated");uint32_t n=U32(p);
+        if(n>4096||!Bytes(d,&o,n*2,&p))return Error(@"DeviceInfo array invalid");
+        if(i==0){for(uint32_t j=0;j<n;j++){uint16_t operation=U16(p+j*2);if(operation==0x101b)gSupportsPartialObject=YES;if(operation==0x95c1)gSupportsPartialObject64=YES;}}
+    }
     NSString *manufacturer=MTPString(d,&o),*model=MTPString(d,&o),*version=MTPString(d,&o),*serial=MTPString(d,&o);if(!manufacturer||!model||!version||!serial)return Error(@"DeviceInfo strings truncated");
     unsigned char digest[CC_SHA256_DIGEST_LENGTH];CC_SHA256(serial.UTF8String,(CC_LONG)strlen(serial.UTF8String),digest);NSMutableString *fp=[NSMutableString string];for(int i=0;i<12;i++)[fp appendFormat:@"%02x",digest[i]];
-    return @{@"ok":@YES,@"device":@{@"manufacturer":manufacturer,@"model":model,@"friendly_name":model,@"vid":@0x18d1,@"pid":@0x4ee1,@"serial_fingerprint":fp}};
+    return @{@"ok":@YES,@"device":@{@"manufacturer":manufacturer,@"model":model,@"friendly_name":model,@"vid":@0x18d1,@"pid":@0x4ee1,@"serial_fingerprint":fp,@"supports_get_partial_object":@(gSupportsPartialObject),@"supports_get_partial_object_64":@(gSupportsPartialObject64)}};
 }
 static NSDictionary *Storages(void) {
     NSError *e=nil;NSData*d=nil;if(!Command(0x1004,gTx++,@[],&d,&e))return Error(e.localizedDescription);if(d.length<4)return Error(@"StorageIDs truncated");const uint8_t*p=d.bytes;uint32_t n=U32(p);if(n>1024||d.length<4+n*4)return Error(@"StorageIDs invalid");NSMutableArray*a=[NSMutableArray array];for(uint32_t i=0;i<n;i++){uint32_t sid=U32((const uint8_t*)d.bytes+4+i*4);NSData*si=nil;if(!Command(0x1005,gTx++,@[@(sid)],&si,&e))return Error(e.localizedDescription);if(si.length<26)return Error(@"StorageInfo truncated");const uint8_t*q=si.bytes;[a addObject:@{@"storage_id":@(sid),@"name":@"Internal storage",@"capacity_bytes":@(U64(q+6)),@"free_bytes":@(U64(q+14))}];}return @{@"ok":@YES,@"storages":a};
@@ -233,6 +240,20 @@ static BOOL StreamObject(uint32_t handle, NSUInteger streamChunk, NSString *tran
     }
     fflush(stdout);NSUInteger statusLength=0;if(!ReceiveStreamBuffer(streamBuffer,&statusLength,&e)){if(error)*error=StageError(@"GetObject status receive",e);return NO;}if(statusLength==0&&!ReceiveStreamBuffer(streamBuffer,&statusLength,&e)){if(error)*error=StageError(@"GetObject status receive after ZLP",e);return NO;}NSData *status=[NSData dataWithBytes:streamBuffer.bytes length:statusLength];uint16_t stype,scode;uint32_t stx;NSData *sp;if(!Parse(status,&stype,&scode,&stx,&sp,&e)||stype!=3||scode!=0x2001||stx!=tx){if(error)*error=StageError(@"GetObject status parse",e);return NO;}if(bytesWritten)*bytesWritten=objectLength;return YES;
 }
+static BOOL StreamPartialObject(uint32_t handle, uint64_t objectSize, NSUInteger partialSize, uint64_t *bytesWritten, NSError **error) {
+    if(!gSupportsPartialObject){if(error)*error=[NSError errorWithDomain:@"MTP" code:60 userInfo:@{NSLocalizedDescriptionKey:@"Pixel does not advertise GetPartialObject (0x101b)"}];return NO;}
+    if(partialSize==0||partialSize+12>kMax){if(error)*error=[NSError errorWithDomain:@"MTP" code:61 userInfo:@{NSLocalizedDescriptionKey:@"invalid partial object size"}];return NO;}
+    uint64_t offset=0;NSUInteger part=0;
+    while(offset<objectSize){
+        NSUInteger requested=(NSUInteger)MIN((uint64_t)partialSize,objectSize-offset);NSData *payload=nil;NSError *e=nil;uint32_t tx=gTx++;
+        if(!Command(0x101b,tx,@[@(handle),@((uint32_t)offset),@(requested)],&payload,&e)){if(error)*error=StageError([NSString stringWithFormat:@"GetPartialObject part=%lu offset=%llu requested=%lu tx=%u",(unsigned long)part,offset,(unsigned long)requested,tx],e);return NO;}
+        if(payload.length==0||payload.length>requested){if(error)*error=[NSError errorWithDomain:@"MTP" code:62 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"invalid GetPartialObject payload part=%lu offset=%llu requested=%lu actual=%lu",(unsigned long)part,offset,(unsigned long)requested,(unsigned long)payload.length]}];return NO;}
+        if(fwrite(payload.bytes,1,payload.length,stdout)!=payload.length){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"partial stream output failed"}];return NO;}
+        offset+=payload.length;part++;
+        if(part%16==0||offset==objectSize)fprintf(stderr,"MTP_PARTIAL\tpart=%lu\toffset=%llu\trequested=%lu\tactual=%lu\tresponse=0x2001\n",(unsigned long)(part-1),offset-payload.length,(unsigned long)requested,(unsigned long)payload.length);
+    }
+    fflush(stdout);if(bytesWritten)*bytesWritten=offset;return offset==objectSize;
+}
 static BOOL PrepareForObjectRead(NSError **error) {
     NSDictionary *storages=Storages();
     if (![storages[@"ok"] boolValue]) {
@@ -278,7 +299,7 @@ static NSUInteger EndpointMaxPacketSize(void) {
     const IOUSBHostIOSourceDescriptors *descriptors=gIn.descriptors;
     return descriptors ? (CFSwapInt16LittleToHost(descriptors->descriptor.wMaxPacketSize)&0x7ff) : 0;
 }
-static int StreamTest(NSString *logicalPath, NSString *readSize, NSString *transport) {
+static int StreamTest(NSString *logicalPath, NSString *readSize, NSString *transport, NSString *mtpMode, NSUInteger partialSize) {
     NSDictionary *opened=OpenControlSession();
     if(![opened[@"ok"] boolValue]){fprintf(stderr,"android-mtp stream-test failed: open_control_session: %s\n",[opened[@"error"] UTF8String]);Close();return 3;}
     NSDictionary *selected=FirstMediaInFolder(logicalPath);
@@ -288,16 +309,16 @@ static int StreamTest(NSString *logicalPath, NSString *readSize, NSString *trans
     NSUInteger streamChunk=[readSize isEqualToString:@"max-packet"]?endpointPacket:kDefaultStreamChunk;
     if(streamChunk==0){fprintf(stderr,"android-mtp stream-test failed: invalid endpoint max packet size\n");Close();return 3;}
     if([transport isEqualToString:@"async-pingpong"])streamChunk=kDefaultStreamChunk;
-    fprintf(stderr,"MTP_STREAM_CONFIG\ttransport=%s\tread_size_mode=%s\tread_size=%lu\tendpoint_max_packet=%lu\n",transport.UTF8String,readSize.UTF8String,(unsigned long)streamChunk,(unsigned long)endpointPacket);
+    fprintf(stderr,"MTP_STREAM_CONFIG\tmtp_mode=%s\tpartial_supported=%s\tpartial64_supported=%s\tpartial_size=%lu\ttransport=%s\tread_size_mode=%s\tread_size=%lu\tendpoint_max_packet=%lu\n",mtpMode.UTF8String,gSupportsPartialObject?"yes":"no",gSupportsPartialObject64?"yes":"no",(unsigned long)partialSize,transport.UTF8String,readSize.UTF8String,(unsigned long)streamChunk,(unsigned long)endpointPacket);
     uint64_t transferred=0;NSError *error=nil;
-    BOOL ok=StreamObject([item[@"object_id"] unsignedIntValue],streamChunk,transport,&transferred,&error);
+    BOOL ok=[mtpMode isEqualToString:@"partial"]?StreamPartialObject([item[@"object_id"] unsignedIntValue],[item[@"size_bytes"] unsignedLongLongValue],partialSize,&transferred,&error):StreamObject([item[@"object_id"] unsignedIntValue],streamChunk,transport,&transferred,&error);
     if(!ok)fprintf(stderr,"android-mtp stream-test failed: %s\n",StageError(@"stream_object",error).localizedDescription.UTF8String);
     else fprintf(stderr,"PHOTOVAULT_STREAM_RESULT\t%llu\t%u\n",transferred,[item[@"size_bytes"] unsignedIntValue]);
     Close();return ok?0:3;
 }
 int main(int argc,const char **argv){
     @autoreleasepool {
-        if((argc==3||argc==7)&&strcmp(argv[1],"--stream-test")==0){NSString *transport=argc==7?[NSString stringWithUTF8String:argv[4]]:@"synchronous";NSString *readSize=argc==7?[NSString stringWithUTF8String:argv[6]]:@"16k";return StreamTest([NSString stringWithUTF8String:argv[2]],readSize,transport);}
+        if((argc==3||argc==11)&&strcmp(argv[1],"--stream-test")==0){NSString *mtpMode=argc==11?[NSString stringWithUTF8String:argv[4]]:@"full";NSUInteger partialSize=argc==11?(NSUInteger)strtoul(argv[6],NULL,10):65536;NSString *transport=argc==11?[NSString stringWithUTF8String:argv[8]]:@"synchronous";NSString *readSize=argc==11?[NSString stringWithUTF8String:argv[10]]:@"16k";return StreamTest([NSString stringWithUTF8String:argv[2]],readSize,transport,mtpMode,partialSize);}
         if(argc==3&&strcmp(argv[1],"--stream")==0){
             NSError *error=nil;BOOL ok=Open(&error);
             if(!ok)error=StageError(@"open_session",error);
