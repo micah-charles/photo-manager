@@ -17,6 +17,53 @@ class AndroidSourceUnavailable(RuntimeError):
     """Raised when the optional native Android adapter cannot be used."""
 
 
+def stream_test_folder(
+    helper: Path,
+    logical_path: str,
+    sink: BinaryIO,
+    *,
+    runner=subprocess.Popen,
+) -> dict[str, int | float]:
+    """Resolve and stream one JPEG in one native process and MTP session."""
+    if platform.system() != "Darwin":
+        raise AndroidSourceUnavailable("Android MTP is unavailable on this platform")
+    if not helper.exists():
+        raise AndroidSourceUnavailable(f"native helper not found: {helper}")
+    started = time.monotonic()
+    process = runner(
+        [str(helper), "--stream-test", logical_path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    bytes_received = 0
+    if process.stdout is None:
+        raise AndroidSourceUnavailable("native stream stdout is unavailable")
+    try:
+        while chunk := process.stdout.read(256 * 1024):
+            sink.write(chunk)
+            bytes_received += len(chunk)
+    finally:
+        process.stdout.close()
+    stderr = process.stderr.read().decode(errors="replace") if process.stderr else ""
+    return_code = process.wait(timeout=30)
+    if return_code != 0:
+        raise AndroidSourceUnavailable(stderr.strip() or f"native stream exited with {return_code}")
+    marker = next((line for line in stderr.splitlines() if line.startswith("PHOTOVAULT_STREAM_RESULT\t")), "")
+    fields = marker.split("\t")
+    native_bytes = int(fields[1]) if len(fields) == 3 else bytes_received
+    expected_bytes = int(fields[2]) if len(fields) == 3 else bytes_received
+    if bytes_received != native_bytes or native_bytes != expected_bytes:
+        raise AndroidSourceUnavailable(
+            f"stream size mismatch: expected {expected_bytes}, native {native_bytes}, received {bytes_received}"
+        )
+    elapsed = time.monotonic() - started
+    return {
+        "bytes_received": bytes_received,
+        "elapsed_seconds": elapsed,
+        "bytes_per_second": bytes_received / elapsed if elapsed else 0.0,
+    }
+
+
 class JsonLineBridge:
     """Small request/response bridge; media bytes never travel through JSON."""
 

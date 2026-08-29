@@ -104,6 +104,9 @@ def parser() -> argparse.ArgumentParser:
     stream = android_sub.add_parser("stream", help="stream one object to a discard sink")
     stream.add_argument("object_id")
     stream.add_argument("--helper", type=Path, default=_default_android_helper())
+    stream_test = android_sub.add_parser("stream-test", help="resolve and stream one JPEG in a single MTP session")
+    stream_test.add_argument("logical_path", nargs="?", default="DCIM/Camera")
+    stream_test.add_argument("--helper", type=Path, default=_default_android_helper())
     import_one = android_sub.add_parser("import-one", help="copy one Android object with verification")
     import_one.add_argument("object_id")
     import_one.add_argument("destination_root", type=Path)
@@ -137,9 +140,20 @@ def main() -> int:
 
 def _dispatch(args: argparse.Namespace, connection) -> int:
     if args.command == "android":
-        from photovault.sources.android import AndroidMacMtpSource, AndroidSourceUnavailable
+        from photovault.sources.android import AndroidMacMtpSource, AndroidSourceUnavailable, stream_test_folder
         from photovault.catalog.sources import record_source_items, register_source
 
+        if args.android_command == "stream-test":
+            import os
+
+            try:
+                with open(os.devnull, "wb") as sink:
+                    metrics = stream_test_folder(args.helper, args.logical_path, sink)
+                print(f"STREAM_TEST\t{args.logical_path}\t{metrics['bytes_received']}\t{metrics['elapsed_seconds']:.3f}\t{metrics['bytes_per_second']:.0f}")
+                return 0
+            except AndroidSourceUnavailable as exc:
+                print(f"ANDROID_UNAVAILABLE\t{exc}")
+                return 2
         try:
             source = AndroidMacMtpSource.from_helper(args.helper)
         except AndroidSourceUnavailable as exc:

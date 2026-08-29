@@ -146,7 +146,7 @@ static NSDictionary *Children(NSNumber *parent, NSUInteger offset, NSUInteger li
     id next=end<handles.count?@(end):[NSNull null];
     return @{@"ok":@YES,@"items":items,@"total":@(handles.count),@"next_offset":next};
 }
-static BOOL StreamObject(uint32_t handle, NSError **error) {
+static BOOL StreamObject(uint32_t handle, uint64_t *bytesWritten, NSError **error) {
     NSMutableData *cmd=[NSMutableData data]; P32(cmd,16); uint8_t commandType[2]={1,0}; [cmd appendBytes:commandType length:2]; uint8_t c[2]={9,0x10}; [cmd appendBytes:c length:2]; uint32_t tx=gTx++; P32(cmd,tx); P32(cmd,handle);
     NSUInteger sent=0; NSError *e=nil;
     if (![gOut sendIORequestWithData:cmd bytesTransferred:&sent completionTimeout:kTimeout error:&e]) { if(error)*error=StageError(@"GetObject command send",e); return NO; }
@@ -154,10 +154,10 @@ static BOOL StreamObject(uint32_t handle, NSError **error) {
     if(first.length<12){if(error)*error=[NSError errorWithDomain:@"MTP" code:30 userInfo:@{NSLocalizedDescriptionKey:@"GetObject response header truncated"}];return NO;}
     const uint8_t *p=first.bytes; uint32_t total=U32(p); uint16_t type=U16(p+4), code=U16(p+6); uint32_t responseTx=U32(p+8);
     if(total<12 || type!=2 || code!=0x1009 || responseTx!=tx){if(error)*error=[NSError errorWithDomain:@"MTP" code:31 userInfo:@{NSLocalizedDescriptionKey:@"invalid GetObject data header"}];return NO;}
-    uint64_t remaining=(uint64_t)total-12; NSUInteger firstPayload=first.length-12; NSUInteger emit=(NSUInteger)MIN((uint64_t)firstPayload,remaining);
+    uint64_t objectLength=(uint64_t)total-12;uint64_t remaining=objectLength; NSUInteger firstPayload=first.length-12; NSUInteger emit=(NSUInteger)MIN((uint64_t)firstPayload,remaining);
     if(emit && fwrite((const uint8_t *)first.bytes+12,1,emit,stdout)!=emit){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;} remaining-=emit;
     while(remaining){NSData *chunk=nil;if(!Receive(&chunk,&e)){if(error)*error=StageError(@"GetObject data receive",e);return NO;}if(chunk.length==0){if(error)*error=[NSError errorWithDomain:@"MTP" code:33 userInfo:@{NSLocalizedDescriptionKey:@"empty GetObject data chunk"}];return NO;}NSUInteger n=(NSUInteger)MIN((uint64_t)chunk.length,remaining);if(fwrite(chunk.bytes,1,n,stdout)!=n){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;}remaining-=n;}
-    fflush(stdout); NSData *status=nil;if(!Receive(&status,&e)){if(error)*error=StageError(@"GetObject status receive",e);return NO;}uint16_t stype,scode;uint32_t stx;NSData *sp;if(!Parse(status,&stype,&scode,&stx,&sp,&e)||stype!=3||scode!=0x2001||stx!=tx){if(error)*error=StageError(@"GetObject status parse",e);return NO;}return YES;
+    fflush(stdout); NSData *status=nil;if(!Receive(&status,&e)){if(error)*error=StageError(@"GetObject status receive",e);return NO;}uint16_t stype,scode;uint32_t stx;NSData *sp;if(!Parse(status,&stype,&scode,&stx,&sp,&e)||stype!=3||scode!=0x2001||stx!=tx){if(error)*error=StageError(@"GetObject status parse",e);return NO;}if(bytesWritten)*bytesWritten=objectLength;return YES;
 }
 static BOOL PrepareForObjectRead(NSError **error) {
     NSDictionary *storages=Storages();
@@ -180,13 +180,46 @@ static NSDictionary *OpenControlSession(void) {
     if(!Open(&error))return Error([NSString stringWithFormat:@"fresh traversal session failed: %@",error.localizedDescription]);
     return reply;
 }
+static NSDictionary *FirstMediaInFolder(NSString *logicalPath) {
+    NSNumber *parent=nil;
+    for(NSString *component in [logicalPath componentsSeparatedByString:@"/"]){
+        if(component.length==0)continue;
+        NSDictionary *found=FindChild(parent,component);
+        if(![found[@"ok"] boolValue])return found;
+        id item=found[@"item"];
+        if(item==[NSNull null])return Error([NSString stringWithFormat:@"folder not found: %@",component]);
+        parent=item[@"object_id"];
+    }
+    NSError *error=nil;NSArray<NSNumber*>*handles=ObjectHandles(parent,&error);
+    if(!handles)return Error(error.localizedDescription);
+    for(NSNumber *handle in handles){
+        NSDictionary *info=ObjectInfo(handle.unsignedIntValue);
+        if(![info[@"ok"] boolValue])return info;
+        NSDictionary *item=info[@"item"];
+        if([item[@"format"] unsignedIntValue]==0x3801)return info;
+    }
+    return Error(@"no JPEG object found in folder");
+}
+static int StreamTest(NSString *logicalPath) {
+    NSDictionary *opened=OpenControlSession();
+    if(![opened[@"ok"] boolValue]){fprintf(stderr,"android-mtp stream-test failed: open_control_session: %s\n",[opened[@"error"] UTF8String]);Close();return 3;}
+    NSDictionary *selected=FirstMediaInFolder(logicalPath);
+    if(![selected[@"ok"] boolValue]){fprintf(stderr,"android-mtp stream-test failed: resolve_media: %s\n",[selected[@"error"] UTF8String]);Close();return 3;}
+    NSDictionary *item=selected[@"item"];
+    uint64_t transferred=0;NSError *error=nil;
+    BOOL ok=StreamObject([item[@"object_id"] unsignedIntValue],&transferred,&error);
+    if(!ok)fprintf(stderr,"android-mtp stream-test failed: %s\n",StageError(@"stream_object",error).localizedDescription.UTF8String);
+    else fprintf(stderr,"PHOTOVAULT_STREAM_RESULT\t%llu\t%u\n",transferred,[item[@"size_bytes"] unsignedIntValue]);
+    Close();return ok?0:3;
+}
 int main(int argc,const char **argv){
     @autoreleasepool {
+        if(argc==3&&strcmp(argv[1],"--stream-test")==0)return StreamTest([NSString stringWithUTF8String:argv[2]]);
         if(argc==3&&strcmp(argv[1],"--stream")==0){
             NSError *error=nil;BOOL ok=Open(&error);
             if(!ok)error=StageError(@"open_session",error);
             else if(!PrepareForObjectRead(&error)){error=StageError(@"prepare_object_read",error);ok=NO;}
-            else if(!StreamObject((uint32_t)strtoul(argv[2],NULL,10),&error)){error=StageError(@"stream_object",error);ok=NO;}
+            else if(!StreamObject((uint32_t)strtoul(argv[2],NULL,10),NULL,&error)){error=StageError(@"stream_object",error);ok=NO;}
             if(!ok)fprintf(stderr,"android-mtp stream failed: %s\n",error.localizedDescription.UTF8String);
             Close();return ok?0:3;
         }

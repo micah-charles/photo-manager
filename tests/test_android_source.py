@@ -3,7 +3,10 @@ from __future__ import annotations
 import unittest
 from datetime import datetime
 
-from photovault.sources.android import AndroidMacMtpSource, JsonLineBridge
+from pathlib import Path
+from unittest.mock import patch
+
+from photovault.sources.android import AndroidMacMtpSource, JsonLineBridge, stream_test_folder
 from photovault.sources.base import SourceIdentity, SourceStorage
 
 
@@ -25,6 +28,38 @@ class FakeBridge:
 
 
 class AndroidSourceTests(unittest.TestCase):
+    @patch("photovault.sources.android.platform.system", return_value="Darwin")
+    def test_atomic_stream_test_verifies_native_byte_count(self, _system) -> None:
+        class Reader:
+            def __init__(self, chunks):
+                self.chunks = iter(chunks)
+
+            def read(self, _size=-1):
+                return next(self.chunks, b"")
+
+            def close(self):
+                pass
+
+        class Process:
+            stdout = Reader([b"abc", b"def"])
+            stderr = Reader([b"PHOTOVAULT_STREAM_RESULT\t6\t6\n"])
+
+            def wait(self, timeout):
+                return 0
+
+        class Sink:
+            data = bytearray()
+
+            def write(self, chunk):
+                self.data.extend(chunk)
+
+        sink = Sink()
+        helper = Path(__file__)
+        metrics = stream_test_folder(helper, "DCIM/Camera", sink, runner=lambda *args, **kwargs: Process())
+
+        self.assertEqual(bytes(sink.data), b"abcdef")
+        self.assertEqual(metrics["bytes_received"], 6)
+
     def test_normalizes_storage_and_object_metadata(self) -> None:
         bridge = FakeBridge()
         identity = SourceIdentity("android_test", "Google", "Pixel 8 Pro", "Pixel 8 Pro", "test")
