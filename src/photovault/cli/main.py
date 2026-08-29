@@ -106,6 +106,7 @@ def parser() -> argparse.ArgumentParser:
     stream.add_argument("--helper", type=Path, default=_default_android_helper())
     stream_test = android_sub.add_parser("stream-test", help="resolve and stream one JPEG in a single MTP session")
     stream_test.add_argument("logical_path", nargs="?", default="DCIM/Camera")
+    stream_test.add_argument("--read-size", choices=["16k", "max-packet"], default="16k")
     stream_test.add_argument("--helper", type=Path, default=_default_android_helper())
     import_one = android_sub.add_parser("import-one", help="copy one Android object with verification")
     import_one.add_argument("object_id")
@@ -148,8 +149,8 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
 
             try:
                 with open(os.devnull, "wb") as sink:
-                    metrics = stream_test_folder(args.helper, args.logical_path, sink)
-                print(f"STREAM_TEST\t{args.logical_path}\t{metrics['bytes_received']}\t{metrics['elapsed_seconds']:.3f}\t{metrics['bytes_per_second']:.0f}")
+                    metrics = stream_test_folder(args.helper, args.logical_path, sink, read_size=args.read_size)
+                print(f"STREAM_TEST\t{args.logical_path}\t{args.read_size}\t{metrics['bytes_received']}\t{metrics['elapsed_seconds']:.3f}\t{metrics['bytes_per_second']:.0f}")
                 return 0
             except AndroidSourceUnavailable as exc:
                 print(f"ANDROID_UNAVAILABLE\t{exc}")
