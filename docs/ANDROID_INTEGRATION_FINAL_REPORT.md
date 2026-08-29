@@ -26,7 +26,7 @@ thumbnails, duplicate intelligence, and destinations.
 - Level 1 — PASS: Photo Manager audit.
 - Level 2 — PASS: generic PhotoSource and normalized identity/item contracts.
 - Level 3 — PASS: native macOS Android helper migrated and arm64 compiled.
-- Level 4 — PENDING: Pixel detected through PhotoVault CLI from an unsandboxed Terminal.
+- Level 4 — PASS: Pixel 8 Pro detected through PhotoVault CLI from the user's unsandboxed Terminal.
 - Level 5 — PENDING: DCIM/Camera listed through PhotoVault CLI.
 - Level 6 — PENDING: one media object streamed and discarded on hardware.
 - Level 7 — CODE READY, HARDWARE PENDING: one controlled media object copied.
