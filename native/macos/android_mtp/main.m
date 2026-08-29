@@ -51,7 +51,10 @@ static io_service_t FindInterface(void) {
 }
 static BOOL ReceiveSized(NSUInteger capacity, NSData **result, NSError **error) {
     NSMutableData *buffer=[NSMutableData dataWithLength:capacity]; NSUInteger n=0; NSError *e=nil;
-    if (![gIn sendIORequestWithData:buffer bytesTransferred:&n completionTimeout:kTimeout error:&e]) { if(error)*error=e; return NO; }
+    if (![gIn sendIORequestWithData:buffer bytesTransferred:&n completionTimeout:kTimeout error:&e]) {
+        if(error)*error=[NSError errorWithDomain:@"MTP.Transport" code:e.code userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"bulk-in endpoint=0x81 requested=%lu actual=%lu timeout=%.1fs underlying=%@(%ld) %@",(unsigned long)capacity,(unsigned long)n,kTimeout,e.domain,(long)e.code,e.localizedDescription]}];
+        return NO;
+    }
     [buffer setLength:n]; *result=buffer; return YES;
 }
 static BOOL Receive(NSData **result, NSError **error) { return ReceiveSized(kMax,result,error); }
@@ -165,8 +168,10 @@ static BOOL StreamObject(uint32_t handle, uint64_t *bytesWritten, NSError **erro
     const uint8_t *p=first.bytes; uint32_t total=U32(p); uint16_t type=U16(p+4), code=U16(p+6); uint32_t responseTx=U32(p+8);
     if(total<12 || type!=2 || code!=0x1009 || responseTx!=tx){if(error)*error=[NSError errorWithDomain:@"MTP" code:31 userInfo:@{NSLocalizedDescriptionKey:@"invalid GetObject data header"}];return NO;}
     uint64_t objectLength=(uint64_t)total-12;uint64_t remaining=objectLength; NSUInteger firstPayload=first.length-12; NSUInteger emit=(NSUInteger)MIN((uint64_t)firstPayload,remaining);
+    fprintf(stderr,"MTP_STREAM_TRACE\tfirst_read=%lu\tcontainer_length=%u\tinitial_payload=%lu\n",(unsigned long)first.length,total,(unsigned long)emit);
     if(emit && fwrite((const uint8_t *)first.bytes+12,1,emit,stdout)!=emit){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;} remaining-=emit;
-    while(remaining){NSData *chunk=nil;if(!ReceiveStreamChunk((NSUInteger)MIN((uint64_t)kStreamChunk,remaining),&chunk,&e)){if(error)*error=StageError(@"GetObject data receive",e);return NO;}if(chunk.length==0){if(error)*error=[NSError errorWithDomain:@"MTP" code:33 userInfo:@{NSLocalizedDescriptionKey:@"empty GetObject data chunk"}];return NO;}NSUInteger n=(NSUInteger)MIN((uint64_t)chunk.length,remaining);if(fwrite(chunk.bytes,1,n,stdout)!=n){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;}remaining-=n;}
+    NSUInteger chunkIndex=0;uint64_t offset=emit;
+    while(remaining){NSData *chunk=nil;NSUInteger requested=(NSUInteger)MIN((uint64_t)kStreamChunk,remaining);chunkIndex++;if(!ReceiveStreamChunk(requested,&chunk,&e)){if(error)*error=StageError([NSString stringWithFormat:@"GetObject data receive chunk=%lu offset=%llu remaining=%llu",(unsigned long)chunkIndex,offset,remaining],e);return NO;}if(chunk.length==0){if(error)*error=[NSError errorWithDomain:@"MTP" code:33 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"empty GetObject data chunk=%lu offset=%llu remaining=%llu",(unsigned long)chunkIndex,offset,remaining]}];return NO;}NSUInteger n=(NSUInteger)MIN((uint64_t)chunk.length,remaining);if(fwrite(chunk.bytes,1,n,stdout)!=n){if(error)*error=[NSError errorWithDomain:@"MTP" code:32 userInfo:@{NSLocalizedDescriptionKey:@"stream output failed"}];return NO;}remaining-=n;offset+=n;}
     fflush(stdout); NSData *status=nil;if(!ReceiveStreamChunk(kStreamChunk,&status,&e)){if(error)*error=StageError(@"GetObject status receive",e);return NO;}if(status.length==0&&!ReceiveStreamChunk(kStreamChunk,&status,&e)){if(error)*error=StageError(@"GetObject status receive after ZLP",e);return NO;}uint16_t stype,scode;uint32_t stx;NSData *sp;if(!Parse(status,&stype,&scode,&stx,&sp,&e)||stype!=3||scode!=0x2001||stx!=tx){if(error)*error=StageError(@"GetObject status parse",e);return NO;}if(bytesWritten)*bytesWritten=objectLength;return YES;
 }
 static BOOL PrepareForObjectRead(NSError **error) {
