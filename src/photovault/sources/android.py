@@ -47,7 +47,8 @@ class JsonLineBridge:
             raise AndroidSourceUnavailable(f"native helper exited without a response{detail}")
         response = json.loads(line)
         if not response.get("ok", False):
-            raise AndroidSourceUnavailable(response.get("error", "native helper request failed"))
+            detail = response.get("error", "native helper request failed")
+            raise AndroidSourceUnavailable(f"{operation}: {detail}")
         return response
 
     def close(self) -> None:
@@ -57,8 +58,11 @@ class JsonLineBridge:
         if self._process.stdin:
             self._process.stdin.close()
         if self._process.poll() is None:
-            self._process.terminate()
-            self._process.wait(timeout=5)
+            try:
+                self._process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._process.terminate()
+                self._process.wait(timeout=5)
 
 
 def _parse_datetime(value: str | None) -> datetime | None:

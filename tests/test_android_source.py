@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime
 
-from photovault.sources.android import AndroidMacMtpSource
+from photovault.sources.android import AndroidMacMtpSource, JsonLineBridge
 from photovault.sources.base import SourceIdentity
 
 
@@ -43,6 +43,38 @@ class AndroidSourceTests(unittest.TestCase):
         source = AndroidMacMtpSource(FakeBridge(), SourceIdentity("id", "Google", "Pixel", "Pixel", "test"))
         self.assertIn("list_children", source.capabilities())
         self.assertIn("stream_object", source.capabilities())
+
+    def test_bridge_allows_helper_to_exit_cleanly_before_terminating(self) -> None:
+        class Input:
+            closed = False
+
+            def close(self) -> None:
+                self.closed = True
+
+        class Process:
+            def __init__(self) -> None:
+                self.stdin = Input()
+                self.stdout = None
+                self.stderr = None
+                self.terminated = False
+                self.waited = False
+
+            def poll(self):
+                return None
+
+            def wait(self, timeout):
+                self.waited = True
+                return 0
+
+            def terminate(self):
+                self.terminated = True
+
+        process = Process()
+        bridge = JsonLineBridge(["helper"], runner=lambda *args, **kwargs: process)
+        bridge.close()
+        self.assertTrue(process.stdin.closed)
+        self.assertTrue(process.waited)
+        self.assertFalse(process.terminated)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@
 #import <CommonCrypto/CommonDigest.h>
 #import <string.h>
 #import <stdlib.h>
+#import "optional_payload.h"
 
 static const NSUInteger kMax = 1024 * 1024;
 static const uint32_t kRootQuery = 0xffffffff;
@@ -57,22 +58,32 @@ static BOOL Command(uint16_t op, uint32_t tx, NSArray<NSNumber *> *params, NSDat
     if(!Parse(raw,&ctype,&code,&rtx,&payload,error) || rtx!=tx) return NO;
     if(ctype==2) {
         if (code!=op) { if(error)*error=[NSError errorWithDomain:@"MTP" code:3 userInfo:@{NSLocalizedDescriptionKey:@"unexpected data code"}]; return NO; }
-        *dataPayload=payload; if(!Receive(&raw,error)) return NO; if(!Parse(raw,&ctype,&code,&rtx,&payload,error)) return NO;
-    } else *dataPayload=nil;
+        PBStoreOptionalPayload(dataPayload,payload); if(!Receive(&raw,error)) return NO; if(!Parse(raw,&ctype,&code,&rtx,&payload,error)) return NO;
+    } else PBStoreOptionalPayload(dataPayload,nil);
     if(ctype!=3 || code!=0x2001 || rtx!=tx) { if(error)*error=[NSError errorWithDomain:@"MTP" code:4 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"MTP response 0x%04x",code]}]; return NO; }
     return YES;
 }
 static BOOL Open(NSError **error) {
-    io_service_t service=FindInterface(); if(!service){if(error)*error=[NSError errorWithDomain:@"MTP" code:5 userInfo:@{NSLocalizedDescriptionKey:@"Pixel MTP interface not found"}];return NO;}
-    NSError *e=nil; gInterface=[[IOUSBHostInterface alloc] initWithIOService:service options:IOUSBHostObjectInitOptionsNone queue:nil error:&e interestHandler:nil]; IOObjectRelease(service);
-    if(!gInterface){if(error)*error=e;return NO;} gIn=[gInterface copyPipeWithAddress:0x81 error:&e]; gOut=[gInterface copyPipeWithAddress:0x01 error:&e]; if(!gIn||!gOut){if(error)*error=e;return NO;}
+    io_service_t service=FindInterface();
+    if(!service){if(error)*error=[NSError errorWithDomain:@"MTP" code:5 userInfo:@{NSLocalizedDescriptionKey:@"Pixel MTP interface not found"}];return NO;}
+    NSError *e=nil;
+    gInterface=[[IOUSBHostInterface alloc] initWithIOService:service options:IOUSBHostObjectInitOptionsNone queue:nil error:&e interestHandler:nil];
+    IOObjectRelease(service);
+    if(!gInterface){if(error)*error=e;return NO;}
+    gIn=[gInterface copyPipeWithAddress:0x81 error:&e];
+    gOut=[gInterface copyPipeWithAddress:0x01 error:&e];
+    if(!gIn||!gOut){if(error)*error=e;return NO;}
     NSMutableData *session=[NSMutableData data]; P32(session,1);
     NSMutableData *cmd=[NSMutableData data]; P32(cmd,16); uint8_t t[2]={1,0};[cmd appendBytes:t length:2];uint8_t c[2]={2,0x10};[cmd appendBytes:c length:2];P32(cmd,0);[cmd appendData:session];
     NSUInteger sent=0; if(![gOut sendIORequestWithData:cmd bytesTransferred:&sent completionTimeout:kTimeout error:&e]){if(error)*error=e;return NO;}
-    NSData *raw; if(!Receive(&raw,&e)){if(error)*error=e;return NO;} uint16_t ty,co;uint32_t rt;NSData *pl;if(!Parse(raw,&ty,&co,&rt,&pl,&e)||ty!=3||co!=0x2001){if(error)*error=e;return NO;} gOpen=YES; return YES;
+    NSData *raw; if(!Receive(&raw,&e)){if(error)*error=e;return NO;}
+    uint16_t ty,co;uint32_t rt;NSData *pl;
+    if(!Parse(raw,&ty,&co,&rt,&pl,&e)){if(error)*error=e;return NO;}
+    if(ty!=3||co!=0x2001){if(error)*error=[NSError errorWithDomain:@"MTP" code:6 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"OpenSession response 0x%04x",co]}];return NO;}
+    gTx=1;gOpen=YES;return YES;
 }
 static void Close(void) {
-    if(!gOpen)return; NSError *e=nil; Command(0x1003,gTx++,@[],NULL,&e); [gInterface destroy]; gInterface=nil;gIn=nil;gOut=nil;gOpen=NO;
+    NSError *e=nil; if(gOpen)Command(0x1003,gTx++,@[],NULL,&e); if(gInterface)[gInterface destroy]; gInterface=nil;gIn=nil;gOut=nil;gOpen=NO;
 }
 static NSDictionary *DeviceInfo(void) {
     NSError *e=nil; NSData *d=nil; if(!Command(0x1001,gTx++,@[],&d,&e))return Error(e.localizedDescription);
@@ -89,7 +100,7 @@ static NSDictionary *ObjectInfo(uint32_t handle) {
     NSError*e=nil;NSData*d=nil;if(!Command(0x1008,gTx++,@[@(handle)],&d,&e))return Error(e.localizedDescription);if(d.length<52)return Error(@"ObjectInfo truncated");const uint8_t*p=d.bytes;uint32_t parent=U32(p+38);uint16_t format=U16(p+4);uint32_t size=U32(p+8);NSUInteger o=52;NSString*n=MTPString(d,&o),*created=MTPString(d,&o),*modified=MTPString(d,&o),*keywords=MTPString(d,&o);if(!n||!created||!modified||!keywords)return Error(@"ObjectInfo strings truncated");return @{@"ok":@YES,@"item":@{@"object_id":@(handle),@"parent_id":@(parent),@"name":n,@"format":@(format),@"size_bytes":@(size),@"created_at":created,@"modified_at":modified}};
 }
 static NSDictionary *Children(NSNumber *parent) {
-    uint32_t query=parent ? parent.unsignedIntValue : kRootQuery;NSError*e=nil;NSData*d=nil;if(!Command(0x1007,gTx++,@[@65537,@0,@(query)],&d,&e))return Error(e.localizedDescription);if(d.length<4)return Error(@"ObjectHandles truncated");const uint8_t*p=d.bytes;uint32_t n=U32(p);if(n>10000||d.length<4+n*4)return Error(@"ObjectHandles invalid");NSMutableArray*a=[NSMutableArray array];for(uint32_t i=0;i<n;i++){uint32_t h=U32((const uint8_t*)d.bytes+4+i*4);NSDictionary*info=ObjectInfo(h);if(!info[@"ok"])return info;[a addObject:info[@"item"]];}return @{@"ok":@YES,@"items":a};
+    uint32_t query=parent ? parent.unsignedIntValue : kRootQuery;NSError*e=nil;NSData*d=nil;uint32_t handlesTx=gTx++;if(!Command(0x1007,handlesTx,@[@65537,@0,@(query)],&d,&e))return Error([NSString stringWithFormat:@"GetObjectHandles parent=%u tx=%u failed: %@",query,handlesTx,e.localizedDescription]);if(d.length<4)return Error(@"ObjectHandles truncated");const uint8_t*p=d.bytes;uint32_t n=U32(p);if(n>10000||d.length<4+n*4)return Error(@"ObjectHandles invalid");NSMutableArray*a=[NSMutableArray array];for(uint32_t i=0;i<n;i++){uint32_t h=U32((const uint8_t*)d.bytes+4+i*4);NSDictionary*info=ObjectInfo(h);if(!info[@"ok"])return Error([NSString stringWithFormat:@"GetObjectInfo index=%u/%u handle=%u failed: %@",i+1,n,h,info[@"error"]]);[a addObject:info[@"item"]];}return @{@"ok":@YES,@"items":a};
 }
 static BOOL StreamObject(uint32_t handle, NSError **error) {
     NSMutableData *cmd=[NSMutableData data]; P32(cmd,16); uint8_t commandType[2]={1,0}; [cmd appendBytes:commandType length:2]; uint8_t c[2]={9,0x10}; [cmd appendBytes:c length:2]; uint32_t tx=gTx++; P32(cmd,tx); P32(cmd,handle);
