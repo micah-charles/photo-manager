@@ -14,3 +14,5 @@ dist/
 *.egg-info/
 *.ses
 native/macos/android_mtp/photovault-android-mtp
+native/macos/android_mtp_libusb/photovault-android-libusb-mtp
+android-companion/build/
