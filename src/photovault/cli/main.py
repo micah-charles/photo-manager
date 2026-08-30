@@ -122,6 +122,15 @@ def parser() -> argparse.ArgumentParser:
     import_folder.add_argument("destination_root", type=Path)
     import_folder.add_argument("--destination-volume", required=True)
     import_folder.add_argument("--helper", type=Path, default=_default_android_helper())
+    wifi = sub.add_parser("android-wifi", help="inspect the Android Companion Wi-Fi POC")
+    wifi.add_argument("--url", required=True)
+    wifi.add_argument("--token", required=True)
+    wifi_sub = wifi.add_subparsers(dest="wifi_command", required=True)
+    wifi_sub.add_parser("devices")
+    wifi_list = wifi_sub.add_parser("list")
+    wifi_list.add_argument("--limit", type=int, default=100)
+    wifi_stream = wifi_sub.add_parser("stream")
+    wifi_stream.add_argument("object_id")
     sub.add_parser("gui", help="launch the optional PySide6 desktop UI")
     return p
 
@@ -143,6 +152,26 @@ def main() -> int:
 
 
 def _dispatch(args: argparse.Namespace, connection) -> int:
+    if args.command == "android-wifi":
+        import os
+        from photovault.sources.android_wifi import AndroidCompanionUnavailable, AndroidCompanionWifiSource
+
+        source = AndroidCompanionWifiSource(args.url, args.token)
+        try:
+            if args.wifi_command == "devices":
+                item = source.identity()
+                print(f"DEVICE\t{item.display_name}\t{item.model}\t{item.adapter}")
+            elif args.wifi_command == "list":
+                for item in list(source.list_children(None))[:args.limit]:
+                    print(f"ITEM\t{item.object_id}\t{item.name}\t{item.media_type}\t{item.size_bytes}")
+            else:
+                with open(os.devnull, "wb") as sink:
+                    metrics = source.stream_object(args.object_id, sink)
+                print(f"STREAM\t{args.object_id}\t{metrics['bytes_received']}\t{metrics['elapsed_seconds']:.3f}\t{metrics['bytes_per_second']:.0f}")
+            return 0
+        except AndroidCompanionUnavailable as exc:
+            print(f"ANDROID_COMPANION_UNAVAILABLE\t{exc}")
+            return 2
     if args.command == "android":
         from photovault.sources.android import AndroidMacMtpSource, AndroidSourceUnavailable, stream_test_folder
         from photovault.catalog.sources import record_source_items, register_source
