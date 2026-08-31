@@ -52,6 +52,7 @@ class AndroidWifiTests(unittest.TestCase):
             self.assertEqual(folders[0].relative_path, "DCIM/Camera/")
             self.assertEqual((folders[0].count, folders[0].size_bytes), (2, 9))
             self.assertEqual(source.folder_count("DCIM/Camera"), 2)
-            self.assertEqual(source.list_folder_page("DCIM/Camera", offset=500, limit=500)[0].name, "camera.jpg")
+            self.assertEqual(source.list_folder_page("DCIM/Camera", offset=500, limit=500, oldest_first=True)[0].name, "camera.jpg")
         self.assertTrue(any("relative_path=DCIM%2FCamera" in url for url in seen))
         self.assertTrue(any("offset=500" in url for url in seen))
+        self.assertTrue(any("sort=oldest" in url for url in seen))

@@ -139,9 +139,14 @@ def parser() -> argparse.ArgumentParser:
     wifi_benchmark = wifi_sub.add_parser("benchmark-folder", help="read a folder to a discard sink and report payload throughput")
     wifi_benchmark.add_argument("relative_path")
     wifi_benchmark.add_argument("--limit", type=int, default=0, help="maximum files to read; 0 means every file")
+    wifi_benchmark.add_argument("--oldest-first", action="store_true")
+    wifi_benchmark.add_argument("--images-only", action="store_true")
     wifi_copy = wifi_sub.add_parser("copy-folder", help="review or verified-copy one Android folder to an external destination")
     wifi_copy.add_argument("relative_path")
     wifi_copy.add_argument("destination_root", type=Path, help="an existing directory under /Volumes")
+    wifi_copy.add_argument("--limit", type=int, default=0, help="maximum files to copy; 0 means every matching file")
+    wifi_copy.add_argument("--oldest-first", action="store_true")
+    wifi_copy.add_argument("--images-only", action="store_true")
     wifi_copy.add_argument("--confirm-copy", action="store_true", help="perform the reviewed copy; omission is a read-only plan")
     sub.add_parser("gui", help="launch the optional PySide6 desktop UI")
     return p
@@ -195,7 +200,8 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
             elif args.wifi_command == "benchmark-folder":
                 started = time.monotonic(); files = 0; received = 0
                 with open(os.devnull, "wb") as sink:
-                    for item in source.iter_folder(args.relative_path):
+                    for item in source.iter_folder(args.relative_path, oldest_first=args.oldest_first):
+                        if args.images_only and item.media_type != "IMAGE": continue
                         if args.limit and files >= args.limit: break
                         metrics = source.stream_object(item.object_id, sink)
                         files += 1; received += int(metrics["bytes_received"])
@@ -208,11 +214,15 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
                 destination = args.destination_root.expanduser().resolve()
                 if not destination.is_dir() or not str(destination).startswith("/Volumes/"):
                     raise AndroidCompanionUnavailable("copy destination must be an existing directory on an external /Volumes drive")
-                items = list(source.iter_folder(args.relative_path))
+                items = [item for item in source.iter_folder(args.relative_path, oldest_first=args.oldest_first) if not args.images_only or item.media_type == "IMAGE"]
+                if args.limit:
+                    items = items[:args.limit]
                 import_items = [SourceImportItem(
                     item.object_id, f"{args.relative_path.strip('/')}/{item.name}", item.size_bytes,
                     media_type=item.media_type, modified_at=item.modified_at,
                 ) for item in items]
+                if len({item.relative_path for item in import_items}) != len(import_items):
+                    raise AndroidCompanionUnavailable("selected items contain duplicate destination names; no copy was started")
                 destination_volume = register_volume(connection, destination)
                 plan = plan_source_import(connection, source, import_items, destination, destination_volume)
                 conflicts = sum(1 for decision in plan if decision.status.value == "CONFLICT")

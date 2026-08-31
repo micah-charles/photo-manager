@@ -172,7 +172,8 @@ PYTHONPATH=src python3 -m photovault.cli \
 PYTHONPATH=src python3 -m photovault.cli \
   --catalog /Volumes/EXTERNAL_DRIVE/photovault-benchmark.db \
   android-wifi --url http://PHONE_IP:8765 --token TOKEN \
-  copy-folder DCIM/Camera /Volumes/EXTERNAL_DRIVE/PhotoVault-Camera-Test
+  copy-folder DCIM/Camera /Volumes/EXTERNAL_DRIVE/PhotoVault-Camera-Test \
+  --oldest-first --images-only --limit 1000
 # Add --confirm-copy only after checking the plan. Copies are atomically
 # written, SHA-256 verified, and never overwrite a conflicting destination.
 ```

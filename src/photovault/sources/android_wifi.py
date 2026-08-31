@@ -108,14 +108,17 @@ class AndroidCompanionWifiSource(PhotoSource):
     def folder_count(self, relative_path: str) -> int:
         return int(self._json("/api/media/count", params={"relative_path": relative_path})["count"])
 
-    def list_folder_page(self, relative_path: str, *, offset: int = 0, limit: int = 500) -> list[PhotoItem]:
-        rows = self._json("/api/media", params={"relative_path": relative_path, "offset": offset, "limit": min(500, max(1, limit))}).get("items", [])
+    def list_folder_page(self, relative_path: str, *, offset: int = 0, limit: int = 500, oldest_first: bool = False) -> list[PhotoItem]:
+        params: dict[str, object] = {"relative_path": relative_path, "offset": offset, "limit": min(500, max(1, limit))}
+        if oldest_first:
+            params["sort"] = "oldest"
+        rows = self._json("/api/media", params=params).get("items", [])
         return [self._item(row) for row in rows]
 
-    def iter_folder(self, relative_path: str, *, page_size: int = 500) -> Iterator[PhotoItem]:
+    def iter_folder(self, relative_path: str, *, page_size: int = 500, oldest_first: bool = False) -> Iterator[PhotoItem]:
         offset = 0
         while True:
-            page = self.list_folder_page(relative_path, offset=offset, limit=page_size)
+            page = self.list_folder_page(relative_path, offset=offset, limit=page_size, oldest_first=oldest_first)
             yield from page
             if len(page) < page_size:
                 return

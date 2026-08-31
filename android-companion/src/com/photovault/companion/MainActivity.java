@@ -92,7 +92,7 @@ public final class MainActivity extends Activity {
         if (snapshot == null) { status.setText("Local sharing is stopped. Choose a sharing duration above."); return; }
         String ip = localIpv4();
         status.setText("PhotoVault Companion — read-only POC\n" +
-            "Build: 0.5 — folder inventory\n\n" +
+            "Build: 0.6 — benchmark selection\n\n" +
             "Status: sharing active — " + snapshot.durationLabel + "\n" +
             "Desktop URL: http://" + ip + ":" + PORT + "\n" +
             "Token: " + snapshot.token + "\n\n" +
@@ -158,7 +158,10 @@ public final class MainActivity extends Activity {
                 query.putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS,new String[]{relativePath});
             }
             query.putString(ContentResolver.QUERY_ARG_SQL_SELECTION,selection);
-            query.putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER,MediaStore.MediaColumns.DATE_MODIFIED+" DESC");
+            String sort="oldest".equals(args.get("sort"))
+                ? MediaStore.MediaColumns.DATE_TAKEN+" ASC, "+MediaStore.MediaColumns.DATE_MODIFIED+" ASC"
+                : MediaStore.MediaColumns.DATE_MODIFIED+" DESC";
+            query.putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER,sort);
             query.putInt(ContentResolver.QUERY_ARG_LIMIT,limit);
             query.putInt(ContentResolver.QUERY_ARG_OFFSET,offset);
             try(Cursor c=resolver.query(uri,cols,query,null)){
