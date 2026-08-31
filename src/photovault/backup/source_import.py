@@ -7,10 +7,10 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Callable
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from photovault.catalog.sources import register_source
 from photovault.catalog.scanner import utc_now
@@ -117,6 +117,17 @@ def stream_source_to_file(
         if destination.exists():
             raise FileExistsError(f"destination appeared during import: {destination}")
         os.replace(partial, destination)
+        # Originals are sent byte-for-byte, preserving embedded EXIF/XMP/GPS and
+        # all container metadata. Also restore the filesystem modification time
+        # where the destination filesystem permits it.
+        if item.modified_at is not None:
+            modified = item.modified_at
+            if modified.tzinfo is None:
+                modified = modified.replace(tzinfo=timezone.utc)
+            try:
+                os.utime(destination, (modified.timestamp(), modified.timestamp()))
+            except OSError:
+                pass
         return {
             "object_id": item.object_id,
             "destination": str(destination),
@@ -129,6 +140,36 @@ def stream_source_to_file(
         if partial.exists():
             partial.unlink()
         raise
+
+
+def restore_import_modified_times(
+    connection: sqlite3.Connection,
+    destination_root: Path,
+    destination_volume_id: str,
+) -> dict[str, int]:
+    """Best-effort restoration of source mtime for already verified imports."""
+    restored = missing = unavailable = 0
+    rows = connection.execute(
+        "SELECT destination_relative_path, source_modified_at FROM source_imports WHERE destination_volume_id=?",
+        (destination_volume_id,),
+    )
+    for relative_path, recorded_time in rows:
+        if not recorded_time:
+            unavailable += 1
+            continue
+        destination = _safe_destination(destination_root, relative_path)
+        if not destination.is_file():
+            missing += 1
+            continue
+        try:
+            modified = datetime.fromisoformat(recorded_time)
+            if modified.tzinfo is None:
+                modified = modified.replace(tzinfo=timezone.utc)
+            os.utime(destination, (modified.timestamp(), modified.timestamp()))
+            restored += 1
+        except (OSError, ValueError):
+            unavailable += 1
+    return {"restored": restored, "missing": missing, "unavailable": unavailable}
 
 
 def import_source_item(
@@ -223,6 +264,7 @@ def import_source_items(
     items: list[SourceImportItem],
     destination_root: Path,
     destination_volume_id: str,
+    progress_callback: Callable[[dict[str, int | float | str]], None] | None = None,
 ) -> dict[str, object]:
     """Import only NEW items from a reviewed plan; source remains read-only."""
     decisions = plan_source_import(connection, source, items, destination_root, destination_volume_id)
@@ -234,7 +276,11 @@ def import_source_items(
         if decision.status == SourceImportStatus.ALREADY_IMPORTED:
             already_imported += 1
             continue
-        imported.append(import_source_item(connection, source, decision.item, destination_root, destination_volume_id))
+        result = import_source_item(connection, source, decision.item, destination_root, destination_volume_id)
+        imported.append(result)
+        if progress_callback is not None:
+            progress_callback(result)
+    restore_import_modified_times(connection, destination_root, destination_volume_id)
     return {
         "planned": len(decisions),
         "imported": len(imported),

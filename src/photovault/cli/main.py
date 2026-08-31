@@ -234,8 +234,16 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
                 if conflicts:
                     print("COPY_NOT_STARTED\tDestination conflicts must be resolved first.")
                     return 2
-                started = time.monotonic()
-                result = import_source_items(connection, source, import_items, destination, destination_volume)
+                started = time.monotonic(); checkpoint = started; checkpoint_files = 0; checkpoint_bytes = 0; completed_files = 0; completed_bytes = 0
+                def progress(row):
+                    nonlocal checkpoint, checkpoint_files, checkpoint_bytes, completed_files, completed_bytes
+                    now = time.monotonic(); written = int(row["bytes_written"])
+                    completed_files += 1; completed_bytes += written; checkpoint_files += 1; checkpoint_bytes += written
+                    if now - checkpoint >= 60:
+                        elapsed_checkpoint = now - checkpoint; elapsed_total = now - started
+                        print(f"FOLDER_COPY_PROGRESS\t{completed_files}\t{len(import_items)}\t{completed_bytes}\t{elapsed_total:.3f}\t{completed_bytes / elapsed_total if elapsed_total else 0:.0f}\t{checkpoint_files}\t{checkpoint_bytes}\t{elapsed_checkpoint:.3f}\t{checkpoint_bytes / elapsed_checkpoint if elapsed_checkpoint else 0:.0f}", flush=True)
+                        checkpoint = now; checkpoint_files = 0; checkpoint_bytes = 0
+                result = import_source_items(connection, source, import_items, destination, destination_volume, progress_callback=progress)
                 elapsed = time.monotonic() - started
                 bytes_written = sum(int(row["bytes_written"]) for row in result["results"])
                 print(f"FOLDER_COPY\t{args.relative_path}\t{result['imported']}\t{result['already_imported']}\t{bytes_written}\t{elapsed:.3f}\t{bytes_written / elapsed if elapsed else 0:.0f}")

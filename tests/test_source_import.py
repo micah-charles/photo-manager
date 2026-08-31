@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from photovault.backup.source_import import (
@@ -11,6 +12,7 @@ from photovault.backup.source_import import (
     import_source_item,
     import_source_items,
     plan_source_import,
+    restore_import_modified_times,
     stream_source_to_file,
 )
 from photovault.catalog.sources import record_source_items, register_source
@@ -77,6 +79,32 @@ class SourceImportTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM verification_history WHERE result='VERIFIED'").fetchone()[0], 1)
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM asset_locations WHERE volume_id='vol_dest'").fetchone()[0], 1)
             connection.close()
+
+    def test_import_preserves_source_modified_time_when_supported(self) -> None:
+        payload = b"metadata is in the original bytes"
+        modified = datetime(2023, 2, 3, 4, 5, 6, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = stream_source_to_file(
+                FakeSource(payload),
+                SourceImportItem("675", "DCIM/Camera/photo.jpg", len(payload), modified_at=modified),
+                root,
+            )
+            self.assertEqual(Path(result["destination"]).stat().st_mtime_ns // 1_000_000_000, int(modified.timestamp()))
+
+    def test_restore_import_modified_times_repairs_existing_verified_import(self) -> None:
+        payload = b"original"
+        modified = datetime(2021, 7, 8, 9, 10, 11, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            connection = connect(root / "catalog.db")
+            connection.execute("INSERT INTO volumes(id, display_name, identity_kind, identity_value, first_seen, last_seen, status) VALUES ('vol_dest', 'Destination', 'test', 'dest', datetime('now'), datetime('now'), 'CONNECTED')")
+            connection.commit()
+            import_source_item(connection, FakeSource(payload), SourceImportItem("1", "DCIM/Camera/a.jpg", len(payload), modified_at=modified), root, "vol_dest")
+            destination = root / "DCIM/Camera/a.jpg"; destination.touch()
+            restored = restore_import_modified_times(connection, root, "vol_dest")
+            self.assertEqual(restored["restored"], 1)
+            self.assertEqual(destination.stat().st_mtime_ns // 1_000_000_000, int(modified.timestamp()))
 
     def test_mismatch_removes_partial_and_never_publishes_final(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
