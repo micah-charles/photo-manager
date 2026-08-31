@@ -60,13 +60,13 @@ move or a change to verification truth.
 | Resume | **COMPLETE — core** | Range-capable source rehashes a retained partial then resumes; mismatch removes partial; interruption keeps it. |
 | Incremental backup profiles | **COMPLETE — core/UI creation** | Migration 11 persists source/folder/filter/destination-volume profiles and completed/cancelled/failed snapshots. Profile picker/history UI remains next. |
 | Thumbnails | **COMPLETE — catalog service** | Existing thumbnail generation and timeline records are available. Grid/lazy multi-size cache UI remains next. |
-| Browse and preview | **IN PROGRESS** | Timeline table exists. Gallery grid, preview, video poster/player and multi-select are not yet implemented. |
-| Favourites | **COMPLETE — catalog + basic UI** | Migration 12 stores non-destructive favourites and notes; Favourites page lists and edits them. Legacy JSON import and visual star controls remain next. |
+| Browse and preview | **IN PROGRESS** | Library page now provides catalog-backed filename/folder/media/favourite filters, sorting and offline state; gallery grid, preview, video poster/player and multi-select are not yet implemented. |
+| Favourites | **COMPLETE — catalog + basic UI** | Migration 12 stores non-destructive favourites and notes; Favourites page lists/edits them and safely imports matched legacy gallery JSON entries. Visual star controls remain next. |
 | Places | **COMPLETE — catalog service / basic UI** | Offline GPS clustering works; reverse-geocoding cache and place browser remain next. |
 | Visual duplicates | **COMPLETE — catalog service / basic UI** | dHash/pHash + BK-tree candidate grouping works; visual review workflow remains next. |
 | Faces / people | **PLANNED** | Contract exists; legacy macOS Vision feature-print implementation is reference material. Adapter, person persistence and Windows ONNX backend are not yet integrated. |
 | Semantic classification/search | **IN PROGRESS** | ONNX embedding index/search exists; labels, generated collections and UI search need integration. |
-| Catalog backup / recovery | **PLANNED** | SQLite migrations are robust; online backup, integrity command and restore UI are outstanding. |
+| Catalog backup / recovery | **PARTIAL** | `catalog-backup` uses SQLite online backup API and verifies its new output; `catalog-check` is read-only. Explicit restore UI remains outstanding. |
 | macOS/Windows packaging | **PLANNED** | Python core and volume providers are cross-platform; desktop packaging and Windows runtime test remain outstanding. |
 
 ## Legacy migration matrix
@@ -87,6 +87,7 @@ move or a change to verification truth.
 
 ```text
 Dashboard
+Library
 Disks
 Android Devices      ← Companion Wi-Fi production entry point
 Backup Sets
@@ -130,7 +131,7 @@ Automated test command:
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-Current result: **68 passed, 4 skipped**. The skipped tests require PySide6,
+Current result: **71 passed, 4 skipped**. The skipped tests require PySide6,
 which is not installed in this environment. Core tests cover volume identity,
 catalog migrations, verified copy safety, source import, Android Wi-Fi paging,
 stable device identity, range resume, profiles/snapshots, favourites, metadata,
@@ -156,6 +157,9 @@ Recent integration commits:
 - `818d741` Show Android backup transfer telemetry
 - `dffb45c` Persist Android backup profiles and snapshots
 - `94b68b5` Add persistent catalog favourites
+- `633a420` Import legacy gallery favourites into catalog
+- `fb3b931` Add consistent catalog backup and integrity checks
+- `bd9bed4` Add catalog-backed library browsing
 
 ## Next execution order
 
