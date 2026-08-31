@@ -490,8 +490,10 @@ if QT_AVAILABLE:
                 form = QFormLayout()
                 self.favourite_asset_id = QLineEdit()
                 self.favourite_note = QLineEdit()
+                self.favourite_legacy_manifest = QLineEdit()
                 form.addRow("Catalog asset ID", self.favourite_asset_id)
                 form.addRow("Note (optional)", self.favourite_note)
+                form.addRow("Legacy favorites.json (optional)", self.favourite_legacy_manifest)
                 layout.addLayout(form)
                 favourite_button = QPushButton("Add / update favourite")
                 favourite_button.clicked.connect(self._set_favourite)
@@ -499,6 +501,9 @@ if QT_AVAILABLE:
                 remove_button = QPushButton("Remove selected asset ID from favourites")
                 remove_button.clicked.connect(self._remove_favourite)
                 layout.addWidget(remove_button)
+                import_button = QPushButton("Import legacy gallery favourites JSON")
+                import_button.clicked.connect(self._import_legacy_favourites)
+                layout.addWidget(import_button)
                 self.favourite_result = QLabel("Favourites are catalog annotations only; originals and backup verification are unchanged.")
                 self.favourite_result.setWordWrap(True)
                 layout.addWidget(self.favourite_result)
@@ -1116,6 +1121,20 @@ if QT_AVAILABLE:
                 self.refresh()
             except Exception as exc:
                 self.favourite_result.setText(f"Favourite removal failed: {type(exc).__name__}: {exc}")
+
+        def _import_legacy_favourites(self) -> None:
+            try:
+                from photovault.catalog.favourites import import_legacy_favourites_json
+
+                manifest = Path(self.favourite_legacy_manifest.text().strip())
+                report = import_legacy_favourites_json(self.connection, manifest)
+                self.favourite_result.setText(
+                    f"Legacy import: {report.imported}/{report.declared} matched; "
+                    f"unmatched={report.unmatched}, invalid={report.invalid}. No media files were changed."
+                )
+                self.refresh()
+            except Exception as exc:
+                self.favourite_result.setText(f"Legacy favourites import failed: {type(exc).__name__}: {exc}")
 
         def _fill_table(self, table: QTableWidget, headers: list[str], rows: list[tuple[object, ...]]) -> None:
             table.setColumnCount(len(headers))

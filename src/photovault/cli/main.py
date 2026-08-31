@@ -41,6 +41,8 @@ def parser() -> argparse.ArgumentParser:
     gallery.add_argument("output", type=Path)
     gallery.add_argument("--volume-id")
     gallery.add_argument("--limit", type=int, default=500)
+    favourites_import = sub.add_parser("favourites-import", help="import legacy gallery favourites JSON into the catalog")
+    favourites_import.add_argument("manifest", type=Path)
     perceptual = sub.add_parser("perceptual-index", help="compute persisted dHash/pHash values")
     perceptual.add_argument("--volume-id")
     perceptual.add_argument("--algorithm", choices=["dhash64", "phash64", "all"], default="all")
@@ -394,6 +396,11 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
         from photovault.catalog.gallery import write_gallery
 
         print(write_gallery(connection, args.output, args.volume_id, args.limit))
+    elif args.command == "favourites-import":
+        from photovault.catalog.favourites import import_legacy_favourites_json
+
+        report = import_legacy_favourites_json(connection, args.manifest)
+        print(f"FAVOURITES_IMPORT\tdeclared={report.declared}\timported={report.imported}\tunmatched={report.unmatched}\tinvalid={report.invalid}")
     elif args.command == "perceptual-index":
         from photovault.catalog.perceptual import index_perceptual_hashes
 
