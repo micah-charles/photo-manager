@@ -133,11 +133,12 @@ if QT_AVAILABLE:
         cancelled = Signal(str)
         failed = Signal(str)
 
-        def __init__(self, catalog_path: Path, url: str, token: str, folder: str, media_filter: str, destination: Path, workers: int):
+        def __init__(self, catalog_path: Path, url: str, token: str, profile_name: str, folder: str, media_filter: str, destination: Path, workers: int):
             super().__init__()
             self.catalog_path = catalog_path
             self.url = url
             self.token = token
+            self.profile_name = profile_name
             self.folder = folder
             self.media_filter = media_filter
             self.destination = destination
@@ -150,11 +151,15 @@ if QT_AVAILABLE:
         @Slot()
         def run(self) -> None:
             from photovault.backup.source_import import ImportCancelled, SourceImportItem, import_source_items, plan_source_import
+            from photovault.backup.android_profiles import finish_android_backup_snapshot, start_android_backup_snapshot, upsert_android_backup_profile
             from photovault.catalog.scanner import register_volume
             from photovault.database.connection import connect
             from photovault.sources.android_wifi import AndroidCompanionWifiSource
 
             connection: sqlite3.Connection | None = None
+            snapshot_id: str | None = None
+            imported_items = 0
+            imported_bytes = 0
             try:
                 self.progress.emit({"stage": "inventory"})
                 source = AndroidCompanionWifiSource(self.url, self.token)
@@ -179,18 +184,43 @@ if QT_AVAILABLE:
                     "stage": "planned", "items": len(items), "bytes_total": bytes_total,
                     "conflicts": conflicts, "destination_volume": destination_volume,
                 })
+                profile_id = upsert_android_backup_profile(
+                    connection, source_id=source.identity().source_id,
+                    name=self.profile_name, folder_path=self.folder, media_filter=self.media_filter,
+                    destination_volume_id=destination_volume, workers=self.workers,
+                )
+                snapshot_id = start_android_backup_snapshot(
+                    connection, profile_id, planned_items=len(items), planned_bytes=bytes_total,
+                )
                 if conflicts:
                     raise FileExistsError(f"{conflicts} destination conflict(s); nothing was copied")
+
+                def progress(row: dict[str, object]) -> None:
+                    nonlocal imported_items, imported_bytes
+                    imported_items += 1
+                    imported_bytes += int(row["bytes_written"])
+                    self.progress.emit({"stage": "file", "row": row})
+
                 result = import_source_items(
                     connection, source, import_items, self.destination, destination_volume,
-                    progress_callback=lambda row: self.progress.emit({"stage": "file", "row": row}),
+                    progress_callback=progress,
                     fsync_mode="batch", batch_files=25, workers=self.workers,
                     cancel_callback=self._cancel.is_set,
                 )
-                self.completed.emit({**result, "items": len(items), "bytes_total": bytes_total, "destination_volume": destination_volume})
+                finish_android_backup_snapshot(
+                    connection, snapshot_id, status="COMPLETED", imported_items=imported_items,
+                    already_imported_items=int(result["already_imported"]), imported_bytes=imported_bytes,
+                )
+                self.completed.emit({**result, "items": len(items), "bytes_total": bytes_total,
+                                     "destination_volume": destination_volume, "profile_id": profile_id,
+                                     "snapshot_id": snapshot_id})
             except ImportCancelled as exc:
+                if connection is not None and snapshot_id is not None:
+                    finish_android_backup_snapshot(connection, snapshot_id, status="CANCELLED", imported_items=imported_items, imported_bytes=imported_bytes)
                 self.cancelled.emit(str(exc))
             except Exception as exc:
+                if connection is not None and snapshot_id is not None:
+                    finish_android_backup_snapshot(connection, snapshot_id, status="FAILED", imported_items=imported_items, imported_bytes=imported_bytes, failed_items=1, details={"error": str(exc)})
                 self.failed.emit(f"{type(exc).__name__}: {exc}")
             finally:
                 if connection is not None:
@@ -309,6 +339,7 @@ if QT_AVAILABLE:
                 layout.addWidget(self.android_result)
                 transfer_form = QFormLayout()
                 self.android_transfer_folder = QLineEdit("DCIM/Camera")
+                self.android_transfer_profile_name = QLineEdit("Android Camera backup")
                 self.android_transfer_media_filter = QComboBox()
                 self.android_transfer_media_filter.addItem("Images and videos", "ALL")
                 self.android_transfer_media_filter.addItem("Images only", "IMAGE")
@@ -316,6 +347,7 @@ if QT_AVAILABLE:
                 self.android_transfer_destination = QLineEdit()
                 self.android_transfer_workers = QLineEdit("5")
                 transfer_form.addRow("Backup folder", self.android_transfer_folder)
+                transfer_form.addRow("Profile name", self.android_transfer_profile_name)
                 transfer_form.addRow("Media", self.android_transfer_media_filter)
                 transfer_form.addRow("Destination directory", self.android_transfer_destination)
                 transfer_form.addRow("Concurrent workers", self.android_transfer_workers)
@@ -666,9 +698,10 @@ if QT_AVAILABLE:
             url = self.android_companion_url.text().strip()
             token = self.android_companion_token.text().strip()
             folder = self.android_transfer_folder.text().strip().strip("/")
+            profile_name = self.android_transfer_profile_name.text().strip()
             media_filter = str(self.android_transfer_media_filter.currentData())
             destination_text = self.android_transfer_destination.text().strip()
-            if not url or url == "http://" or not token or not folder or not destination_text:
+            if not url or url == "http://" or not token or not folder or not profile_name or not destination_text:
                 self.android_transfer_result.setText("Enter Companion URL, token, folder and an existing destination directory.")
                 return
             destination = Path(destination_text).expanduser()
@@ -694,7 +727,7 @@ if QT_AVAILABLE:
             self.android_transfer_result.setText("Building a read-only source inventory in background…")
             self._android_transfer_thread = QThread(self)
             self._android_transfer_worker = AndroidCompanionTransferWorker(
-                self._catalog_path, url, token, folder, media_filter, destination, workers,
+                self._catalog_path, url, token, profile_name, folder, media_filter, destination, workers,
             )
             self._android_transfer_worker.moveToThread(self._android_transfer_thread)
             self._android_transfer_thread.started.connect(self._android_transfer_worker.run)

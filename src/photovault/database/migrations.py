@@ -307,6 +307,44 @@ MIGRATIONS: list[tuple[int, str]] = [
             ON source_imports(source_id, logical_path, destination_volume_id);
         """,
     ),
+    (
+        11,
+        """
+        CREATE TABLE android_backup_profiles (
+            id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL REFERENCES source_profiles(source_id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            folder_path TEXT NOT NULL,
+            media_filter TEXT NOT NULL CHECK (media_filter IN ('ALL', 'IMAGE', 'VIDEO')),
+            destination_volume_id TEXT NOT NULL REFERENCES volumes(id) ON DELETE RESTRICT,
+            destination_relative_root TEXT NOT NULL DEFAULT '',
+            workers INTEGER NOT NULL DEFAULT 5 CHECK (workers BETWEEN 1 AND 8),
+            fsync_mode TEXT NOT NULL DEFAULT 'batch' CHECK (fsync_mode IN ('per-file', 'batch')),
+            batch_files INTEGER NOT NULL DEFAULT 25 CHECK (batch_files >= 1),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_completed_at TEXT,
+            UNIQUE(source_id, folder_path, media_filter, destination_volume_id, destination_relative_root)
+        );
+        CREATE INDEX idx_android_backup_profiles_source ON android_backup_profiles(source_id);
+
+        CREATE TABLE android_backup_snapshots (
+            id TEXT PRIMARY KEY,
+            profile_id TEXT NOT NULL REFERENCES android_backup_profiles(id) ON DELETE CASCADE,
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            status TEXT NOT NULL CHECK (status IN ('RUNNING', 'COMPLETED', 'CANCELLED', 'FAILED')),
+            planned_items INTEGER NOT NULL DEFAULT 0,
+            planned_bytes INTEGER NOT NULL DEFAULT 0,
+            imported_items INTEGER NOT NULL DEFAULT 0,
+            already_imported_items INTEGER NOT NULL DEFAULT 0,
+            failed_items INTEGER NOT NULL DEFAULT 0,
+            imported_bytes INTEGER NOT NULL DEFAULT 0,
+            details_json TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX idx_android_backup_snapshots_profile ON android_backup_snapshots(profile_id, started_at DESC);
+        """,
+    ),
 ]
 
 
