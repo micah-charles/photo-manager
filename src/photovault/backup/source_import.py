@@ -89,20 +89,36 @@ def stream_source_to_file(
     *,
     fsync_file: bool = True,
 ) -> dict[str, int | float | str]:
-    """Stream one source object through bounded memory into an atomic destination."""
+    """Stream one source object through bounded memory into an atomic destination.
+
+    A Companion source that advertises ``range_read`` resumes a retained partial
+    file after a transport interruption.  The partial is re-hashed before the
+    request is resumed, so it is never trusted merely because its filename
+    matches.  Size/hash validation failures remove the partial; transient I/O
+    failures deliberately retain it for the next attempt.
+    """
     destination = _safe_destination(destination_root, item.relative_path)
     if destination.exists():
         raise FileExistsError(f"destination already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_name(destination.name + ".photomanager-partial")
-    if partial.exists():
-        raise FileExistsError(f"stale partial destination exists: {partial}")
 
     digest = hashlib.sha256()
-    bytes_written = 0
+    resumed_bytes = 0
+    if partial.exists():
+        if "range_read" not in source.capabilities():
+            raise RuntimeError(f"partial import requires range-read support: {partial}")
+        resumed_bytes = partial.stat().st_size
+        if item.size_bytes is not None and resumed_bytes > item.size_bytes:
+            partial.unlink()
+            raise ValueError(f"partial exceeds expected source size: {resumed_bytes} > {item.size_bytes}")
+        with partial.open("rb") as existing:
+            while chunk := existing.read(256 * 1024):
+                digest.update(chunk)
+    bytes_written = resumed_bytes
     started = time.monotonic()
     try:
-        with partial.open("xb") as output:
+        with partial.open("ab" if resumed_bytes else "xb") as output:
             class HashingSink:
                 def write(self, data: bytes) -> int:
                     nonlocal bytes_written
@@ -110,7 +126,12 @@ def stream_source_to_file(
                     bytes_written += len(data)
                     return output.write(data)
 
-            metrics = source.stream_object(item.object_id, HashingSink())
+            if resumed_bytes:
+                # The protocol only requires stream_object; Companion sources
+                # additionally expose HTTP Range through this optional offset.
+                metrics = source.stream_object(item.object_id, HashingSink(), offset=resumed_bytes)
+            else:
+                metrics = source.stream_object(item.object_id, HashingSink())
             output.flush()
             if fsync_file:
                 os.fsync(output.fileno())
@@ -137,11 +158,13 @@ def stream_source_to_file(
             "object_id": item.object_id,
             "destination": str(destination),
             "bytes_written": bytes_written,
+            "resumed_bytes": resumed_bytes,
             "sha256": actual_hash,
             "elapsed_seconds": time.monotonic() - started,
             "source_bytes_per_second": metrics.get("bytes_per_second", 0.0),
         }
-    except Exception:
+    except ValueError:
+        # A completed-but-invalid payload must never be resumed or published.
         if partial.exists():
             partial.unlink()
         raise

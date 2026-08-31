@@ -33,6 +33,27 @@ class FakeSource:
         return SourceIdentity("android_test", "Google", "Pixel 8 Pro", "Pixel 8 Pro", "test")
 
 
+class InterruptibleRangeSource(FakeSource):
+    def __init__(self, payload: bytes) -> None:
+        super().__init__(payload)
+        self.fail_once = True
+        self.offsets: list[int] = []
+
+    def capabilities(self):
+        return frozenset({"range_read"})
+
+    def stream_object(self, object_id: str, sink, *, offset: int = 0) -> dict[str, int | float]:
+        self.offsets.append(offset)
+        remainder = self.payload[offset:]
+        if self.fail_once:
+            self.fail_once = False
+            sink.write(remainder[:5])
+            raise ConnectionError("simulated Wi-Fi interruption")
+        for position in range(0, len(remainder), 3):
+            sink.write(remainder[position : position + 3])
+        return {"bytes_received": len(remainder), "bytes_per_second": 100.0, "elapsed_seconds": 0.01}
+
+
 class SourceImportTests(unittest.TestCase):
     def test_source_identity_and_inventory_are_persisted_separately(self) -> None:
         identity = SourceIdentity("android_test", "Google", "Pixel 8 Pro", "Pixel 8 Pro", "test", 0x18D1, 0x4EE1)
@@ -113,6 +134,22 @@ class SourceImportTests(unittest.TestCase):
                 stream_source_to_file(FakeSource(b"actual"), SourceImportItem("1", "photo.jpg", 99), root)
             self.assertFalse((root / "photo.jpg").exists())
             self.assertFalse((root / "photo.jpg.photomanager-partial").exists())
+
+    def test_range_capable_source_resumes_retained_partial_after_interruption(self) -> None:
+        payload = b"resume without re-downloading verified prefix"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = InterruptibleRangeSource(payload)
+            item = SourceImportItem("1", "photo.jpg", len(payload), hashlib.sha256(payload).hexdigest())
+            with self.assertRaisesRegex(ConnectionError, "interruption"):
+                stream_source_to_file(source, item, root)
+            partial = root / "photo.jpg.photomanager-partial"
+            self.assertEqual(partial.read_bytes(), payload[:5])
+            result = stream_source_to_file(source, item, root)
+            self.assertEqual((root / "photo.jpg").read_bytes(), payload)
+            self.assertFalse(partial.exists())
+            self.assertEqual(source.offsets, [0, 5])
+            self.assertEqual(result["resumed_bytes"], 5)
 
     def test_path_escape_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
