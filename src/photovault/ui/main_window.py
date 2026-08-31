@@ -219,8 +219,12 @@ if QT_AVAILABLE:
                 result = import_source_items(
                     connection, source, import_items, self.destination, destination_volume,
                     progress_callback=progress,
+                    retry_callback=lambda item, attempt, exc: self.progress.emit({
+                        "stage": "retry", "item": item, "attempt": attempt, "error": str(exc),
+                    }),
                     fsync_mode="batch", batch_files=25, workers=self.workers,
                     cancel_callback=self._cancel.is_set,
+                    retry_attempts=2, retry_base_delay_seconds=0.25,
                 )
                 finish_android_backup_snapshot(
                     connection, snapshot_id, status="COMPLETED", imported_items=imported_items,
@@ -894,6 +898,11 @@ if QT_AVAILABLE:
                     f"{self._human_bytes(self._android_transfer_bytes)} copied; "
                     f"avg {self._human_bytes(average)}/s, last-file {self._human_bytes(interval)}/s; "
                     f"elapsed {self._human_duration(elapsed)}, ETA {self._human_duration(eta)}."
+                )
+            elif stage == "retry":
+                item = event["item"]
+                self.android_transfer_result.setText(
+                    f"Temporary transfer error for {item.relative_path}; retry {event['attempt']}/2 using a safe Range resume."
                 )
 
         def _android_transfer_completed_result(self, result: object) -> None:

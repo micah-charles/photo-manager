@@ -151,6 +151,24 @@ class SourceImportTests(unittest.TestCase):
             self.assertEqual(source.offsets, [0, 5])
             self.assertEqual(result["resumed_bytes"], 5)
 
+    def test_batch_import_retries_transient_range_source_failure(self) -> None:
+        payload = b"retry from retained prefix"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            connection = connect(root / "catalog.db")
+            connection.execute("INSERT INTO volumes(id, display_name, identity_kind, identity_value, first_seen, last_seen, status) VALUES ('vol_dest', 'Destination', 'test', 'dest', datetime('now'), datetime('now'), 'CONNECTED')")
+            connection.commit()
+            source = InterruptibleRangeSource(payload)
+            retries: list[tuple[str, int]] = []
+            result = import_source_items(
+                connection, source, [SourceImportItem("1", "photo.jpg", len(payload))], root, "vol_dest",
+                retry_attempts=1, retry_base_delay_seconds=0,
+                retry_callback=lambda item, attempt, exc: retries.append((item.object_id, attempt)),
+            )
+            self.assertEqual((result["imported"], retries, source.offsets), (1, [("1", 1)], [0, 5]))
+            self.assertEqual((root / "photo.jpg").read_bytes(), payload)
+            connection.close()
+
     def test_path_escape_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(ValueError):

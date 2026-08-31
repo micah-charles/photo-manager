@@ -286,10 +286,13 @@ def import_source_items(
     destination_root: Path,
     destination_volume_id: str,
     progress_callback: Callable[[dict[str, int | float | str]], None] | None = None,
+    retry_callback: Callable[[SourceImportItem, int, Exception], None] | None = None,
     fsync_mode: str = "per-file",
     batch_files: int = 25,
     workers: int = 1,
     cancel_callback: Callable[[], bool] | None = None,
+    retry_attempts: int = 0,
+    retry_base_delay_seconds: float = 0.25,
 ) -> dict[str, object]:
     """Import only NEW items from a reviewed plan; source remains read-only.
 
@@ -302,6 +305,8 @@ def import_source_items(
         raise ValueError("batch_files must be positive")
     if workers < 1:
         raise ValueError("workers must be positive")
+    if retry_attempts < 0 or retry_base_delay_seconds < 0:
+        raise ValueError("retry settings cannot be negative")
     if cancel_callback is not None and cancel_callback():
         raise ImportCancelled("import cancelled before planning")
     decisions = plan_source_import(connection, source, items, destination_root, destination_volume_id)
@@ -347,10 +352,32 @@ def import_source_items(
         if progress_callback is not None:
             progress_callback(result)
 
+    def stream_with_retry(decision: SourceImportDecision) -> dict[str, int | float | str]:
+        """Retry only transport-like failures; retained partials make retries safe."""
+        attempt = 0
+        while True:
+            try:
+                return stream_source_to_file(
+                    source, decision.item, destination_root,
+                    fsync_file=fsync_mode == "per-file", cancel_callback=cancel_callback,
+                )
+            except ImportCancelled:
+                raise
+            except (ValueError, FileExistsError, PermissionError):
+                raise
+            except Exception as exc:
+                if attempt >= retry_attempts:
+                    raise
+                attempt += 1
+                if retry_callback is not None:
+                    retry_callback(decision.item, attempt, exc)
+                if retry_base_delay_seconds:
+                    time.sleep(retry_base_delay_seconds * (2 ** (attempt - 1)))
+
     if workers == 1:
         for decision in new_decisions:
             try:
-                result = stream_source_to_file(source, decision.item, destination_root, fsync_file=fsync_mode == "per-file", cancel_callback=cancel_callback)
+                result = stream_with_retry(decision)
             except ImportCancelled:
                 raise
             except Exception as exc:
@@ -362,8 +389,7 @@ def import_source_items(
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="photovault-copy") as executor:
             futures = {
                 executor.submit(
-                    stream_source_to_file, source, decision.item, destination_root,
-                    fsync_file=fsync_mode == "per-file", cancel_callback=cancel_callback,
+                    stream_with_retry, decision,
                 ): decision
                 for decision in new_decisions
             }
