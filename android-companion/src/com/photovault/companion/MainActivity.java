@@ -92,7 +92,7 @@ public final class MainActivity extends Activity {
         if (snapshot == null) { status.setText("Local sharing is stopped. Choose a sharing duration above."); return; }
         String ip = localIpv4();
         status.setText("PhotoVault Companion — read-only POC\n" +
-            "Build: 0.3 — background sharing\n\n" +
+            "Build: 0.4 — media folder count\n\n" +
             "Status: sharing active — " + snapshot.durationLabel + "\n" +
             "Desktop URL: http://" + ip + ":" + PORT + "\n" +
             "Token: " + snapshot.token + "\n\n" +
@@ -124,17 +124,26 @@ public final class MainActivity extends Activity {
                 String path=first[1]; int query=path.indexOf('?'); Map<String,String> args=parseQuery(query<0?"":path.substring(query+1)); path=query<0?path:path.substring(0,query);
                 if(!token.equals(args.get("token"))) { reply(out,401,"application/json",jsonError("token required").getBytes(StandardCharsets.UTF_8)); return; }
                 if("/api/device".equals(path)) device(out);
+                else if("/api/media/count".equals(path)) mediaCount(out,args);
                 else if("/api/media".equals(path)) media(out,args);
                 else if(path.startsWith("/api/media/")) object(out,path.substring(11),headers.get("range"));
                 else reply(out,404,"application/json",jsonError("not found").getBytes(StandardCharsets.UTF_8));
             } catch (Exception e) { e.printStackTrace(); }
         }
         private void device(BufferedOutputStream out) throws IOException {
-            int count=count(MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL));
+            int count=count(MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL), mediaSelection(), null);
             String body="{\"ok\":true,\"device\":{\"manufacturer\":\""+escape(android.os.Build.MANUFACTURER)+"\",\"model\":\""+escape(android.os.Build.MODEL)+"\",\"friendly_name\":\""+escape(android.os.Build.MODEL)+"\",\"adapter\":\"android_companion_wifi\",\"media_count\":"+count+",\"capabilities\":[\"identity\",\"media_manifest\",\"range_read\"]}}";
             reply(out,200,"application/json",body.getBytes(StandardCharsets.UTF_8));
         }
-        private int count(Uri uri) { try(Cursor c=resolver.query(uri,new String[]{MediaStore.Files.FileColumns._ID},mediaSelection(),null,null)){return c==null?0:c.getCount();} }
+        private void mediaCount(BufferedOutputStream out, Map<String,String> args) throws IOException {
+            String relativePath=args.get("relative_path");
+            if(relativePath==null || relativePath.isEmpty()) { reply(out,400,"application/json",jsonError("relative_path required").getBytes(StandardCharsets.UTF_8)); return; }
+            if(!relativePath.endsWith("/")) relativePath += "/";
+            int count=count(MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL), mediaSelection()+" AND "+MediaStore.MediaColumns.RELATIVE_PATH+" = ?", new String[]{relativePath});
+            String body="{\"ok\":true,\"relative_path\":\""+escape(relativePath)+"\",\"count\":"+count+"}";
+            reply(out,200,"application/json",body.getBytes(StandardCharsets.UTF_8));
+        }
+        private int count(Uri uri, String selection, String[] selectionArgs) { try(Cursor c=resolver.query(uri,new String[]{MediaStore.Files.FileColumns._ID},selection,selectionArgs,null)){return c==null?0:c.getCount();} }
         private void media(BufferedOutputStream out,Map<String,String> args) throws IOException {
             int limit=Math.min(500,Math.max(1,integer(args.get("limit"),100))); List<String> rows=new ArrayList<>();
             String[] cols=columns(); Uri uri=MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL);
