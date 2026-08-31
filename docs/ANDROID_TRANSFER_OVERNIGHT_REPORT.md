@@ -9,10 +9,11 @@ next bulk-IN returned `LIBUSB_ERROR_IO`. The subsequent CloseSession timed out.
 Changing only from raw `IOUSBHost` to a basic synchronous libusb loop therefore
 does not solve the sustained-read failure on this Pixel/macOS combination.
 
-Track B — Android Companion Wi-Fi: **NEEDS MORE EVIDENCE**. A minimal Android
-MediaStore companion builds to a signed debug APK, and the desktop read-only
-client has an automated manifest/Range-stream test. It has not yet been
-installed or tested on the Pixel/LAN.
+Track B — Android Companion Wi-Fi: **APP/PROTOCOL PASS; PIXEL/LAN NEEDS MORE
+EVIDENCE**. A minimal Android MediaStore companion builds to a signed debug
+APK. Its fixed MediaStore manifest path, complete stream, and Range behavior
+passed in an Android 35 arm64 emulator. It has not yet completed the same
+stream test on the physical Pixel/LAN.
 
 Recommended next step: run the short manual checklist below before selecting a
 primary transport. Neither prototype has a measured complete JPEG, large-file,
@@ -116,6 +117,17 @@ zsh scripts/build_android_companion.sh
 Build result: PASS. Output:
 `android-companion/build/photovault-companion-debug.apk` (signed debug APK).
 
+Android 35 arm64 runtime regression result (2026-08-31): PASS. The first real
+Pixel request exposed a server-side manifest failure: the app built an SQL
+`LIMIT` suffix into its sort-order string, which recent MediaProvider rejects;
+the request handler swallowed that exception and closed the connection. Commit
+`0b673a2` replaces that construction with Android's public query-arguments API
+and logs any unexpected handler exception. In a disposable emulator, the
+desktop client then passed device discovery and manifest retrieval, streamed a
+40,139-byte JPEG completely, and range-streamed from offset 1,024. The
+39,115-byte range result had the exact SHA-256 of the fixture tail. No
+unhandled Companion exception appeared in the emulator log.
+
 After installation, use the URL/token shown by the app:
 
 ```zsh
@@ -129,13 +141,13 @@ PYTHONPATH=src python3 -m photovault.cli --catalog /tmp/photovault-wifi.db \
 
 | Test | Result |
 | --- | --- |
-| Device information | AUTOMATED client test PASS; Pixel/LAN NOT TESTED |
-| Media manifest | AUTOMATED client test PASS; Pixel/LAN NOT TESTED |
-| Complete JPEG | NOT TESTED |
+| Device information | PASS: automated client + Android 35 emulator; Pixel/LAN PASS once before app update |
+| Media manifest | PASS: Android 35 emulator; physical Pixel needs updated APK validation |
+| Complete JPEG | PASS: 40,139-byte emulator JPEG; Pixel/LAN NOT TESTED |
 | Sequential files | NOT TESTED |
 | 100 MB+ object | NOT TESTED |
 | Throughput | NOT MEASURED |
-| Range/resume | HTTP Range + client offset implemented; real recovery NOT TESTED |
+| Range/resume | PASS: emulator offset stream hash match; Pixel/LAN recovery NOT TESTED |
 
 No LocalSend code or protocol was incorporated. Its discovery/pairing approach
 remains reference material only.
@@ -144,7 +156,7 @@ remains reference material only.
 
 | Criterion | USB MTP/libusb | Android Companion Wi-Fi |
 | --- | --- | --- |
-| Complete JPEG | FAIL: 64 KiB then bulk-IN I/O error | NOT TESTED |
+| Complete JPEG | FAIL: 64 KiB then bulk-IN I/O error | PASS in emulator; Pixel/LAN pending |
 | 100 MB+ file | NOT TESTED | NOT TESTED |
 | Average MB/s | NOT MEASURED | NOT MEASURED |
 | Resume | NOT TESTED | Protocol/client Range support implemented; NOT TESTED |
@@ -162,9 +174,9 @@ The current basic libusb POC is **not** a viable fallback or primary transport:
 it has reproduced the same class of sustained-read failure after beginning the
 payload. A substantially different USB implementation/lifecycle model would
 need separate evidence before further USB work. Wi-Fi is the remaining primary
-candidate direction for portability and recoverable Range semantics, but it
-must first earn that status with real throughput, permission, and interruption
-tests.
+candidate direction for portability and recoverable Range semantics. Its app
+and protocol path now has Android runtime evidence; it must still earn primary
+status with physical-Pixel throughput, permission, and interruption tests.
 
 The raw IOUSBHost backend remains frozen as a reference backend, not removed.
 
