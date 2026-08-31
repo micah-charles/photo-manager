@@ -66,7 +66,12 @@ class AndroidCompanionWifiSource(PhotoSource):
         if self._identity_cache is not None:
             return self._identity_cache
         device = self._json("/api/device")["device"]
-        fingerprint = hashlib.sha256(f"{device.get('manufacturer')}|{device.get('model')}|{self.base_url}".encode()).hexdigest()[:24]
+        persistent_id = str(device.get("device_id") or "").strip()
+        # New Companions expose an installation UUID that survives IP changes.
+        # Keep the legacy endpoint fallback for old APKs, but distinguish it
+        # because that fallback cannot provide incremental-backup continuity.
+        fingerprint_input = persistent_id or f"legacy|{device.get('manufacturer')}|{device.get('model')}|{self.base_url}"
+        fingerprint = hashlib.sha256(fingerprint_input.encode()).hexdigest()[:24]
         self._identity_cache = SourceIdentity(
             source_id=f"android_wifi_{fingerprint}",
             manufacturer=device.get("manufacturer", "Android"),

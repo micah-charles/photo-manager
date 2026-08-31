@@ -3,6 +3,7 @@ package com.photovault.companion;
 import android.Manifest;
 import android.app.Activity;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -36,6 +37,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Deliberately small, no-dependency companion proof of concept.
@@ -45,6 +47,8 @@ import java.util.Map;
 public final class MainActivity extends Activity {
     private static final int PORT = 8765;
     private static final int PERMISSIONS = 42;
+    private static final String INSTALLATION_PREFS = "photovault_companion";
+    private static final String INSTALLATION_ID = "installation_id";
     private TextView status;
 
     @Override public void onCreate(Bundle state) {
@@ -110,9 +114,18 @@ public final class MainActivity extends Activity {
         return "PHONE_IP";
     }
 
+    /** Stable for this installation; app data clear or uninstall creates a new ID. */
+    static String installationId(Context context) {
+        String value = context.getSharedPreferences(INSTALLATION_PREFS, MODE_PRIVATE).getString(INSTALLATION_ID, null);
+        if (value != null && !value.isEmpty()) return value;
+        value = UUID.randomUUID().toString();
+        context.getSharedPreferences(INSTALLATION_PREFS, MODE_PRIVATE).edit().putString(INSTALLATION_ID, value).apply();
+        return value;
+    }
+
     static final class MediaServer extends Thread {
-        final ContentResolver resolver; final String token; final ServerSocket socket; volatile boolean running = true;
-        MediaServer(ContentResolver resolver) throws IOException { this.resolver=resolver; token=randomToken(); socket=new ServerSocket(PORT); setName("PhotoVaultMediaServer"); }
+        final ContentResolver resolver; final String token; final String deviceId; final String appVersion; final ServerSocket socket; volatile boolean running = true;
+        MediaServer(Context context, ContentResolver resolver) throws IOException { this.resolver=resolver; deviceId=installationId(context); appVersion=version(context); token=randomToken(); socket=new ServerSocket(PORT); setName("PhotoVaultMediaServer"); }
         @Override public void run() { while (running) try { final Socket s=socket.accept(); new Thread(new Runnable() { @Override public void run() { serve(s); } }, "PhotoVaultRequest").start(); } catch (IOException e) { if(running) e.printStackTrace(); } }
         void close() { running=false; try { socket.close(); } catch(IOException ignored) {} }
         private static String randomToken() { byte[] b=new byte[18]; new SecureRandom().nextBytes(b); StringBuilder s=new StringBuilder(); for(byte x:b)s.append(String.format(Locale.ROOT,"%02x",x)); return s.toString(); }
@@ -133,9 +146,10 @@ public final class MainActivity extends Activity {
         }
         private void device(BufferedOutputStream out) throws IOException {
             int count=count(MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL), mediaSelection(), null);
-            String body="{\"ok\":true,\"device\":{\"manufacturer\":\""+escape(android.os.Build.MANUFACTURER)+"\",\"model\":\""+escape(android.os.Build.MODEL)+"\",\"friendly_name\":\""+escape(android.os.Build.MODEL)+"\",\"adapter\":\"android_companion_wifi\",\"media_count\":"+count+",\"capabilities\":[\"identity\",\"media_manifest\",\"range_read\"]}}";
+            String body="{\"ok\":true,\"device\":{\"device_id\":\""+escape(deviceId)+"\",\"manufacturer\":\""+escape(android.os.Build.MANUFACTURER)+"\",\"model\":\""+escape(android.os.Build.MODEL)+"\",\"friendly_name\":\""+escape(android.os.Build.MODEL)+"\",\"app_version\":\""+escape(appVersion)+"\",\"adapter\":\"android_companion_wifi\",\"media_count\":"+count+",\"capabilities\":[\"identity\",\"media_manifest\",\"range_read\"]}}";
             reply(out,200,"application/json",body.getBytes(StandardCharsets.UTF_8));
         }
+        private static String version(Context context) { try { return context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName; } catch (Exception ignored) { return "unknown"; } }
         private void mediaCount(BufferedOutputStream out, Map<String,String> args) throws IOException {
             String relativePath=normalRelativePath(args.get("relative_path"));
             if(relativePath==null) { reply(out,400,"application/json",jsonError("relative_path required").getBytes(StandardCharsets.UTF_8)); return; }

@@ -19,7 +19,7 @@ class AndroidWifiTests(unittest.TestCase):
         def fake_open(request, timeout):
             seen.append((request.full_url, request.headers.get("Range")))
             if "/api/device" in request.full_url:
-                return Response(json.dumps({"ok": True, "device": {"manufacturer": "Google", "model": "Pixel", "media_count": 1}}).encode())
+                return Response(json.dumps({"ok": True, "device": {"device_id": "installed-uuid", "manufacturer": "Google", "model": "Pixel", "media_count": 1}}).encode())
             if "/api/media?" in request.full_url:
                 return Response(json.dumps({"ok": True, "items": [{"object_id": "7", "name": "x.jpg", "mime_type": "image/jpeg", "size_bytes": 3, "date_taken": 0, "modified_at": 0}]}).encode())
             return Response(b"abc")
@@ -32,6 +32,14 @@ class AndroidWifiTests(unittest.TestCase):
         self.assertEqual(metrics["bytes_received"], 3)
         self.assertTrue(seen[-1][0].endswith("/api/media/7?token=secret"))
         self.assertEqual(seen[-1][1], "bytes=2-")
+
+    def test_persistent_companion_id_is_independent_of_ip_address(self) -> None:
+        def fake_open(request, timeout):
+            return Response(json.dumps({"ok": True, "device": {"device_id": "installed-uuid", "manufacturer": "Google", "model": "Pixel"}}).encode())
+        with patch("photovault.sources.android_wifi.urlopen", fake_open):
+            first = AndroidCompanionWifiSource("http://192.168.1.10:8765", "secret").identity()
+            second = AndroidCompanionWifiSource("http://192.168.1.11:8765", "secret").identity()
+        self.assertEqual(first.source_id, second.source_id)
 
     def test_folder_inventory_count_and_paging(self) -> None:
         seen = []

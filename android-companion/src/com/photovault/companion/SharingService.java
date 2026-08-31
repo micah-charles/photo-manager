@@ -49,7 +49,7 @@ public final class SharingService extends Service {
         startForeground(NOTIFICATION_ID, notification(label), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
         stopSessionResources();
         try {
-            server = new MainActivity.MediaServer(getContentResolver());
+            server = new MainActivity.MediaServer(getApplicationContext(), getContentResolver());
             server.start();
             acquireLocks();
             current = new Snapshot(server.token, label);
