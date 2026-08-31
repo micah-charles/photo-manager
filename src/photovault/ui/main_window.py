@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Event
 
 from .spec import NAVIGATION_ITEMS
 
@@ -10,6 +11,7 @@ try:
     from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
     from PySide6.QtWidgets import (
         QApplication,
+        QComboBox,
         QFormLayout,
         QHBoxLayout,
         QLabel,
@@ -122,6 +124,77 @@ if QT_AVAILABLE:
             except Exception as exc:
                 self.failed.emit(f"{type(exc).__name__}: {exc}")
 
+    class AndroidCompanionTransferWorker(QObject):
+        """Plan and execute a verified, read-only Companion import off the UI thread."""
+
+        progress = Signal(object)
+        completed = Signal(object)
+        cancelled = Signal(str)
+        failed = Signal(str)
+
+        def __init__(self, catalog_path: Path, url: str, token: str, folder: str, media_filter: str, destination: Path, workers: int):
+            super().__init__()
+            self.catalog_path = catalog_path
+            self.url = url
+            self.token = token
+            self.folder = folder
+            self.media_filter = media_filter
+            self.destination = destination
+            self.workers = workers
+            self._cancel = Event()
+
+        def request_cancel(self) -> None:
+            self._cancel.set()
+
+        @Slot()
+        def run(self) -> None:
+            from photovault.backup.source_import import ImportCancelled, SourceImportItem, import_source_items, plan_source_import
+            from photovault.catalog.scanner import register_volume
+            from photovault.database.connection import connect
+            from photovault.sources.android_wifi import AndroidCompanionWifiSource
+
+            connection: sqlite3.Connection | None = None
+            try:
+                self.progress.emit({"stage": "inventory"})
+                source = AndroidCompanionWifiSource(self.url, self.token)
+                items = [
+                    item for item in source.iter_folder(self.folder)
+                    if self.media_filter == "ALL" or item.media_type == self.media_filter
+                ]
+                import_items = [SourceImportItem(
+                    item.object_id, f"{self.folder.strip('/')}/{item.name}", item.size_bytes,
+                    media_type=item.media_type, modified_at=item.modified_at,
+                ) for item in items]
+                if len({item.relative_path for item in import_items}) != len(import_items):
+                    raise ValueError("selected folder contains duplicate destination names; nothing was copied")
+                if self._cancel.is_set():
+                    raise ImportCancelled("import cancelled before transfer")
+                connection = connect(self.catalog_path)
+                destination_volume = register_volume(connection, self.destination)
+                decisions = plan_source_import(connection, source, import_items, self.destination, destination_volume)
+                conflicts = sum(1 for decision in decisions if decision.status.value == "CONFLICT")
+                bytes_total = sum(item.size_bytes or 0 for item in items)
+                self.progress.emit({
+                    "stage": "planned", "items": len(items), "bytes_total": bytes_total,
+                    "conflicts": conflicts, "destination_volume": destination_volume,
+                })
+                if conflicts:
+                    raise FileExistsError(f"{conflicts} destination conflict(s); nothing was copied")
+                result = import_source_items(
+                    connection, source, import_items, self.destination, destination_volume,
+                    progress_callback=lambda row: self.progress.emit({"stage": "file", "row": row}),
+                    fsync_mode="batch", batch_files=25, workers=self.workers,
+                    cancel_callback=self._cancel.is_set,
+                )
+                self.completed.emit({**result, "items": len(items), "bytes_total": bytes_total, "destination_volume": destination_volume})
+            except ImportCancelled as exc:
+                self.cancelled.emit(str(exc))
+            except Exception as exc:
+                self.failed.emit(f"{type(exc).__name__}: {exc}")
+            finally:
+                if connection is not None:
+                    connection.close()
+
     class OperationWorker(QObject):
         """Execute an already reviewed copy/quarantine plan off the GUI thread."""
 
@@ -175,6 +248,11 @@ if QT_AVAILABLE:
             self._android_worker: AndroidDiscoveryWorker | None = None
             self._android_companion_thread: QThread | None = None
             self._android_companion_worker: AndroidCompanionDiscoveryWorker | None = None
+            self._android_transfer_thread: QThread | None = None
+            self._android_transfer_worker: AndroidCompanionTransferWorker | None = None
+            self._android_transfer_completed = 0
+            self._android_transfer_bytes = 0
+            self._android_transfer_total = 0
             self._operation_thread: QThread | None = None
             self._operation_worker: OperationWorker | None = None
             self._operation_kind: str | None = None
@@ -224,6 +302,33 @@ if QT_AVAILABLE:
                 )
                 self.android_result.setWordWrap(True)
                 layout.addWidget(self.android_result)
+                transfer_form = QFormLayout()
+                self.android_transfer_folder = QLineEdit("DCIM/Camera")
+                self.android_transfer_media_filter = QComboBox()
+                self.android_transfer_media_filter.addItem("Images and videos", "ALL")
+                self.android_transfer_media_filter.addItem("Images only", "IMAGE")
+                self.android_transfer_media_filter.addItem("Videos only", "VIDEO")
+                self.android_transfer_destination = QLineEdit()
+                self.android_transfer_workers = QLineEdit("5")
+                transfer_form.addRow("Backup folder", self.android_transfer_folder)
+                transfer_form.addRow("Media", self.android_transfer_media_filter)
+                transfer_form.addRow("Destination directory", self.android_transfer_destination)
+                transfer_form.addRow("Concurrent workers", self.android_transfer_workers)
+                layout.addLayout(transfer_form)
+                transfer_button = QPushButton("Start verified Wi-Fi backup")
+                transfer_button.clicked.connect(self._start_android_companion_transfer)
+                self.android_transfer_button = transfer_button
+                layout.addWidget(transfer_button)
+                cancel_transfer_button = QPushButton("Cancel transfer (partial files can resume)")
+                cancel_transfer_button.setEnabled(False)
+                cancel_transfer_button.clicked.connect(self._cancel_android_companion_transfer)
+                self.android_transfer_cancel_button = cancel_transfer_button
+                layout.addWidget(cancel_transfer_button)
+                self.android_transfer_result = QLabel(
+                    "A transfer copies new items only, SHA-256 verifies each completed file, and never changes phone files."
+                )
+                self.android_transfer_result.setWordWrap(True)
+                layout.addWidget(self.android_transfer_result)
                 self.android_helper = QLineEdit(str(_default_android_helper()))
                 form.addRow("Native helper", self.android_helper)
                 button = QPushButton("Discover USB MTP (experimental macOS fallback)")
@@ -547,6 +652,98 @@ if QT_AVAILABLE:
             self._android_companion_thread.finished.connect(self._android_companion_thread.deleteLater)
             self._android_companion_thread.start()
 
+        def _start_android_companion_transfer(self) -> None:
+            if self._android_transfer_thread is not None and self._android_transfer_thread.isRunning():
+                return
+            if self._catalog_path is None:
+                self.android_transfer_result.setText("A file-backed catalog is required before starting a backup.")
+                return
+            url = self.android_companion_url.text().strip()
+            token = self.android_companion_token.text().strip()
+            folder = self.android_transfer_folder.text().strip().strip("/")
+            media_filter = str(self.android_transfer_media_filter.currentData())
+            destination_text = self.android_transfer_destination.text().strip()
+            if not url or url == "http://" or not token or not folder or not destination_text:
+                self.android_transfer_result.setText("Enter Companion URL, token, folder and an existing destination directory.")
+                return
+            destination = Path(destination_text).expanduser()
+            if not destination.is_dir():
+                self.android_transfer_result.setText("Destination must be an existing directory.")
+                return
+            try:
+                workers = int(self.android_transfer_workers.text().strip())
+                if not 1 <= workers <= 8:
+                    raise ValueError
+            except ValueError:
+                self.android_transfer_result.setText("Workers must be a whole number from 1 to 8.")
+                return
+            self._android_transfer_completed = 0
+            self._android_transfer_bytes = 0
+            self._android_transfer_total = 0
+            self.android_transfer_button.setEnabled(False)
+            self.android_transfer_cancel_button.setEnabled(True)
+            self.android_transfer_result.setText("Building a read-only source inventory in background…")
+            self._android_transfer_thread = QThread(self)
+            self._android_transfer_worker = AndroidCompanionTransferWorker(
+                self._catalog_path, url, token, folder, media_filter, destination, workers,
+            )
+            self._android_transfer_worker.moveToThread(self._android_transfer_thread)
+            self._android_transfer_thread.started.connect(self._android_transfer_worker.run)
+            self._android_transfer_worker.progress.connect(self._android_transfer_progress)
+            self._android_transfer_worker.completed.connect(self._android_transfer_completed_result)
+            self._android_transfer_worker.cancelled.connect(self._android_transfer_cancelled)
+            self._android_transfer_worker.failed.connect(self._android_transfer_failed)
+            self._android_transfer_worker.completed.connect(self._android_transfer_thread.quit)
+            self._android_transfer_worker.cancelled.connect(self._android_transfer_thread.quit)
+            self._android_transfer_worker.failed.connect(self._android_transfer_thread.quit)
+            self._android_transfer_worker.completed.connect(self._android_transfer_worker.deleteLater)
+            self._android_transfer_worker.cancelled.connect(self._android_transfer_worker.deleteLater)
+            self._android_transfer_worker.failed.connect(self._android_transfer_worker.deleteLater)
+            self._android_transfer_thread.finished.connect(self._android_transfer_thread_finished)
+            self._android_transfer_thread.finished.connect(self._android_transfer_thread.deleteLater)
+            self._android_transfer_thread.start()
+
+        def _cancel_android_companion_transfer(self) -> None:
+            if self._android_transfer_worker is not None:
+                self._android_transfer_worker.request_cancel()
+                self.android_transfer_cancel_button.setEnabled(False)
+                self.android_transfer_result.setText("Cancellation requested; active network chunks will stop safely.")
+
+        def _android_transfer_progress(self, event: object) -> None:
+            stage = event.get("stage")
+            if stage == "inventory":
+                self.android_transfer_result.setText("Reading Android folder inventory…")
+            elif stage == "planned":
+                self._android_transfer_total = int(event["items"])
+                bytes_total = int(event["bytes_total"])
+                conflicts = int(event["conflicts"])
+                self.android_transfer_result.setText(
+                    f"Plan: {self._android_transfer_total} files, {bytes_total:,} bytes, "
+                    f"{conflicts} conflicts, destination volume {event['destination_volume']}."
+                )
+            elif stage == "file":
+                row = event["row"]
+                self._android_transfer_completed += 1
+                self._android_transfer_bytes += int(row["bytes_written"])
+                destination = Path(str(row["destination"])).name
+                self.android_transfer_result.setText(
+                    f"Verified {self._android_transfer_completed}/{self._android_transfer_total}: {destination} — "
+                    f"{self._android_transfer_bytes:,} bytes copied."
+                )
+
+        def _android_transfer_completed_result(self, result: object) -> None:
+            self.android_transfer_result.setText(
+                f"Backup complete: imported {result['imported']}, already verified {result['already_imported']}, "
+                f"planned {result['planned']}. Destination volume: {result['destination_volume']}."
+            )
+            self.refresh()
+
+        def _android_transfer_cancelled(self, message: str) -> None:
+            self.android_transfer_result.setText(f"Backup cancelled safely: {message}. Retained partial files can resume.")
+
+        def _android_transfer_failed(self, message: str) -> None:
+            self.android_transfer_result.setText(f"Android backup failed: {message}")
+
         def _android_completed(self, result: object) -> None:
             identity = result["identity"]
             storages = result["storages"]
@@ -593,6 +790,12 @@ if QT_AVAILABLE:
             self.android_companion_discover_button.setEnabled(True)
             self._android_companion_worker = None
             self._android_companion_thread = None
+
+        def _android_transfer_thread_finished(self) -> None:
+            self.android_transfer_button.setEnabled(True)
+            self.android_transfer_cancel_button.setEnabled(False)
+            self._android_transfer_worker = None
+            self._android_transfer_thread = None
 
         def _scan_completed(self, result: object) -> None:
             values = result

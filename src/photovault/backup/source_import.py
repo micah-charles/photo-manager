@@ -19,6 +19,10 @@ from photovault.catalog.hashing import sha256_file
 from photovault.sources.base import ReadablePhotoSource
 
 
+class ImportCancelled(RuntimeError):
+    """A caller-requested interruption that leaves an atomic partial for resume."""
+
+
 @dataclass(frozen=True)
 class SourceImportItem:
     object_id: str
@@ -88,6 +92,7 @@ def stream_source_to_file(
     destination_root: Path,
     *,
     fsync_file: bool = True,
+    cancel_callback: Callable[[], bool] | None = None,
 ) -> dict[str, int | float | str]:
     """Stream one source object through bounded memory into an atomic destination.
 
@@ -118,10 +123,14 @@ def stream_source_to_file(
     bytes_written = resumed_bytes
     started = time.monotonic()
     try:
+        if cancel_callback is not None and cancel_callback():
+            raise ImportCancelled("import cancelled before stream started")
         with partial.open("ab" if resumed_bytes else "xb") as output:
             class HashingSink:
                 def write(self, data: bytes) -> int:
                     nonlocal bytes_written
+                    if cancel_callback is not None and cancel_callback():
+                        raise ImportCancelled("import cancelled during stream")
                     digest.update(data)
                     bytes_written += len(data)
                     return output.write(data)
@@ -280,6 +289,7 @@ def import_source_items(
     fsync_mode: str = "per-file",
     batch_files: int = 25,
     workers: int = 1,
+    cancel_callback: Callable[[], bool] | None = None,
 ) -> dict[str, object]:
     """Import only NEW items from a reviewed plan; source remains read-only.
 
@@ -292,6 +302,8 @@ def import_source_items(
         raise ValueError("batch_files must be positive")
     if workers < 1:
         raise ValueError("workers must be positive")
+    if cancel_callback is not None and cancel_callback():
+        raise ImportCancelled("import cancelled before planning")
     decisions = plan_source_import(connection, source, items, destination_root, destination_volume_id)
     if any(decision.status == SourceImportStatus.CONFLICT for decision in decisions):
         raise FileExistsError("import plan contains destination conflicts")
@@ -338,7 +350,9 @@ def import_source_items(
     if workers == 1:
         for decision in new_decisions:
             try:
-                result = stream_source_to_file(source, decision.item, destination_root, fsync_file=fsync_mode == "per-file")
+                result = stream_source_to_file(source, decision.item, destination_root, fsync_file=fsync_mode == "per-file", cancel_callback=cancel_callback)
+            except ImportCancelled:
+                raise
             except Exception as exc:
                 _record_failed_import(connection, source, decision.item, _safe_destination(destination_root, decision.item.relative_path), exc)
                 raise
@@ -346,15 +360,26 @@ def import_source_items(
     else:
         failures: list[Exception] = []
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="photovault-copy") as executor:
-            futures = {executor.submit(stream_source_to_file, source, decision.item, destination_root, fsync_file=fsync_mode == "per-file"): decision for decision in new_decisions}
+            futures = {
+                executor.submit(
+                    stream_source_to_file, source, decision.item, destination_root,
+                    fsync_file=fsync_mode == "per-file", cancel_callback=cancel_callback,
+                ): decision
+                for decision in new_decisions
+            }
             for future in as_completed(futures):
                 decision = futures[future]
                 try:
                     accept_result(decision, future.result())
+                except ImportCancelled as exc:
+                    failures.append(exc)
                 except Exception as exc:
                     _record_failed_import(connection, source, decision.item, _safe_destination(destination_root, decision.item.relative_path), exc)
                     failures.append(exc)
         if failures:
+            cancelled = next((failure for failure in failures if isinstance(failure, ImportCancelled)), None)
+            if cancelled is not None:
+                raise cancelled
             raise failures[0]
     flush_batch()
     restore_import_modified_times(connection, destination_root, destination_volume_id)
