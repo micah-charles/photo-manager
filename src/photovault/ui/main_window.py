@@ -97,6 +97,31 @@ if QT_AVAILABLE:
                 if source is not None:
                     source.close()
 
+    class AndroidCompanionDiscoveryWorker(QObject):
+        """Fetch a Companion Wi-Fi manifest away from the PySide6 UI thread."""
+
+        completed = Signal(object)
+        failed = Signal(str)
+
+        def __init__(self, url: str, token: str):
+            super().__init__()
+            self.url = url
+            self.token = token
+
+        @Slot()
+        def run(self) -> None:
+            try:
+                from photovault.sources.android_wifi import AndroidCompanionWifiSource
+
+                source = AndroidCompanionWifiSource(self.url, self.token)
+                self.completed.emit({
+                    "identity": source.identity(),
+                    "device": source.device_details(),
+                    "folders": source.folders(),
+                })
+            except Exception as exc:
+                self.failed.emit(f"{type(exc).__name__}: {exc}")
+
     class OperationWorker(QObject):
         """Execute an already reviewed copy/quarantine plan off the GUI thread."""
 
@@ -148,6 +173,8 @@ if QT_AVAILABLE:
             self._scan_worker: ScanWorker | None = None
             self._android_thread: QThread | None = None
             self._android_worker: AndroidDiscoveryWorker | None = None
+            self._android_companion_thread: QThread | None = None
+            self._android_companion_worker: AndroidCompanionDiscoveryWorker | None = None
             self._operation_thread: QThread | None = None
             self._operation_worker: OperationWorker | None = None
             self._operation_kind: str | None = None
@@ -180,16 +207,29 @@ if QT_AVAILABLE:
                 form = QFormLayout()
                 from photovault.cli.main import _default_android_helper
 
+                self.android_companion_url = QLineEdit("http://")
+                self.android_companion_token = QLineEdit()
+                self.android_companion_token.setEchoMode(QLineEdit.EchoMode.Password)
+                self.android_companion_token.setPlaceholderText("Token shown by PhotoVault Companion")
+                form.addRow("Companion URL", self.android_companion_url)
+                form.addRow("Companion token", self.android_companion_token)
+                layout.addLayout(form)
+                companion_button = QPushButton("Connect Companion (Wi-Fi)")
+                companion_button.clicked.connect(self._discover_android_companion)
+                self.android_companion_discover_button = companion_button
+                layout.addWidget(companion_button)
+                self.android_result = QLabel(
+                    "Production path: connect the read-only Android Companion over Wi-Fi. "
+                    "The device identity remains stable when its IP address changes."
+                )
+                self.android_result.setWordWrap(True)
+                layout.addWidget(self.android_result)
                 self.android_helper = QLineEdit(str(_default_android_helper()))
                 form.addRow("Native helper", self.android_helper)
-                layout.addLayout(form)
-                button = QPushButton("Discover Android source")
+                button = QPushButton("Discover USB MTP (experimental macOS fallback)")
                 button.clicked.connect(self._discover_android)
                 self.android_discover_button = button
                 layout.addWidget(button)
-                self.android_result = QLabel("Android support is optional and macOS-only.")
-                self.android_result.setWordWrap(True)
-                layout.addWidget(self.android_result)
                 table = QTableWidget()
                 self._tables[label] = table
                 layout.addWidget(table)
@@ -483,6 +523,30 @@ if QT_AVAILABLE:
             self._android_thread.finished.connect(self._android_thread.deleteLater)
             self._android_thread.start()
 
+        def _discover_android_companion(self) -> None:
+            if self._android_companion_thread is not None and self._android_companion_thread.isRunning():
+                return
+            url = self.android_companion_url.text().strip()
+            token = self.android_companion_token.text().strip()
+            if not url or url == "http://" or not token:
+                self.android_result.setText("Enter the Companion URL and token shown on the Android phone.")
+                return
+            self.android_companion_discover_button.setEnabled(False)
+            self.android_result.setText("Connecting to Android Companion in background…")
+            self._android_companion_thread = QThread(self)
+            self._android_companion_worker = AndroidCompanionDiscoveryWorker(url, token)
+            self._android_companion_worker.moveToThread(self._android_companion_thread)
+            self._android_companion_thread.started.connect(self._android_companion_worker.run)
+            self._android_companion_worker.completed.connect(self._android_companion_completed)
+            self._android_companion_worker.failed.connect(self._android_companion_failed)
+            self._android_companion_worker.completed.connect(self._android_companion_thread.quit)
+            self._android_companion_worker.failed.connect(self._android_companion_thread.quit)
+            self._android_companion_worker.completed.connect(self._android_companion_worker.deleteLater)
+            self._android_companion_worker.failed.connect(self._android_companion_worker.deleteLater)
+            self._android_companion_thread.finished.connect(self._android_companion_thread_finished)
+            self._android_companion_thread.finished.connect(self._android_companion_thread.deleteLater)
+            self._android_companion_thread.start()
+
         def _android_completed(self, result: object) -> None:
             identity = result["identity"]
             storages = result["storages"]
@@ -496,13 +560,39 @@ if QT_AVAILABLE:
                 [(storage.storage_id, storage.name, storage.capacity_bytes, storage.free_bytes) for storage in storages],
             )
 
+        def _android_companion_completed(self, result: object) -> None:
+            identity = result["identity"]
+            device = result["device"]
+            folders = result["folders"]
+            self.android_result.setText(
+                f"Connected to {identity.display_name} via Wi-Fi. Device ID: {identity.source_id}. "
+                f"Media: {device.get('media_count', 'unknown')}. "
+                f"Companion version: {device.get('app_version', 'unknown')}."
+            )
+            self._fill_table(
+                self._tables["Android Devices"],
+                ["Folder", "Items", "Bytes", "Images", "Videos"],
+                [
+                    (folder.relative_path, folder.count, folder.size_bytes, folder.image_count, folder.video_count)
+                    for folder in folders
+                ],
+            )
+
         def _android_failed(self, message: str) -> None:
             self.android_result.setText(f"Android discovery failed: {message}")
+
+        def _android_companion_failed(self, message: str) -> None:
+            self.android_result.setText(f"Android Companion connection failed: {message}")
 
         def _android_thread_finished(self) -> None:
             self.android_discover_button.setEnabled(True)
             self._android_worker = None
             self._android_thread = None
+
+        def _android_companion_thread_finished(self) -> None:
+            self.android_companion_discover_button.setEnabled(True)
+            self._android_companion_worker = None
+            self._android_companion_thread = None
 
         def _scan_completed(self, result: object) -> None:
             values = result

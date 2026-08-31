@@ -141,9 +141,13 @@ def parser() -> argparse.ArgumentParser:
     wifi_benchmark.add_argument("--limit", type=int, default=0, help="maximum files to read; 0 means every file")
     wifi_benchmark.add_argument("--oldest-first", action="store_true")
     wifi_benchmark.add_argument("--images-only", action="store_true")
-    wifi_copy = wifi_sub.add_parser("copy-folder", help="review or verified-copy one Android folder to an external destination")
+    wifi_copy = wifi_sub.add_parser("copy-folder", help="review or verified-copy one Android folder to a registered destination")
     wifi_copy.add_argument("relative_path")
-    wifi_copy.add_argument("destination_root", type=Path, help="an existing directory under /Volumes")
+    wifi_copy.add_argument(
+        "destination_root",
+        type=Path,
+        help="an existing writable directory; the host volume is identified by the platform volume provider",
+    )
     wifi_copy.add_argument("--limit", type=int, default=0, help="maximum files to copy; 0 means every matching file")
     wifi_copy.add_argument("--skip", type=int, default=0, help="matching items to skip before selecting files")
     wifi_copy.add_argument("--oldest-first", action="store_true")
@@ -167,9 +171,6 @@ def main() -> int:
             connection.close()
     if args.command == "android-wifi" and args.wifi_command != "copy-folder":
         return _dispatch(args, None)
-    if args.command == "android-wifi" and args.wifi_command == "copy-folder":
-        if not str(args.catalog.expanduser().resolve()).startswith("/Volumes/"):
-            parser().error("android-wifi copy-folder requires --catalog on an external /Volumes drive")
     connection = connect(args.catalog)
 
     try:
@@ -217,8 +218,10 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
                 from photovault.catalog.scanner import register_volume
 
                 destination = args.destination_root.expanduser().resolve()
-                if not destination.is_dir() or not str(destination).startswith("/Volumes/"):
-                    raise AndroidCompanionUnavailable("copy destination must be an existing directory on an external /Volumes drive")
+                if not destination.is_dir():
+                    raise AndroidCompanionUnavailable("copy destination must be an existing directory")
+                if not os.access(destination, os.W_OK):
+                    raise AndroidCompanionUnavailable("copy destination is not writable")
                 if args.skip < 0:
                     raise AndroidCompanionUnavailable("--skip cannot be negative")
                 if args.images_only and args.videos_only:

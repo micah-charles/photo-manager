@@ -65,7 +65,7 @@ class AndroidCompanionWifiSource(PhotoSource):
     def identity(self) -> SourceIdentity:
         if self._identity_cache is not None:
             return self._identity_cache
-        device = self._json("/api/device")["device"]
+        device = self.device_details()
         persistent_id = str(device.get("device_id") or "").strip()
         # New Companions expose an installation UUID that survives IP changes.
         # Keep the legacy endpoint fallback for old APKs, but distinguish it
@@ -80,6 +80,13 @@ class AndroidCompanionWifiSource(PhotoSource):
             adapter="android_companion_wifi",
         )
         return self._identity_cache
+
+    def device_details(self) -> dict[str, object]:
+        """Return the Companion's read-only manifest for a desktop connection view."""
+        device = self._json("/api/device").get("device")
+        if not isinstance(device, dict):
+            raise AndroidCompanionUnavailable("invalid Companion device manifest")
+        return device
 
     def list_storages(self) -> Iterable[SourceStorage]:
         yield SourceStorage(1, "Android MediaStore")
