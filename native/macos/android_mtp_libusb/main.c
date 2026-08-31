@@ -19,9 +19,12 @@
 #define TIMEOUT_MS 15000
 #define READ_SIZE (64 * 1024)
 
-typedef struct { libusb_context *ctx; libusb_device_handle *dev; int claimed; int session; } Transport;
+typedef struct { libusb_context *ctx; libusb_device_handle *dev; uint32_t next_tx; int claimed; int session; } Transport;
 typedef struct { Transport *t; unsigned char buf[READ_SIZE]; int used; int pos; } Reader;
 typedef struct { uint32_t id, parent, size; uint16_t format; char name[256]; } ObjectInfo;
+
+static int send_command(Transport *t, uint16_t op, uint32_t tx, const uint32_t *params, size_t count, char *why, size_t cap);
+static int response(Reader *r, uint32_t tx, char *why, size_t cap);
 
 static uint16_t u16(const unsigned char *p) { return (uint16_t)p[0] | ((uint16_t)p[1] << 8); }
 static uint32_t u32(const unsigned char *p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); }
@@ -34,8 +37,12 @@ static void close_transport(Transport *t) {
   // This is intentionally state-gated. The OpenMTP crash showed that blindly
   // releasing an interface after a failed/poisoned lifecycle is unsafe.
   if (t->session && t->dev) {
-    unsigned char close_cmd[12]; p32(close_cmd, 12); p16(close_cmd+4, 1); p16(close_cmd+6, 0x1003); p32(close_cmd+8, 0xffffffff);
-    int n=0; (void)libusb_bulk_transfer(t->dev, OUT_EP, close_cmd, sizeof(close_cmd), &n, 1000);
+    char close_why[256] = {0}; Reader r={.t=t}; uint32_t tx=t->next_tx++;
+    // CloseSession is a normal MTP command: consume its response before the
+    // interface is released. The first POC used 0xffffffff and abandoned this
+    // response, which poisoned the immediately following process session.
+    if (!send_command(t,0x1003,tx,NULL,0,close_why,sizeof(close_why)) || !response(&r,tx,close_why,sizeof(close_why)))
+      fprintf(stderr,"LIBUSB_MTP_CLOSE_WARNING\t%s\n",close_why);
   }
   if (t->claimed && t->dev) (void)libusb_release_interface(t->dev, IFACE);
   if (t->dev) libusb_close(t->dev);
@@ -100,7 +107,7 @@ static int command_data(Transport *t, uint16_t op, uint32_t tx, const uint32_t *
 static int open_session(Transport *t, char *why, size_t cap) {
   uint32_t sid=1; Reader r={.t=t};
   if(!send_command(t,0x1002,0,&sid,1,why,cap) || !response(&r,0,why,cap))return 0;
-  t->session=1; return 1;
+  t->session=1; t->next_tx=1; return 1;
 }
 static int parse_name(const unsigned char *p, uint32_t n, char out[256]) {
   if(!n) { out[0]=0; return 1; } uint32_t chars=p[0]; if(chars==0 || 1+chars*2>n)return 0;
@@ -138,5 +145,5 @@ int main(int argc,char **argv){
   if(!stream_object(&t,tx++,media.id,&bytes,why,sizeof(why))){fprintf(stderr,"LIBUSB_MTP_FAIL\tstage=stream\t%s\n",why);goto done;}
   fprintf(stderr,"LIBUSB_MTP_STREAM_PASS\tobject=%u\tname=%s\texpected=%u\treceived=%llu\telapsed=%.3f\n",media.id,media.name,media.size,(unsigned long long)bytes,(double)(clock()-started)/CLOCKS_PER_SEC);
   rc=(bytes==media.size)?0:4;
-done: close_transport(&t); return rc;
+done: if (t.session) t.next_tx=tx; close_transport(&t); return rc;
 }
