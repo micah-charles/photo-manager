@@ -320,7 +320,17 @@ if QT_AVAILABLE:
             title = QLabel(label)
             title.setStyleSheet("font-size: 24px; font-weight: 600; padding: 8px 0;")
             layout.addWidget(title)
-            if label == "Android Devices":
+            if label == "Dashboard":
+                self.dashboard_result = QLabel("Loading catalog health…")
+                self.dashboard_result.setWordWrap(True)
+                layout.addWidget(self.dashboard_result)
+                dashboard_table = QTableWidget()
+                self._tables[label] = dashboard_table
+                layout.addWidget(dashboard_table)
+                button = QPushButton("Refresh dashboard")
+                button.clicked.connect(self._refresh_dashboard)
+                layout.addWidget(button)
+            elif label == "Android Devices":
                 form = QFormLayout()
                 from photovault.cli.main import _default_android_helper
 
@@ -1131,6 +1141,28 @@ if QT_AVAILABLE:
             rows = list_timeline(self.connection, limit=500)
             self._fill_table(self._tables["Timeline"], ["Asset", "Filename", "Path", "Volume", "Captured", "Camera", "Model", "W", "H", "Lat", "Lon", "Thumbnail"], rows)
 
+        def _refresh_dashboard(self) -> None:
+            from photovault.catalog.dashboard import dashboard_metrics
+
+            metrics = dashboard_metrics(self.connection)
+            self.dashboard_result.setText(
+                f"Library: {metrics.assets} assets ({metrics.images} images, {metrics.videos} videos). "
+                f"Volumes: {metrics.connected_volumes}/{metrics.volumes} connected. "
+                f"Last Android backup: {metrics.last_backup or 'none yet'}."
+            )
+            self._fill_table(
+                self._tables["Dashboard"], ["Metric", "Value"],
+                [
+                    ("Catalog size", self._human_bytes(metrics.catalog_bytes)),
+                    ("Android devices", metrics.sources),
+                    ("Android backup profiles", metrics.backup_profiles),
+                    ("Favourites", metrics.favourites),
+                    ("Place clusters", metrics.places),
+                    ("Visual duplicate groups", metrics.duplicate_groups),
+                    ("Active/partial operations", metrics.active_operations),
+                ],
+            )
+
         def _refresh_library(self) -> None:
             try:
                 from photovault.catalog.library import LibraryQuery, count_library_items, list_library_items
@@ -1305,6 +1337,8 @@ if QT_AVAILABLE:
             table.resizeColumnsToContents()
 
         def refresh(self) -> None:
+            if "Dashboard" in self._tables:
+                self._refresh_dashboard()
             if "Disks" in self._tables:
                 from photovault.catalog.volume_state import refresh_volume_statuses
 
