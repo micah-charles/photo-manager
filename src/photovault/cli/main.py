@@ -145,6 +145,7 @@ def parser() -> argparse.ArgumentParser:
     wifi_copy.add_argument("relative_path")
     wifi_copy.add_argument("destination_root", type=Path, help="an existing directory under /Volumes")
     wifi_copy.add_argument("--limit", type=int, default=0, help="maximum files to copy; 0 means every matching file")
+    wifi_copy.add_argument("--skip", type=int, default=0, help="matching items to skip before selecting files")
     wifi_copy.add_argument("--oldest-first", action="store_true")
     wifi_copy.add_argument("--images-only", action="store_true")
     wifi_copy.add_argument("--fsync-mode", choices=["per-file", "batch"], default="per-file")
@@ -216,9 +217,18 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
                 destination = args.destination_root.expanduser().resolve()
                 if not destination.is_dir() or not str(destination).startswith("/Volumes/"):
                     raise AndroidCompanionUnavailable("copy destination must be an existing directory on an external /Volumes drive")
-                items = [item for item in source.iter_folder(args.relative_path, oldest_first=args.oldest_first) if not args.images_only or item.media_type == "IMAGE"]
-                if args.limit:
-                    items = items[:args.limit]
+                if args.skip < 0:
+                    raise AndroidCompanionUnavailable("--skip cannot be negative")
+                items = []; skipped = 0
+                for item in source.iter_folder(args.relative_path, oldest_first=args.oldest_first):
+                    if args.images_only and item.media_type != "IMAGE":
+                        continue
+                    if skipped < args.skip:
+                        skipped += 1
+                        continue
+                    items.append(item)
+                    if args.limit and len(items) >= args.limit:
+                        break
                 import_items = [SourceImportItem(
                     item.object_id, f"{args.relative_path.strip('/')}/{item.name}", item.size_bytes,
                     media_type=item.media_type, modified_at=item.modified_at,
@@ -229,7 +239,7 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
                 plan = plan_source_import(connection, source, import_items, destination, destination_volume)
                 conflicts = sum(1 for decision in plan if decision.status.value == "CONFLICT")
                 bytes_total = sum(item.size_bytes or 0 for item in items)
-                print(f"FOLDER_COPY_PLAN\t{args.relative_path}\t{len(items)}\t{bytes_total}\t{destination}\tconflicts={conflicts}")
+                print(f"FOLDER_COPY_PLAN\t{args.relative_path}\tskip={args.skip}\t{len(items)}\t{bytes_total}\t{destination}\tconflicts={conflicts}")
                 if not args.confirm_copy:
                     print("COPY_NOT_STARTED\tPass --confirm-copy only after reviewing this plan; no phone or destination files were changed.")
                     return 0
