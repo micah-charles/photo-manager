@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
@@ -253,6 +254,10 @@ if QT_AVAILABLE:
             self._android_transfer_completed = 0
             self._android_transfer_bytes = 0
             self._android_transfer_total = 0
+            self._android_transfer_total_bytes = 0
+            self._android_transfer_started = 0.0
+            self._android_transfer_checkpoint = 0.0
+            self._android_transfer_checkpoint_bytes = 0
             self._operation_thread: QThread | None = None
             self._operation_worker: OperationWorker | None = None
             self._operation_kind: str | None = None
@@ -680,6 +685,10 @@ if QT_AVAILABLE:
             self._android_transfer_completed = 0
             self._android_transfer_bytes = 0
             self._android_transfer_total = 0
+            self._android_transfer_total_bytes = 0
+            self._android_transfer_started = time.monotonic()
+            self._android_transfer_checkpoint = self._android_transfer_started
+            self._android_transfer_checkpoint_bytes = 0
             self.android_transfer_button.setEnabled(False)
             self.android_transfer_cancel_button.setEnabled(True)
             self.android_transfer_result.setText("Building a read-only source inventory in background…")
@@ -716,6 +725,7 @@ if QT_AVAILABLE:
             elif stage == "planned":
                 self._android_transfer_total = int(event["items"])
                 bytes_total = int(event["bytes_total"])
+                self._android_transfer_total_bytes = bytes_total
                 conflicts = int(event["conflicts"])
                 self.android_transfer_result.setText(
                     f"Plan: {self._android_transfer_total} files, {bytes_total:,} bytes, "
@@ -726,15 +736,32 @@ if QT_AVAILABLE:
                 self._android_transfer_completed += 1
                 self._android_transfer_bytes += int(row["bytes_written"])
                 destination = Path(str(row["destination"])).name
+                now = time.monotonic()
+                elapsed = now - self._android_transfer_started
+                average = self._android_transfer_bytes / elapsed if elapsed else 0.0
+                interval_elapsed = now - self._android_transfer_checkpoint
+                interval_bytes = self._android_transfer_bytes - self._android_transfer_checkpoint_bytes
+                interval = interval_bytes / interval_elapsed if interval_elapsed else 0.0
+                remaining = max(0, self._android_transfer_total_bytes - self._android_transfer_bytes)
+                eta = remaining / average if average else 0.0
+                self._android_transfer_checkpoint = now
+                self._android_transfer_checkpoint_bytes = self._android_transfer_bytes
                 self.android_transfer_result.setText(
                     f"Verified {self._android_transfer_completed}/{self._android_transfer_total}: {destination} — "
-                    f"{self._android_transfer_bytes:,} bytes copied."
+                    f"{self._human_bytes(self._android_transfer_bytes)} copied; "
+                    f"avg {self._human_bytes(average)}/s, last-file {self._human_bytes(interval)}/s; "
+                    f"elapsed {self._human_duration(elapsed)}, ETA {self._human_duration(eta)}."
                 )
 
         def _android_transfer_completed_result(self, result: object) -> None:
+            elapsed = time.monotonic() - self._android_transfer_started
+            average = self._android_transfer_bytes / elapsed if elapsed else 0.0
+            resumed = sum(int(row.get("resumed_bytes", 0)) for row in result["results"])
             self.android_transfer_result.setText(
                 f"Backup complete: imported {result['imported']}, already verified {result['already_imported']}, "
-                f"planned {result['planned']}. Destination volume: {result['destination_volume']}."
+                f"planned {result['planned']}; {self._human_bytes(self._android_transfer_bytes)} at "
+                f"{self._human_bytes(average)}/s over {self._human_duration(elapsed)}; "
+                f"resumed {self._human_bytes(resumed)}. Destination volume: {result['destination_volume']}."
             )
             self.refresh()
 
@@ -796,6 +823,23 @@ if QT_AVAILABLE:
             self.android_transfer_cancel_button.setEnabled(False)
             self._android_transfer_worker = None
             self._android_transfer_thread = None
+
+        @staticmethod
+        def _human_bytes(value: float) -> str:
+            units = ("B", "KiB", "MiB", "GiB", "TiB")
+            magnitude = max(0.0, float(value))
+            for unit in units:
+                if magnitude < 1024 or unit == units[-1]:
+                    return f"{magnitude:.1f} {unit}"
+                magnitude /= 1024
+            return f"{magnitude:.1f} TiB"
+
+        @staticmethod
+        def _human_duration(value: float) -> str:
+            seconds = max(0, int(round(value)))
+            hours, seconds = divmod(seconds, 3600)
+            minutes, seconds = divmod(seconds, 60)
+            return f"{hours:d}:{minutes:02d}:{seconds:02d}"
 
         def _scan_completed(self, result: object) -> None:
             values = result
