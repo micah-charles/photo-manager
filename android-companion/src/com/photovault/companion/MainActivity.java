@@ -3,14 +3,13 @@ package com.photovault.companion;
 import android.Manifest;
 import android.app.Activity;
 import android.content.ContentResolver;
-import android.content.ContentValues;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore;
-import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -47,45 +46,60 @@ public final class MainActivity extends Activity {
     private static final int PORT = 8765;
     private static final int PERMISSIONS = 42;
     private TextView status;
-    private MediaServer server;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL); body.setPadding(36, 36, 36, 36);
         status = new TextView(this); status.setTextSize(16); status.setTextIsSelectable(true);
-        Button restart = new Button(this); restart.setText("Start / refresh local sharing");
-        restart.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { startWhenPermitted(); }
-        });
+        Button tenMinutes = shareButton("Share for 10 minutes", SharingService.TEN_MINUTES);
+        Button oneHour = shareButton("Share for 1 hour", SharingService.ONE_HOUR);
+        Button untilStopped = shareButton("Share until stopped (up to 6 hours)", SharingService.UNTIL_STOPPED);
+        Button stop = new Button(this); stop.setText("Stop local sharing");
+        stop.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { stopSharing(); } });
         ScrollView scroll = new ScrollView(this); scroll.addView(status);
-        body.addView(restart); body.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        body.addView(tenMinutes); body.addView(oneHour); body.addView(untilStopped); body.addView(stop);
+        body.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(body);
-        startWhenPermitted();
+        // Reopening the UI must not shorten or rotate an already-running session.
+        if (SharingService.snapshot() == null) startWhenPermitted(SharingService.TEN_MINUTES); else showStatus();
     }
-    @Override public void onDestroy() { if (server != null) server.close(); super.onDestroy(); }
 
-    private void startWhenPermitted() {
+    private Button shareButton(String label, final long duration) {
+        Button button = new Button(this); button.setText(label);
+        button.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { startWhenPermitted(duration); } });
+        return button;
+    }
+
+    private void startWhenPermitted(long duration) {
         List<String> missing = new ArrayList<>();
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             if (checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.READ_MEDIA_IMAGES);
             if (checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.READ_MEDIA_VIDEO);
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.POST_NOTIFICATIONS);
         }
-        if (!missing.isEmpty()) { requestPermissions(missing.toArray(new String[0]), PERMISSIONS); status.setText("Grant Photos and Videos permission, then local sharing will start."); return; }
-        if (server != null) server.close();
-        try {
-            server = new MediaServer(getContentResolver()); server.start();
-            String ip = localIpv4();
-            status.setText("PhotoVault Companion — read-only POC\n" +
-                "Build: 0.2 — MediaStore manifest fix\n\n" +
-                "Desktop URL: http://" + ip + ":" + PORT + "\n" +
-                "Token: " + server.token + "\n\n" +
-                "Run on the Mac:\n" +
-                "PYTHONPATH=src python3 -m photovault.cli android-wifi devices --url http://" + ip + ":" + PORT + " --token " + server.token + "\n\n" +
-                "The token changes whenever this app restarts. Keep this screen open while testing. No phone files can be changed through this server.");
-        } catch (IOException e) { status.setText("Could not start local server: " + e); }
+        if (!missing.isEmpty()) { requestPermissions(missing.toArray(new String[0]), PERMISSIONS); status.setText("Grant Photos, Videos, and Notifications permission, then local sharing will start."); return; }
+        Intent intent = new Intent(this, SharingService.class).setAction(SharingService.ACTION_START).putExtra(SharingService.EXTRA_DURATION, duration);
+        startForegroundService(intent);
+        status.postDelayed(new Runnable() { @Override public void run() { showStatus(); } }, 150);
     }
-    @Override public void onRequestPermissionsResult(int request, String[] p, int[] grants) { super.onRequestPermissionsResult(request,p,grants); if(request==PERMISSIONS) startWhenPermitted(); }
+    private void stopSharing() { startService(new Intent(this, SharingService.class).setAction(SharingService.ACTION_STOP)); status.setText("Local sharing stopped. No phone files were changed."); }
+    @Override public void onResume() { super.onResume(); showStatus(); }
+    @Override public void onRequestPermissionsResult(int request, String[] p, int[] grants) { super.onRequestPermissionsResult(request,p,grants); if(request==PERMISSIONS) startWhenPermitted(SharingService.TEN_MINUTES); }
+
+    private void showStatus() {
+        SharingService.Snapshot snapshot = SharingService.snapshot();
+        if (snapshot == null) { status.setText("Local sharing is stopped. Choose a sharing duration above."); return; }
+        String ip = localIpv4();
+        status.setText("PhotoVault Companion — read-only POC\n" +
+            "Build: 0.3 — background sharing\n\n" +
+            "Status: sharing active — " + snapshot.durationLabel + "\n" +
+            "Desktop URL: http://" + ip + ":" + PORT + "\n" +
+            "Token: " + snapshot.token + "\n\n" +
+            "Run on the Mac:\n" +
+            "PYTHONPATH=src python3 -m photovault.cli android-wifi devices --url http://" + ip + ":" + PORT + " --token " + snapshot.token + "\n\n" +
+            "You can turn the screen off: sharing stays active with a persistent notification. Stop it here or from that notification. No phone files can be changed through this server.");
+    }
 
     private static String localIpv4() {
         try {

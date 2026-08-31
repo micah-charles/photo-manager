@@ -135,6 +135,18 @@ reachability, the desktop client received exactly the manifest-declared
 162,584 bytes in 0.196 seconds (about 0.83 MB/s) and discarded those bytes
 after measurement. No Pixel file was changed or retained on the Mac.
 
+Background-sharing regression result (2026-08-31): PASS in the Android 35
+emulator. Build `0.3-background-sharing` runs the local server in a visible
+`dataSync` foreground service, with a persistent notification and an explicit
+Stop action. It holds only the CPU and Wi-Fi locks required for an active
+sharing session; it does not keep the display on. The service responded to
+`/api/device` both before and after the emulator screen was turned off, and
+Android reported it as an active foreground service with the `dataSync` type.
+The UI offers 10 minutes, 1 hour, and “until stopped”; the last option is
+labelled as a maximum of about six hours because Android 15 limits `dataSync`
+foreground-service time in a 24-hour period. A physical Pixel screen-off test
+is still pending.
+
 After installation, use the URL/token shown by the app:
 
 ```zsh
@@ -194,8 +206,10 @@ The raw IOUSBHost backend remains frozen as a reference backend, not removed.
 2. Treat the current basic libusb experiment as a recorded failure; do not use
    its partial output as a photo or continue tuning buffer sizes.
 3. Install the APK: `adb install -r android-companion/build/photovault-companion-debug.apk`.
-4. Open **PhotoVault Companion**, grant Photos and Videos permission, and keep
-   its screen open on the same Wi-Fi as the Mac.
+4. Open **PhotoVault Companion**, grant Photos, Videos, and Notifications
+   permission, then choose **Share for 10 minutes**, **Share for 1 hour**, or
+   **Share until stopped (up to 6 hours)**. The screen may be turned off; use
+   the app or the persistent notification’s **Stop** action to end sharing.
 5. Copy the displayed URL and token into the three Track B commands above.
 6. Run `list`; choose one JPEG `OBJECT_ID`; run `stream` and record bytes/time.
 7. Repeat `stream` for two more photos without restarting the app.
