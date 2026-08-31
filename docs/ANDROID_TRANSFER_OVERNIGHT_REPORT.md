@@ -9,11 +9,12 @@ next bulk-IN returned `LIBUSB_ERROR_IO`. The subsequent CloseSession timed out.
 Changing only from raw `IOUSBHost` to a basic synchronous libusb loop therefore
 does not solve the sustained-read failure on this Pixel/macOS combination.
 
-Track B — Android Companion Wi-Fi: **APP/PROTOCOL PASS; PIXEL/LAN NEEDS MORE
-EVIDENCE**. A minimal Android MediaStore companion builds to a signed debug
-APK. Its fixed MediaStore manifest path, complete stream, and Range behavior
-passed in an Android 35 arm64 emulator. It has not yet completed the same
-stream test on the physical Pixel/LAN.
+Track B — Android Companion Wi-Fi: **SINGLE-IMAGE PIXEL/LAN PASS; MORE
+EVIDENCE NEEDED**. A minimal Android MediaStore companion builds to a signed
+debug APK. Its fixed MediaStore manifest path, complete stream, and Range
+behavior passed in an Android 35 arm64 emulator. The updated app then passed a
+real Pixel device/manifest check and one complete image stream over LAN. Large
+transfer, sequential, and recovery behavior remain unmeasured.
 
 Recommended next step: run the short manual checklist below before selecting a
 primary transport. Neither prototype has a measured complete JPEG, large-file,
@@ -128,6 +129,12 @@ desktop client then passed device discovery and manifest retrieval, streamed a
 39,115-byte range result had the exact SHA-256 of the fixture tail. No
 unhandled Companion exception appeared in the emulator log.
 
+Physical Pixel/LAN result (2026-08-31): PASS for one complete image. After
+confirming the Pixel's local `/api/device` endpoint and restored LAN
+reachability, the desktop client received exactly the manifest-declared
+162,584 bytes in 0.196 seconds (about 0.83 MB/s) and discarded those bytes
+after measurement. No Pixel file was changed or retained on the Mac.
+
 After installation, use the URL/token shown by the app:
 
 ```zsh
@@ -141,9 +148,9 @@ PYTHONPATH=src python3 -m photovault.cli --catalog /tmp/photovault-wifi.db \
 
 | Test | Result |
 | --- | --- |
-| Device information | PASS: automated client + Android 35 emulator; Pixel/LAN PASS once before app update |
-| Media manifest | PASS: Android 35 emulator; physical Pixel needs updated APK validation |
-| Complete JPEG | PASS: 40,139-byte emulator JPEG; Pixel/LAN NOT TESTED |
+| Device information | PASS: automated client, Android 35 emulator, updated Pixel/LAN |
+| Media manifest | PASS: Android 35 emulator + updated Pixel/LAN |
+| Complete image | PASS: emulator fixture + Pixel 162,584-byte stream |
 | Sequential files | NOT TESTED |
 | 100 MB+ object | NOT TESTED |
 | Throughput | NOT MEASURED |
@@ -156,7 +163,7 @@ remains reference material only.
 
 | Criterion | USB MTP/libusb | Android Companion Wi-Fi |
 | --- | --- | --- |
-| Complete JPEG | FAIL: 64 KiB then bulk-IN I/O error | PASS in emulator; Pixel/LAN pending |
+| Complete image | FAIL: 64 KiB then bulk-IN I/O error | PASS: emulator + one Pixel image |
 | 100 MB+ file | NOT TESTED | NOT TESTED |
 | Average MB/s | NOT MEASURED | NOT MEASURED |
 | Resume | NOT TESTED | Protocol/client Range support implemented; NOT TESTED |
@@ -175,8 +182,9 @@ it has reproduced the same class of sustained-read failure after beginning the
 payload. A substantially different USB implementation/lifecycle model would
 need separate evidence before further USB work. Wi-Fi is the remaining primary
 candidate direction for portability and recoverable Range semantics. Its app
-and protocol path now has Android runtime evidence; it must still earn primary
-status with physical-Pixel throughput, permission, and interruption tests.
+and protocol path now has Android runtime evidence plus one real Pixel image;
+it must still earn primary status with sequential, large-file, and interruption
+tests.
 
 The raw IOUSBHost backend remains frozen as a reference backend, not removed.
 
