@@ -12,6 +12,7 @@ try:
     from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
     from PySide6.QtWidgets import (
         QApplication,
+        QCheckBox,
         QComboBox,
         QFormLayout,
         QHBoxLayout,
@@ -452,6 +453,36 @@ if QT_AVAILABLE:
                 self.quarantine_result = QLabel("Planning only: no file is moved by this button. Review and execute via the CLI.")
                 self.quarantine_result.setWordWrap(True)
                 layout.addWidget(self.quarantine_result)
+            elif label == "Library":
+                form = QFormLayout()
+                self.library_search = QLineEdit()
+                self.library_folder = QLineEdit()
+                self.library_media_type = QComboBox()
+                self.library_media_type.addItems(["ALL", "IMAGE", "VIDEO"])
+                self.library_sort = QComboBox()
+                self.library_sort.addItem("Capture date — newest", "captured_desc")
+                self.library_sort.addItem("Capture date — oldest", "captured_asc")
+                self.library_sort.addItem("Filename", "name_asc")
+                self.library_sort.addItem("Largest first", "size_desc")
+                self.library_favourites_only = QCheckBox("Favourites only")
+                self.library_limit = QLineEdit("200")
+                form.addRow("Search filename / path", self.library_search)
+                form.addRow("Folder prefix", self.library_folder)
+                form.addRow("Media", self.library_media_type)
+                form.addRow("Sort", self.library_sort)
+                form.addRow("Filter", self.library_favourites_only)
+                form.addRow("Page size", self.library_limit)
+                layout.addLayout(form)
+                button = QPushButton("Refresh catalog library")
+                button.clicked.connect(self._refresh_library)
+                layout.addWidget(button)
+                self.library_result = QLabel("Catalog-backed results remain visible when an original volume is offline.")
+                self.library_result.setWordWrap(True)
+                layout.addWidget(self.library_result)
+                table = QTableWidget()
+                table.setSortingEnabled(True)
+                self._tables[label] = table
+                layout.addWidget(table)
             elif label in {"Timeline", "Visual Duplicates", "Places"}:
                 if label == "Timeline":
                     button = QPushButton("Refresh timeline")
@@ -1074,6 +1105,36 @@ if QT_AVAILABLE:
             rows = list_timeline(self.connection, limit=500)
             self._fill_table(self._tables["Timeline"], ["Asset", "Filename", "Path", "Volume", "Captured", "Camera", "Model", "W", "H", "Lat", "Lon", "Thumbnail"], rows)
 
+        def _refresh_library(self) -> None:
+            try:
+                from photovault.catalog.library import LibraryQuery, count_library_items, list_library_items
+
+                limit = int(self.library_limit.text().strip())
+                query = LibraryQuery(
+                    search=self.library_search.text(), folder_prefix=self.library_folder.text(),
+                    media_type=self.library_media_type.currentText(),
+                    favourite_only=self.library_favourites_only.isChecked(),
+                    sort=str(self.library_sort.currentData()), limit=limit,
+                )
+                rows = list_library_items(self.connection, query)
+                total = count_library_items(self.connection, query)
+                self.library_result.setText(
+                    f"Showing {len(rows)} of {total} catalogued location(s). "
+                    "OFFLINE rows retain metadata and cached thumbnails; originals are not removed."
+                )
+                self._fill_table(
+                    self._tables["Library"],
+                    ["Asset", "Type", "Filename", "Path", "Bytes", "Volume", "State", "Captured", "Camera", "W", "H", "Favourite", "Thumbnail"],
+                    [
+                        (row["asset_id"], row["media_type"], row["filename"], row["relative_path"], row["size_bytes"],
+                         row["volume_name"], row["volume_status"], row["captured"], row["camera_model"],
+                         row["width"], row["height"], "★" if row["is_favourite"] else "", row["thumbnail_path"])
+                        for row in rows
+                    ],
+                )
+            except Exception as exc:
+                self.library_result.setText(f"Library query failed: {type(exc).__name__}: {exc}")
+
         def _visual_duplicates(self, algorithm: QLineEdit, threshold: QLineEdit) -> None:
             try:
                 from photovault.catalog.perceptual import find_visual_duplicate_groups
@@ -1160,6 +1221,8 @@ if QT_AVAILABLE:
                 self._fill_table(self._tables["Operations"], ["ID", "Type", "Status", "Dry run", "Created", "Completed"], [tuple(row) for row in rows])
             if "Timeline" in self._tables:
                 self._refresh_timeline()
+            if "Library" in self._tables:
+                self._refresh_library()
             if "Favourites" in self._tables:
                 from photovault.catalog.favourites import list_favourites
 

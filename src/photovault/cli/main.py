@@ -37,6 +37,14 @@ def parser() -> argparse.ArgumentParser:
     timeline = sub.add_parser("timeline", help="list catalogued media by capture time")
     timeline.add_argument("--volume-id")
     timeline.add_argument("--limit", type=int, default=100)
+    library = sub.add_parser("library", help="browse catalogued media without rescanning folders")
+    library.add_argument("--search", default="")
+    library.add_argument("--folder", default="")
+    library.add_argument("--media-type", choices=["ALL", "IMAGE", "VIDEO"], default="ALL")
+    library.add_argument("--favourites", action="store_true")
+    library.add_argument("--sort", choices=["captured_desc", "captured_asc", "name_asc", "size_desc"], default="captured_desc")
+    library.add_argument("--limit", type=int, default=200)
+    library.add_argument("--offset", type=int, default=0)
     gallery = sub.add_parser("gallery", help="export a local static gallery without copying originals")
     gallery.add_argument("output", type=Path)
     gallery.add_argument("--volume-id")
@@ -394,6 +402,17 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
         from photovault.catalog.timeline import list_timeline
 
         for row in list_timeline(connection, args.volume_id, args.limit):
+            print("\t".join("" if value is None else str(value) for value in row))
+    elif args.command == "library":
+        from photovault.catalog.library import LibraryQuery, count_library_items, list_library_items
+
+        query = LibraryQuery(
+            search=args.search, folder_prefix=args.folder, media_type=args.media_type,
+            favourite_only=args.favourites, sort=args.sort, limit=args.limit, offset=args.offset,
+        )
+        rows = list_library_items(connection, query)
+        print(f"PAGE\t{args.offset}\t{len(rows)}\t{count_library_items(connection, query)}")
+        for row in rows:
             print("\t".join("" if value is None else str(value) for value in row))
     elif args.command == "gallery":
         from photovault.catalog.gallery import write_gallery
