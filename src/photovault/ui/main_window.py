@@ -137,13 +137,13 @@ if QT_AVAILABLE:
         cancelled = Signal(str)
         failed = Signal(str)
 
-        def __init__(self, catalog_path: Path, url: str, token: str, profile_name: str, folder: str, media_filter: str, destination: Path, workers: int):
+        def __init__(self, catalog_path: Path, url: str, token: str, profile_name: str, folders: tuple[str, ...], media_filter: str, destination: Path, workers: int):
             super().__init__()
             self.catalog_path = catalog_path
             self.url = url
             self.token = token
             self.profile_name = profile_name
-            self.folder = folder
+            self.folders = folders
             self.media_filter = media_filter
             self.destination = destination
             self.workers = workers
@@ -155,7 +155,7 @@ if QT_AVAILABLE:
         @Slot()
         def run(self) -> None:
             from photovault.backup.source_import import ImportCancelled, SourceImportItem, import_source_items, plan_source_import
-            from photovault.backup.android_profiles import finish_android_backup_snapshot, start_android_backup_snapshot, upsert_android_backup_profile
+            from photovault.backup.android_profiles import finish_android_backup_snapshot, missing_from_source, start_android_backup_snapshot, upsert_android_backup_profile
             from photovault.catalog.scanner import register_volume
             from photovault.database.connection import connect
             from photovault.sources.android_wifi import AndroidCompanionWifiSource
@@ -167,14 +167,18 @@ if QT_AVAILABLE:
             try:
                 self.progress.emit({"stage": "inventory"})
                 source = AndroidCompanionWifiSource(self.url, self.token)
-                items = [
-                    item for item in source.iter_folder(self.folder)
-                    if self.media_filter == "ALL" or item.media_type == self.media_filter
-                ]
-                import_items = [SourceImportItem(
-                    item.object_id, f"{self.folder.strip('/')}/{item.name}", item.size_bytes,
-                    media_type=item.media_type, modified_at=item.modified_at,
-                ) for item in items]
+                items = []
+                import_items = []
+                for folder in self.folders:
+                    folder_items = [
+                        item for item in source.iter_folder(folder)
+                        if self.media_filter == "ALL" or item.media_type == self.media_filter
+                    ]
+                    items.extend(folder_items)
+                    import_items.extend(SourceImportItem(
+                        item.object_id, f"{folder.strip('/')}/{item.name}", item.size_bytes,
+                        media_type=item.media_type, modified_at=item.modified_at,
+                    ) for item in folder_items)
                 if len({item.relative_path for item in import_items}) != len(import_items):
                     raise ValueError("selected folder contains duplicate destination names; nothing was copied")
                 if self._cancel.is_set():
@@ -183,14 +187,21 @@ if QT_AVAILABLE:
                 destination_volume = register_volume(connection, self.destination)
                 decisions = plan_source_import(connection, source, import_items, self.destination, destination_volume)
                 conflicts = sum(1 for decision in decisions if decision.status.value == "CONFLICT")
+                new_items = sum(1 for decision in decisions if decision.status.value == "NEW")
+                unchanged_items = sum(1 for decision in decisions if decision.status.value == "ALREADY_IMPORTED")
+                missing_items = missing_from_source(
+                    connection, source_id=source.identity().source_id, destination_volume_id=destination_volume,
+                    folders=self.folders, current_logical_paths=(item.relative_path for item in import_items),
+                )
                 bytes_total = sum(item.size_bytes or 0 for item in items)
                 self.progress.emit({
                     "stage": "planned", "items": len(items), "bytes_total": bytes_total,
-                    "conflicts": conflicts, "destination_volume": destination_volume,
+                    "conflicts": conflicts, "new": new_items, "unchanged": unchanged_items,
+                    "missing": len(missing_items), "destination_volume": destination_volume,
                 })
                 profile_id = upsert_android_backup_profile(
                     connection, source_id=source.identity().source_id,
-                    name=self.profile_name, folder_path=self.folder, media_filter=self.media_filter,
+                    name=self.profile_name, folder_paths=self.folders, media_filter=self.media_filter,
                     destination_volume_id=destination_volume, workers=self.workers,
                 )
                 snapshot_id = start_android_backup_snapshot(
@@ -214,6 +225,7 @@ if QT_AVAILABLE:
                 finish_android_backup_snapshot(
                     connection, snapshot_id, status="COMPLETED", imported_items=imported_items,
                     already_imported_items=int(result["already_imported"]), imported_bytes=imported_bytes,
+                    details={"folders": list(self.folders), "missing_from_source": len(missing_items)},
                 )
                 self.completed.emit({**result, "items": len(items), "bytes_total": bytes_total,
                                      "destination_volume": destination_volume, "profile_id": profile_id,
@@ -352,7 +364,8 @@ if QT_AVAILABLE:
                 self.android_result.setWordWrap(True)
                 layout.addWidget(self.android_result)
                 transfer_form = QFormLayout()
-                self.android_transfer_folder = QLineEdit("DCIM/Camera")
+                self.android_transfer_folders = QPlainTextEdit("DCIM/Camera")
+                self.android_transfer_folders.setPlaceholderText("One MediaStore relative folder per line, e.g. DCIM/Camera")
                 self.android_transfer_profile_name = QLineEdit("Android Camera backup")
                 self.android_transfer_media_filter = QComboBox()
                 self.android_transfer_media_filter.addItem("Images and videos", "ALL")
@@ -360,7 +373,7 @@ if QT_AVAILABLE:
                 self.android_transfer_media_filter.addItem("Videos only", "VIDEO")
                 self.android_transfer_destination = QLineEdit()
                 self.android_transfer_workers = QLineEdit("5")
-                transfer_form.addRow("Backup folder", self.android_transfer_folder)
+                transfer_form.addRow("Backup folders", self.android_transfer_folders)
                 transfer_form.addRow("Profile name", self.android_transfer_profile_name)
                 transfer_form.addRow("Media", self.android_transfer_media_filter)
                 transfer_form.addRow("Destination directory", self.android_transfer_destination)
@@ -789,12 +802,16 @@ if QT_AVAILABLE:
                 return
             url = self.android_companion_url.text().strip()
             token = self.android_companion_token.text().strip()
-            folder = self.android_transfer_folder.text().strip().strip("/")
+            folders = tuple(dict.fromkeys(
+                line.strip().strip("/")
+                for line in self.android_transfer_folders.toPlainText().splitlines()
+                if line.strip().strip("/")
+            ))
             profile_name = self.android_transfer_profile_name.text().strip()
             media_filter = str(self.android_transfer_media_filter.currentData())
             destination_text = self.android_transfer_destination.text().strip()
-            if not url or url == "http://" or not token or not folder or not profile_name or not destination_text:
-                self.android_transfer_result.setText("Enter Companion URL, token, folder and an existing destination directory.")
+            if not url or url == "http://" or not token or not folders or not profile_name or not destination_text:
+                self.android_transfer_result.setText("Enter Companion URL, token, at least one folder and an existing destination directory.")
                 return
             destination = Path(destination_text).expanduser()
             if not destination.is_dir():
@@ -819,7 +836,7 @@ if QT_AVAILABLE:
             self.android_transfer_result.setText("Building a read-only source inventory in background…")
             self._android_transfer_thread = QThread(self)
             self._android_transfer_worker = AndroidCompanionTransferWorker(
-                self._catalog_path, url, token, profile_name, folder, media_filter, destination, workers,
+                self._catalog_path, url, token, profile_name, folders, media_filter, destination, workers,
             )
             self._android_transfer_worker.moveToThread(self._android_transfer_thread)
             self._android_transfer_thread.started.connect(self._android_transfer_worker.run)
@@ -854,6 +871,7 @@ if QT_AVAILABLE:
                 conflicts = int(event["conflicts"])
                 self.android_transfer_result.setText(
                     f"Plan: {self._android_transfer_total} files, {bytes_total:,} bytes, "
+                    f"new={event['new']}, unchanged={event['unchanged']}, missing from source={event['missing']} (no deletions), "
                     f"{conflicts} conflicts, destination volume {event['destination_volume']}."
                 )
             elif stage == "file":

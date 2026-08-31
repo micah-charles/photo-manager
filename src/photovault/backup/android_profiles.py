@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from collections.abc import Iterable
 
 from photovault.catalog.scanner import utc_now
 
@@ -13,7 +14,8 @@ def upsert_android_backup_profile(
     *,
     source_id: str,
     name: str,
-    folder_path: str,
+    folder_path: str = "",
+    folder_paths: Iterable[str] | None = None,
     media_filter: str,
     destination_volume_id: str,
     destination_relative_root: str = "",
@@ -21,8 +23,15 @@ def upsert_android_backup_profile(
     fsync_mode: str = "batch",
     batch_files: int = 25,
 ) -> str:
-    """Create/update a profile keyed by stable source and destination identity."""
-    folder_path = folder_path.strip("/")
+    """Create/update a profile keyed by stable source and destination identity.
+
+    ``folder_path`` remains accepted for existing single-folder callers. New
+    callers pass ``folder_paths``; the canonical joined value is retained in
+    the older column solely as the profile's stable selection key, while the
+    normalized child table preserves individual folders for UI and reporting.
+    """
+    selected_folders = tuple(sorted({path.strip("/") for path in (folder_paths or (folder_path,)) if path.strip("/")}))
+    folder_path = "|".join(selected_folders)
     destination_relative_root = destination_relative_root.strip("/")
     if not folder_path:
         raise ValueError("folder_path is required")
@@ -56,6 +65,11 @@ def upsert_android_backup_profile(
              destination_volume_id, destination_relative_root, workers, fsync_mode,
              batch_files, now, now),
         )
+    connection.execute("DELETE FROM android_backup_profile_folders WHERE profile_id=?", (profile_id,))
+    connection.executemany(
+        "INSERT INTO android_backup_profile_folders(profile_id, folder_path) VALUES (?, ?)",
+        [(profile_id, folder) for folder in selected_folders],
+    )
     connection.commit()
     return profile_id
 
@@ -112,3 +126,45 @@ def list_android_backup_profiles(connection: sqlite3.Connection) -> list[sqlite3
            FROM android_backup_profiles p JOIN volumes v ON v.id=p.destination_volume_id
            ORDER BY p.updated_at DESC, p.name"""
     ))
+
+
+def profile_folders(connection: sqlite3.Connection, profile_id: str) -> tuple[str, ...]:
+    """Return normalized selected folders, with a migration-safe legacy fallback."""
+    folders = tuple(str(row[0]) for row in connection.execute(
+        "SELECT folder_path FROM android_backup_profile_folders WHERE profile_id=? ORDER BY folder_path", (profile_id,)
+    ))
+    if folders:
+        return folders
+    row = connection.execute("SELECT folder_path FROM android_backup_profiles WHERE id=?", (profile_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"unknown Android backup profile: {profile_id}")
+    return tuple(part for part in str(row[0]).split("|") if part)
+
+
+def missing_from_source(
+    connection: sqlite3.Connection,
+    *,
+    source_id: str,
+    destination_volume_id: str,
+    folders: Iterable[str],
+    current_logical_paths: Iterable[str],
+) -> tuple[str, ...]:
+    """Report prior verified imports absent from a selected source inventory.
+
+    This is intentionally informational. Callers must never turn this result
+    into a destination delete operation.
+    """
+    normalized = tuple(sorted({folder.strip("/") for folder in folders if folder.strip("/")}))
+    if not normalized:
+        return ()
+    conditions = " OR ".join("logical_path LIKE ?" for _ in normalized)
+    params: list[object] = [source_id, destination_volume_id]
+    params.extend(folder + "/%" for folder in normalized)
+    previous = {
+        str(row[0]) for row in connection.execute(
+            f"""SELECT DISTINCT logical_path FROM source_imports
+                WHERE source_id=? AND destination_volume_id=? AND ({conditions})""",
+            params,
+        )
+    }
+    return tuple(sorted(previous - set(current_logical_paths)))

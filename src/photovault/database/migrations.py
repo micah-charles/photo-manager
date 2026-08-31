@@ -357,6 +357,18 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX idx_asset_favourites_updated ON asset_favourites(updated_at DESC);
         """,
     ),
+    (
+        13,
+        """
+        CREATE TABLE android_backup_profile_folders (
+            profile_id TEXT NOT NULL REFERENCES android_backup_profiles(id) ON DELETE CASCADE,
+            folder_path TEXT NOT NULL,
+            PRIMARY KEY(profile_id, folder_path)
+        );
+        CREATE INDEX idx_android_backup_profile_folders_profile
+            ON android_backup_profile_folders(profile_id);
+        """,
+    ),
 ]
 
 
