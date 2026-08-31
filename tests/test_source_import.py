@@ -146,7 +146,7 @@ class SourceImportTests(unittest.TestCase):
             first = SourceImportItem("1", "DCIM/Camera/a.jpg", len(source.payload))
             import_source_item(connection, source, first, root / "destination", "vol_dest")
             second = SourceImportItem("2", "DCIM/Camera/b.jpg", len(source.payload))
-            result = import_source_items(connection, source, [first, second], root / "destination", "vol_dest")
+            result = import_source_items(connection, source, [first, second], root / "destination", "vol_dest", fsync_mode="batch", batch_files=1)
             self.assertEqual((result["planned"], result["imported"], result["already_imported"]), (2, 1, 1))
             self.assertTrue((root / "destination/DCIM/Camera/b.jpg").exists())
             connection.close()

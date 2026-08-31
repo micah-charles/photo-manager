@@ -147,6 +147,8 @@ def parser() -> argparse.ArgumentParser:
     wifi_copy.add_argument("--limit", type=int, default=0, help="maximum files to copy; 0 means every matching file")
     wifi_copy.add_argument("--oldest-first", action="store_true")
     wifi_copy.add_argument("--images-only", action="store_true")
+    wifi_copy.add_argument("--fsync-mode", choices=["per-file", "batch"], default="per-file")
+    wifi_copy.add_argument("--batch-files", type=int, default=25)
     wifi_copy.add_argument("--confirm-copy", action="store_true", help="perform the reviewed copy; omission is a read-only plan")
     sub.add_parser("gui", help="launch the optional PySide6 desktop UI")
     return p
@@ -243,7 +245,7 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
                         elapsed_checkpoint = now - checkpoint; elapsed_total = now - started
                         print(f"FOLDER_COPY_PROGRESS\t{completed_files}\t{len(import_items)}\t{completed_bytes}\t{elapsed_total:.3f}\t{completed_bytes / elapsed_total if elapsed_total else 0:.0f}\t{checkpoint_files}\t{checkpoint_bytes}\t{elapsed_checkpoint:.3f}\t{checkpoint_bytes / elapsed_checkpoint if elapsed_checkpoint else 0:.0f}", flush=True)
                         checkpoint = now; checkpoint_files = 0; checkpoint_bytes = 0
-                result = import_source_items(connection, source, import_items, destination, destination_volume, progress_callback=progress)
+                result = import_source_items(connection, source, import_items, destination, destination_volume, progress_callback=progress, fsync_mode=args.fsync_mode, batch_files=args.batch_files)
                 elapsed = time.monotonic() - started
                 bytes_written = sum(int(row["bytes_written"]) for row in result["results"])
                 print(f"FOLDER_COPY\t{args.relative_path}\t{result['imported']}\t{result['already_imported']}\t{bytes_written}\t{elapsed:.3f}\t{bytes_written / elapsed if elapsed else 0:.0f}")

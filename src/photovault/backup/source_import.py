@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 from photovault.catalog.sources import register_source
 from photovault.catalog.scanner import utc_now
+from photovault.catalog.hashing import sha256_file
 from photovault.sources.base import ReadablePhotoSource
 
 
@@ -63,7 +64,7 @@ def plan_source_import(
         destination = _safe_destination(destination_root, item.relative_path)
         existing = connection.execute(
             """
-            SELECT source_size_bytes, source_modified_at
+            SELECT source_size_bytes, source_modified_at, sha256
             FROM source_imports
             WHERE source_id=? AND logical_path=? AND destination_volume_id=?
             ORDER BY imported_at DESC LIMIT 1
@@ -71,8 +72,8 @@ def plan_source_import(
             (identity.source_id, item.relative_path, destination_volume_id),
         ).fetchone()
         modified = item.modified_at.isoformat() if hasattr(item.modified_at, "isoformat") else None
-        if existing and destination.exists() and existing[0] == item.size_bytes and existing[1] == modified:
-            decisions.append(SourceImportDecision(item, SourceImportStatus.ALREADY_IMPORTED, "matching completed import exists"))
+        if existing and destination.exists() and existing[0] == item.size_bytes and existing[1] == modified and existing[2] and sha256_file(destination) == existing[2]:
+            decisions.append(SourceImportDecision(item, SourceImportStatus.ALREADY_IMPORTED, "matching verified import exists"))
         elif destination.exists():
             decisions.append(SourceImportDecision(item, SourceImportStatus.CONFLICT, "destination exists but is not a matching completed import"))
         else:
@@ -84,6 +85,8 @@ def stream_source_to_file(
     source: ReadablePhotoSource,
     item: SourceImportItem,
     destination_root: Path,
+    *,
+    fsync_file: bool = True,
 ) -> dict[str, int | float | str]:
     """Stream one source object through bounded memory into an atomic destination."""
     destination = _safe_destination(destination_root, item.relative_path)
@@ -108,7 +111,8 @@ def stream_source_to_file(
 
             metrics = source.stream_object(item.object_id, HashingSink())
             output.flush()
-            os.fsync(output.fileno())
+            if fsync_file:
+                os.fsync(output.fileno())
         actual_hash = digest.hexdigest()
         if item.size_bytes is not None and bytes_written != item.size_bytes:
             raise ValueError(f"source size mismatch: expected {item.size_bytes}, got {bytes_written}")
@@ -178,6 +182,8 @@ def import_source_item(
     item: SourceImportItem,
     destination_root: Path,
     destination_volume_id: str,
+    *,
+    fsync_file: bool = True,
 ) -> dict[str, int | float | str]:
     """Import one source object using the existing operation/catalog model."""
     identity = source.identity()
@@ -196,7 +202,7 @@ def import_source_item(
     operation_item_id = cursor.lastrowid
     connection.commit()
     try:
-        result = stream_source_to_file(source, item, destination_root)
+        result = stream_source_to_file(source, item, destination_root, fsync_file=fsync_file)
         actual_hash = str(result["sha256"])
         existing = connection.execute("SELECT asset_id FROM exact_hashes WHERE sha256=?", (actual_hash,)).fetchone()
         asset_id = existing[0] if existing else "asset_" + uuid.uuid4().hex
@@ -265,21 +271,57 @@ def import_source_items(
     destination_root: Path,
     destination_volume_id: str,
     progress_callback: Callable[[dict[str, int | float | str]], None] | None = None,
+    fsync_mode: str = "per-file",
+    batch_files: int = 25,
 ) -> dict[str, object]:
-    """Import only NEW items from a reviewed plan; source remains read-only."""
+    """Import only NEW items from a reviewed plan; source remains read-only.
+
+    Batch mode never exposes a partial filename. A crash can leave the most
+    recent batch not durably flushed, so resuming must reverify those files.
+    """
+    if fsync_mode not in {"per-file", "batch"}:
+        raise ValueError("fsync_mode must be 'per-file' or 'batch'")
+    if batch_files < 1:
+        raise ValueError("batch_files must be positive")
     decisions = plan_source_import(connection, source, items, destination_root, destination_volume_id)
     if any(decision.status == SourceImportStatus.CONFLICT for decision in decisions):
         raise FileExistsError("import plan contains destination conflicts")
     imported: list[dict[str, object]] = []
     already_imported = 0
+    pending_durability: list[Path] = []
+
+    def flush_batch() -> None:
+        if not pending_durability:
+            return
+        directories: set[Path] = set()
+        for path in pending_durability:
+            descriptor = os.open(path, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            directories.add(path.parent)
+        for directory in directories:
+            descriptor = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        pending_durability.clear()
+
     for decision in decisions:
         if decision.status == SourceImportStatus.ALREADY_IMPORTED:
             already_imported += 1
             continue
-        result = import_source_item(connection, source, decision.item, destination_root, destination_volume_id)
+        result = import_source_item(connection, source, decision.item, destination_root, destination_volume_id, fsync_file=fsync_mode == "per-file")
         imported.append(result)
+        if fsync_mode == "batch":
+            pending_durability.append(Path(str(result["destination"])))
+            if len(pending_durability) >= batch_files:
+                flush_batch()
         if progress_callback is not None:
             progress_callback(result)
+    flush_batch()
     restore_import_modified_times(connection, destination_root, destination_volume_id)
     return {
         "planned": len(decisions),
