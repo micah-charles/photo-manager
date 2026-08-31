@@ -19,7 +19,7 @@ class UIFoundationTests(unittest.TestCase):
             (
                 "Dashboard", "Disks", "Android Devices", "Backup Sets", "Scan", "Redundancy Audit",
                 "Reconciliation", "Folder Safety Audit", "Copy Plans", "Quarantine", "Operations",
-                "Timeline", "Visual Duplicates", "Places",
+                "Timeline", "Favourites", "Visual Duplicates", "Places",
             ),
         )
 

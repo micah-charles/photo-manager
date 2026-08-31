@@ -486,6 +486,26 @@ if QT_AVAILABLE:
                     result.setWordWrap(True)
                     self._results[label] = result
                     layout.addWidget(result)
+            elif label == "Favourites":
+                form = QFormLayout()
+                self.favourite_asset_id = QLineEdit()
+                self.favourite_note = QLineEdit()
+                form.addRow("Catalog asset ID", self.favourite_asset_id)
+                form.addRow("Note (optional)", self.favourite_note)
+                layout.addLayout(form)
+                favourite_button = QPushButton("Add / update favourite")
+                favourite_button.clicked.connect(self._set_favourite)
+                layout.addWidget(favourite_button)
+                remove_button = QPushButton("Remove selected asset ID from favourites")
+                remove_button.clicked.connect(self._remove_favourite)
+                layout.addWidget(remove_button)
+                self.favourite_result = QLabel("Favourites are catalog annotations only; originals and backup verification are unchanged.")
+                self.favourite_result.setWordWrap(True)
+                layout.addWidget(self.favourite_result)
+                table = QTableWidget()
+                table.setSortingEnabled(True)
+                self._tables[label] = table
+                layout.addWidget(table)
             elif label == "Disks":
                 form = QFormLayout()
                 self.disk_root = QLineEdit()
@@ -1073,6 +1093,30 @@ if QT_AVAILABLE:
             except Exception as exc:
                 self._results["Places"].setText(f"Place clustering failed: {exc}")
 
+        def _set_favourite(self) -> None:
+            try:
+                from photovault.catalog.favourites import set_favourite
+
+                asset_id = self.favourite_asset_id.text().strip()
+                set_favourite(self.connection, asset_id, self.favourite_note.text())
+                self.favourite_result.setText(f"Saved favourite annotation for {asset_id}.")
+                self.refresh()
+            except Exception as exc:
+                self.favourite_result.setText(f"Favourite update failed: {type(exc).__name__}: {exc}")
+
+        def _remove_favourite(self) -> None:
+            try:
+                from photovault.catalog.favourites import remove_favourite
+
+                asset_id = self.favourite_asset_id.text().strip()
+                if remove_favourite(self.connection, asset_id):
+                    self.favourite_result.setText(f"Removed favourite annotation for {asset_id}.")
+                else:
+                    self.favourite_result.setText(f"{asset_id} was not a favourite.")
+                self.refresh()
+            except Exception as exc:
+                self.favourite_result.setText(f"Favourite removal failed: {type(exc).__name__}: {exc}")
+
         def _fill_table(self, table: QTableWidget, headers: list[str], rows: list[tuple[object, ...]]) -> None:
             table.setColumnCount(len(headers))
             table.setHorizontalHeaderLabels(headers)
@@ -1097,6 +1141,15 @@ if QT_AVAILABLE:
                 self._fill_table(self._tables["Operations"], ["ID", "Type", "Status", "Dry run", "Created", "Completed"], [tuple(row) for row in rows])
             if "Timeline" in self._tables:
                 self._refresh_timeline()
+            if "Favourites" in self._tables:
+                from photovault.catalog.favourites import list_favourites
+
+                rows = list_favourites(self.connection)
+                self._fill_table(
+                    self._tables["Favourites"],
+                    ["Asset", "Note", "Updated", "Filename", "Path", "Volume", "Captured", "Thumbnail"],
+                    [tuple(row) for row in rows],
+                )
 
 
 def run_gui(connection: sqlite3.Connection) -> int:

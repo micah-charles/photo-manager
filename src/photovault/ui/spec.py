@@ -13,6 +13,7 @@ NAVIGATION_ITEMS: tuple[str, ...] = (
     "Quarantine",
     "Operations",
     "Timeline",
+    "Favourites",
     "Visual Duplicates",
     "Places",
 )
