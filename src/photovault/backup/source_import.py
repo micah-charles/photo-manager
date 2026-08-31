@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -186,9 +187,26 @@ def import_source_item(
     fsync_file: bool = True,
 ) -> dict[str, int | float | str]:
     """Import one source object using the existing operation/catalog model."""
+    destination = _safe_destination(destination_root, item.relative_path)
+    try:
+        result = stream_source_to_file(source, item, destination_root, fsync_file=fsync_file)
+    except Exception as exc:
+        _record_failed_import(connection, source, item, destination, exc)
+        raise
+    return _record_successful_import(connection, source, item, destination, destination_volume_id, result)
+
+
+def _record_successful_import(
+    connection: sqlite3.Connection,
+    source: ReadablePhotoSource,
+    item: SourceImportItem,
+    destination: Path,
+    destination_volume_id: str,
+    result: dict[str, int | float | str],
+) -> dict[str, int | float | str]:
+    """Persist a completed atomic file import on the caller's SQLite thread."""
     identity = source.identity()
     register_source(connection, identity)
-    destination = _safe_destination(destination_root, item.relative_path)
     operation_id = "op_" + uuid.uuid4().hex
     source_path = f"android://{identity.source_id}/{item.object_id}/{item.relative_path}"
     connection.execute(
@@ -201,67 +219,32 @@ def import_source_item(
     )
     operation_item_id = cursor.lastrowid
     connection.commit()
-    try:
-        result = stream_source_to_file(source, item, destination_root, fsync_file=fsync_file)
-        actual_hash = str(result["sha256"])
-        existing = connection.execute("SELECT asset_id FROM exact_hashes WHERE sha256=?", (actual_hash,)).fetchone()
-        asset_id = existing[0] if existing else "asset_" + uuid.uuid4().hex
-        if existing is None:
-            now = utc_now()
-            connection.execute(
-                "INSERT INTO assets(id, media_type, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                (asset_id, item.media_type, now, now),
-            )
-            connection.execute(
-                "INSERT INTO exact_hashes(asset_id, sha256, byte_count, hashed_at) VALUES (?, ?, ?, ?)",
-                (asset_id, actual_hash, result["bytes_written"], now),
-            )
-        stat = destination.stat()
-        connection.execute(
-            """
-            INSERT INTO asset_locations(asset_id, volume_id, relative_path, filename, size_bytes, modified_ns)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (asset_id, destination_volume_id, item.relative_path, destination.name, stat.st_size, stat.st_mtime_ns),
-        )
-        connection.execute(
-            "UPDATE operation_items SET asset_id=?, expected_sha256=?, result='COPIED', verification_result='VERIFIED' WHERE id=?",
-            (asset_id, actual_hash, operation_item_id),
-        )
-        connection.execute(
-            "INSERT INTO verification_history(operation_item_id, asset_id, path, expected_sha256, actual_sha256, result, verified_at) VALUES (?, ?, ?, ?, ?, 'VERIFIED', ?)",
-            (operation_item_id, asset_id, str(destination), actual_hash, actual_hash, utc_now()),
-        )
-        modified = item.modified_at.isoformat() if hasattr(item.modified_at, "isoformat") else None
-        connection.execute(
-            """
-            INSERT INTO source_imports(
-                source_id, logical_path, source_object_id, source_size_bytes,
-                source_modified_at, destination_volume_id, destination_relative_path,
-                sha256, operation_id, imported_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(source_id, logical_path, destination_volume_id, destination_relative_path)
-            DO UPDATE SET source_object_id=excluded.source_object_id,
-                source_size_bytes=excluded.source_size_bytes,
-                source_modified_at=excluded.source_modified_at,
-                sha256=excluded.sha256, operation_id=excluded.operation_id,
-                imported_at=excluded.imported_at
-            """,
-            (identity.source_id, item.relative_path, item.object_id, item.size_bytes,
-             modified, destination_volume_id, item.relative_path, actual_hash,
-             operation_id, utc_now()),
-        )
-        connection.execute("UPDATE operations SET completed_at=?, status='COMPLETED' WHERE id=?", (utc_now(), operation_id))
-        connection.commit()
-        return {**result, "operation_id": operation_id, "asset_id": asset_id}
-    except Exception as exc:
-        connection.execute(
-            "UPDATE operation_items SET result='FAILED', verification_result='FAILED', error_message=? WHERE id=?",
-            (str(exc), operation_item_id),
-        )
-        connection.execute("UPDATE operations SET completed_at=?, status='FAILED' WHERE id=?", (utc_now(), operation_id))
-        connection.commit()
-        raise
+    actual_hash = str(result["sha256"])
+    existing = connection.execute("SELECT asset_id FROM exact_hashes WHERE sha256=?", (actual_hash,)).fetchone()
+    asset_id = existing[0] if existing else "asset_" + uuid.uuid4().hex
+    if existing is None:
+        now = utc_now()
+        connection.execute("INSERT INTO assets(id, media_type, created_at, updated_at) VALUES (?, ?, ?, ?)", (asset_id, item.media_type, now, now))
+        connection.execute("INSERT INTO exact_hashes(asset_id, sha256, byte_count, hashed_at) VALUES (?, ?, ?, ?)", (asset_id, actual_hash, result["bytes_written"], now))
+    stat = destination.stat()
+    connection.execute("INSERT INTO asset_locations(asset_id, volume_id, relative_path, filename, size_bytes, modified_ns) VALUES (?, ?, ?, ?, ?, ?)", (asset_id, destination_volume_id, item.relative_path, destination.name, stat.st_size, stat.st_mtime_ns))
+    connection.execute("UPDATE operation_items SET asset_id=?, expected_sha256=?, result='COPIED', verification_result='VERIFIED' WHERE id=?", (asset_id, actual_hash, operation_item_id))
+    connection.execute("INSERT INTO verification_history(operation_item_id, asset_id, path, expected_sha256, actual_sha256, result, verified_at) VALUES (?, ?, ?, ?, ?, 'VERIFIED', ?)", (operation_item_id, asset_id, str(destination), actual_hash, actual_hash, utc_now()))
+    modified = item.modified_at.isoformat() if hasattr(item.modified_at, "isoformat") else None
+    connection.execute("""INSERT INTO source_imports(source_id, logical_path, source_object_id, source_size_bytes, source_modified_at, destination_volume_id, destination_relative_path, sha256, operation_id, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(source_id, logical_path, destination_volume_id, destination_relative_path) DO UPDATE SET source_object_id=excluded.source_object_id, source_size_bytes=excluded.source_size_bytes, source_modified_at=excluded.source_modified_at, sha256=excluded.sha256, operation_id=excluded.operation_id, imported_at=excluded.imported_at""", (identity.source_id, item.relative_path, item.object_id, item.size_bytes, modified, destination_volume_id, item.relative_path, actual_hash, operation_id, utc_now()))
+    connection.execute("UPDATE operations SET completed_at=?, status='COMPLETED' WHERE id=?", (utc_now(), operation_id))
+    connection.commit()
+    return {**result, "operation_id": operation_id, "asset_id": asset_id}
+
+
+def _record_failed_import(connection: sqlite3.Connection, source: ReadablePhotoSource, item: SourceImportItem, destination: Path, exc: Exception) -> None:
+    identity = source.identity(); register_source(connection, identity)
+    operation_id = "op_" + uuid.uuid4().hex
+    source_path = f"android://{identity.source_id}/{item.object_id}/{item.relative_path}"
+    connection.execute("INSERT INTO operations(id, operation_type, created_at, completed_at, status, dry_run, details_json) VALUES (?, 'IMPORT', ?, ?, 'FAILED', 0, ?)", (operation_id, utc_now(), utc_now(), json.dumps({"source_id": identity.source_id, "items": 1, "bytes": item.size_bytes or 0}, sort_keys=True)))
+    connection.execute("INSERT INTO operation_items(operation_id, source_path, destination_path, result, verification_result, error_message) VALUES (?, ?, ?, 'FAILED', 'FAILED', ?)", (operation_id, source_path, str(destination), str(exc)))
+    connection.commit()
 
 
 def import_source_items(
@@ -273,6 +256,7 @@ def import_source_items(
     progress_callback: Callable[[dict[str, int | float | str]], None] | None = None,
     fsync_mode: str = "per-file",
     batch_files: int = 25,
+    workers: int = 1,
 ) -> dict[str, object]:
     """Import only NEW items from a reviewed plan; source remains read-only.
 
@@ -283,6 +267,8 @@ def import_source_items(
         raise ValueError("fsync_mode must be 'per-file' or 'batch'")
     if batch_files < 1:
         raise ValueError("batch_files must be positive")
+    if workers < 1:
+        raise ValueError("workers must be positive")
     decisions = plan_source_import(connection, source, items, destination_root, destination_volume_id)
     if any(decision.status == SourceImportStatus.CONFLICT for decision in decisions):
         raise FileExistsError("import plan contains destination conflicts")
@@ -309,11 +295,15 @@ def import_source_items(
                 os.close(descriptor)
         pending_durability.clear()
 
+    new_decisions = []
     for decision in decisions:
         if decision.status == SourceImportStatus.ALREADY_IMPORTED:
             already_imported += 1
             continue
-        result = import_source_item(connection, source, decision.item, destination_root, destination_volume_id, fsync_file=fsync_mode == "per-file")
+        new_decisions.append(decision)
+
+    def accept_result(decision: SourceImportDecision, result: dict[str, int | float | str]) -> None:
+        result = _record_successful_import(connection, source, decision.item, _safe_destination(destination_root, decision.item.relative_path), destination_volume_id, result)
         imported.append(result)
         if fsync_mode == "batch":
             pending_durability.append(Path(str(result["destination"])))
@@ -321,6 +311,28 @@ def import_source_items(
                 flush_batch()
         if progress_callback is not None:
             progress_callback(result)
+
+    if workers == 1:
+        for decision in new_decisions:
+            try:
+                result = stream_source_to_file(source, decision.item, destination_root, fsync_file=fsync_mode == "per-file")
+            except Exception as exc:
+                _record_failed_import(connection, source, decision.item, _safe_destination(destination_root, decision.item.relative_path), exc)
+                raise
+            accept_result(decision, result)
+    else:
+        failures: list[Exception] = []
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="photovault-copy") as executor:
+            futures = {executor.submit(stream_source_to_file, source, decision.item, destination_root, fsync_file=fsync_mode == "per-file"): decision for decision in new_decisions}
+            for future in as_completed(futures):
+                decision = futures[future]
+                try:
+                    accept_result(decision, future.result())
+                except Exception as exc:
+                    _record_failed_import(connection, source, decision.item, _safe_destination(destination_root, decision.item.relative_path), exc)
+                    failures.append(exc)
+        if failures:
+            raise failures[0]
     flush_batch()
     restore_import_modified_times(connection, destination_root, destination_volume_id)
     return {
