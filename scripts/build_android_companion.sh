@@ -19,8 +19,12 @@ mkdir -p "$out/dex"
 "$build_tools/d8" --lib "$platform" --min-api 29 --output "$out/dex" "$out/classes.jar"
 (cd "$out/dex" && zip -q -j "$out/unsigned.apk" classes.dex)
 "$build_tools/zipalign" -f 4 "$out/unsigned.apk" "$out/aligned.apk"
-keystore="$out/debug.keystore"
-keytool -genkeypair -keystore "$keystore" -storepass android -keypass android -alias androiddebugkey -dname 'CN=Android Debug,O=PhotoVault,C=GB' -keyalg RSA -keysize 2048 -validity 10000 >/dev/null 2>&1
+# Keep the debug identity outside the disposable build directory. Recreating a
+# key on every build makes Android reject an update as a different app.
+keystore="$source_root/.debug.keystore"
+if [[ ! -f "$keystore" ]]; then
+  keytool -genkeypair -keystore "$keystore" -storepass android -keypass android -alias androiddebugkey -dname 'CN=Android Debug,O=PhotoVault,C=GB' -keyalg RSA -keysize 2048 -validity 10000 >/dev/null 2>&1
+fi
 "$build_tools/apksigner" sign --ks "$keystore" --ks-pass pass:android --key-pass pass:android --out "$out/photovault-companion-debug.apk" "$out/aligned.apk"
 "$build_tools/apksigner" verify "$out/photovault-companion-debug.apk"
 ls -lh "$out/photovault-companion-debug.apk"
