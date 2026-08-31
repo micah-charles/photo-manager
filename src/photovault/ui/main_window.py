@@ -9,8 +9,10 @@ from threading import Event
 from .spec import NAVIGATION_ITEMS
 
 try:
-    from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
+    from PySide6.QtCore import QObject, QThread, QSize, Qt, Signal, Slot
+    from PySide6.QtGui import QIcon, QPixmap
     from PySide6.QtWidgets import (
+        QAbstractItemView,
         QApplication,
         QCheckBox,
         QComboBox,
@@ -19,6 +21,7 @@ try:
         QLabel,
         QLineEdit,
         QListWidget,
+        QListWidgetItem,
         QMainWindow,
         QMessageBox,
         QPlainTextEdit,
@@ -476,9 +479,32 @@ if QT_AVAILABLE:
                 button = QPushButton("Refresh catalog library")
                 button.clicked.connect(self._refresh_library)
                 layout.addWidget(button)
+                favourite_button = QPushButton("Toggle favourite for selected item(s)")
+                favourite_button.clicked.connect(self._toggle_selected_library_favourites)
+                layout.addWidget(favourite_button)
                 self.library_result = QLabel("Catalog-backed results remain visible when an original volume is offline.")
                 self.library_result.setWordWrap(True)
                 layout.addWidget(self.library_result)
+                browser_layout = QHBoxLayout()
+                self.library_grid = QListWidget()
+                self.library_grid.setViewMode(QListWidget.ViewMode.IconMode)
+                self.library_grid.setResizeMode(QListWidget.ResizeMode.Adjust)
+                self.library_grid.setIconSize(QSize(160, 120))
+                self.library_grid.setGridSize(QSize(190, 170))
+                self.library_grid.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+                self.library_grid.itemSelectionChanged.connect(self._library_selection_changed)
+                browser_layout.addWidget(self.library_grid, 3)
+                preview_layout = QVBoxLayout()
+                self.library_preview = QLabel("Select a catalogued item to preview its cached thumbnail.")
+                self.library_preview.setWordWrap(True)
+                self.library_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.library_preview.setMinimumSize(260, 220)
+                preview_layout.addWidget(self.library_preview)
+                self.library_preview_details = QLabel("Original availability appears here.")
+                self.library_preview_details.setWordWrap(True)
+                preview_layout.addWidget(self.library_preview_details)
+                browser_layout.addLayout(preview_layout, 2)
+                layout.addLayout(browser_layout)
                 table = QTableWidget()
                 table.setSortingEnabled(True)
                 self._tables[label] = table
@@ -1132,8 +1158,80 @@ if QT_AVAILABLE:
                         for row in rows
                     ],
                 )
+                self._populate_library_grid(rows)
             except Exception as exc:
                 self.library_result.setText(f"Library query failed: {type(exc).__name__}: {exc}")
+
+        def _populate_library_grid(self, rows: list[sqlite3.Row]) -> None:
+            self.library_grid.clear()
+            self.library_preview.setPixmap(QPixmap())
+            self.library_preview.setText("Select a catalogued item to preview its cached thumbnail.")
+            self.library_preview_details.setText("Original availability appears here.")
+            for row in rows:
+                title = f"{'★ ' if row['is_favourite'] else ''}{row['filename']}\n{row['media_type']}"
+                item = QListWidgetItem(title)
+                thumbnail = str(row["thumbnail_path"] or "")
+                if thumbnail and Path(thumbnail).is_file():
+                    item.setIcon(QIcon(thumbnail))
+                elif row["media_type"] == "VIDEO":
+                    item.setText(title + "\n(video; no poster cached)")
+                item.setToolTip(f"{row['relative_path']}\n{row['volume_name']} ({row['volume_status']})")
+                item.setData(Qt.ItemDataRole.UserRole, {
+                    "asset_id": row["asset_id"], "filename": row["filename"],
+                    "relative_path": row["relative_path"], "volume_name": row["volume_name"],
+                    "volume_status": row["volume_status"], "thumbnail_path": thumbnail,
+                    "is_favourite": bool(row["is_favourite"]), "media_type": row["media_type"],
+                })
+                self.library_grid.addItem(item)
+
+        def _library_selection_changed(self) -> None:
+            selected = self.library_grid.selectedItems()
+            if not selected:
+                return
+            if len(selected) > 1:
+                self.library_preview.setPixmap(QPixmap())
+                self.library_preview.setText(f"{len(selected)} items selected")
+                self.library_preview_details.setText("Use Toggle favourite to annotate all selected assets. No media files are changed.")
+                return
+            details = selected[0].data(Qt.ItemDataRole.UserRole)
+            thumbnail = Path(str(details["thumbnail_path"])) if details["thumbnail_path"] else None
+            if thumbnail is not None and thumbnail.is_file():
+                pixmap = QPixmap(str(thumbnail))
+                self.library_preview.setPixmap(pixmap.scaled(
+                    320, 260, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
+                ))
+                self.library_preview.setText("")
+            else:
+                self.library_preview.setPixmap(QPixmap())
+                label = "Video (no poster cached)" if details["media_type"] == "VIDEO" else "No cached thumbnail"
+                self.library_preview.setText(label)
+            availability = "Original is currently available" if details["volume_status"] == "CONNECTED" else "Original volume is offline; catalog/thumbnail remains available"
+            self.library_preview_details.setText(
+                f"{details['filename']}\n{details['relative_path']}\n{details['volume_name']}: {availability}"
+            )
+
+        def _toggle_selected_library_favourites(self) -> None:
+            selected = self.library_grid.selectedItems()
+            if not selected:
+                self.library_result.setText("Select one or more items in the thumbnail grid first.")
+                return
+            try:
+                from photovault.catalog.favourites import remove_favourite, set_favourite
+
+                details = [item.data(Qt.ItemDataRole.UserRole) for item in selected]
+                assets = {str(item["asset_id"]): bool(item["is_favourite"]) for item in details}
+                remove = all(assets.values())
+                for asset_id in assets:
+                    if remove:
+                        remove_favourite(self.connection, asset_id)
+                    else:
+                        set_favourite(self.connection, asset_id)
+                self.library_result.setText(
+                    f"{'Removed' if remove else 'Added'} favourite annotation for {len(assets)} asset(s). Originals and backups are unchanged."
+                )
+                self._refresh_library()
+            except Exception as exc:
+                self.library_result.setText(f"Favourite update failed: {type(exc).__name__}: {exc}")
 
         def _visual_duplicates(self, algorithm: QLineEdit, threshold: QLineEdit) -> None:
             try:
