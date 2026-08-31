@@ -246,6 +246,33 @@ if QT_AVAILABLE:
                 if connection is not None:
                     connection.close()
 
+    class CatalogRecoveryWorker(QObject):
+        """Run catalog backup/integrity work without blocking the desktop UI."""
+
+        completed = Signal(object)
+        failed = Signal(str)
+
+        def __init__(self, catalog_path: Path, *, destination: Path | None = None):
+            super().__init__()
+            self.catalog_path = catalog_path
+            self.destination = destination
+
+        @Slot()
+        def run(self) -> None:
+            try:
+                from photovault.catalog.recovery import backup_catalog, check_catalog_integrity
+
+                if self.destination is None:
+                    self.completed.emit({"kind": "check", "integrity": check_catalog_integrity(self.catalog_path)})
+                else:
+                    result = backup_catalog(self.catalog_path, self.destination)
+                    self.completed.emit({
+                        "kind": "backup", "destination": str(result.destination),
+                        "bytes_written": result.bytes_written, "integrity": result.integrity,
+                    })
+            except Exception as exc:
+                self.failed.emit(f"{type(exc).__name__}: {exc}")
+
     class OperationWorker(QObject):
         """Execute an already reviewed copy/quarantine plan off the GUI thread."""
 
@@ -301,6 +328,8 @@ if QT_AVAILABLE:
             self._android_companion_worker: AndroidCompanionDiscoveryWorker | None = None
             self._android_transfer_thread: QThread | None = None
             self._android_transfer_worker: AndroidCompanionTransferWorker | None = None
+            self._catalog_recovery_thread: QThread | None = None
+            self._catalog_recovery_worker: CatalogRecoveryWorker | None = None
             self._android_transfer_completed = 0
             self._android_transfer_bytes = 0
             self._android_transfer_total = 0
@@ -674,6 +703,23 @@ if QT_AVAILABLE:
                 table.setSortingEnabled(True)
                 self._tables[label] = table
                 layout.addWidget(table)
+            elif label == "Catalog Recovery":
+                form = QFormLayout()
+                self.catalog_backup_destination = QLineEdit()
+                self.catalog_backup_destination.setPlaceholderText("New .db file on a selected external destination")
+                form.addRow("New catalog backup file", self.catalog_backup_destination)
+                layout.addLayout(form)
+                check_button = QPushButton("Check live catalog integrity")
+                check_button.clicked.connect(self._check_catalog_integrity)
+                layout.addWidget(check_button)
+                backup_button = QPushButton("Create verified catalog backup")
+                backup_button.clicked.connect(self._backup_catalog)
+                layout.addWidget(backup_button)
+                self.catalog_recovery_result = QLabel(
+                    "Catalog backup uses SQLite's online backup API. It must be a new file; no existing backup or live catalog is overwritten."
+                )
+                self.catalog_recovery_result.setWordWrap(True)
+                layout.addWidget(self.catalog_recovery_result)
             else:
                 hint = QLabel(self._page_hint(label))
                 hint.setWordWrap(True)
@@ -880,6 +926,55 @@ if QT_AVAILABLE:
                 self._android_transfer_worker.request_cancel()
                 self.android_transfer_cancel_button.setEnabled(False)
                 self.android_transfer_result.setText("Cancellation requested; active network chunks will stop safely.")
+
+        def _start_catalog_recovery(self, destination: Path | None) -> None:
+            if self._catalog_path is None:
+                self.catalog_recovery_result.setText("A file-backed catalog is required for recovery actions.")
+                return
+            if self._catalog_recovery_thread is not None and self._catalog_recovery_thread.isRunning():
+                return
+            self._catalog_recovery_thread = QThread(self)
+            self._catalog_recovery_worker = CatalogRecoveryWorker(self._catalog_path, destination=destination)
+            self._catalog_recovery_worker.moveToThread(self._catalog_recovery_thread)
+            self._catalog_recovery_thread.started.connect(self._catalog_recovery_worker.run)
+            self._catalog_recovery_worker.completed.connect(self._catalog_recovery_completed)
+            self._catalog_recovery_worker.failed.connect(self._catalog_recovery_failed)
+            self._catalog_recovery_worker.completed.connect(self._catalog_recovery_thread.quit)
+            self._catalog_recovery_worker.failed.connect(self._catalog_recovery_thread.quit)
+            self._catalog_recovery_worker.completed.connect(self._catalog_recovery_worker.deleteLater)
+            self._catalog_recovery_worker.failed.connect(self._catalog_recovery_worker.deleteLater)
+            self._catalog_recovery_thread.finished.connect(self._catalog_recovery_finished)
+            self._catalog_recovery_thread.finished.connect(self._catalog_recovery_thread.deleteLater)
+            self._catalog_recovery_thread.start()
+
+        def _check_catalog_integrity(self) -> None:
+            self.catalog_recovery_result.setText("Checking catalog integrity in background…")
+            self._start_catalog_recovery(None)
+
+        def _backup_catalog(self) -> None:
+            destination_text = self.catalog_backup_destination.text().strip()
+            if not destination_text:
+                self.catalog_recovery_result.setText("Enter a new catalog backup filename first.")
+                return
+            destination = Path(destination_text).expanduser()
+            self.catalog_recovery_result.setText("Creating a consistent catalog backup in background…")
+            self._start_catalog_recovery(destination)
+
+        def _catalog_recovery_completed(self, result: object) -> None:
+            if result["kind"] == "check":
+                self.catalog_recovery_result.setText(f"Catalog integrity: {', '.join(result['integrity'])}.")
+            else:
+                self.catalog_recovery_result.setText(
+                    f"Verified catalog backup created: {result['destination']} "
+                    f"({self._human_bytes(result['bytes_written'])}); integrity: {', '.join(result['integrity'])}."
+                )
+
+        def _catalog_recovery_failed(self, message: str) -> None:
+            self.catalog_recovery_result.setText(f"Catalog recovery action failed safely: {message}")
+
+        def _catalog_recovery_finished(self) -> None:
+            self._catalog_recovery_worker = None
+            self._catalog_recovery_thread = None
 
         def _refresh_android_backup_profiles(self) -> None:
             """Populate saved profiles/history from the catalog without touching media."""
