@@ -148,6 +148,7 @@ def parser() -> argparse.ArgumentParser:
     wifi_copy.add_argument("--skip", type=int, default=0, help="matching items to skip before selecting files")
     wifi_copy.add_argument("--oldest-first", action="store_true")
     wifi_copy.add_argument("--images-only", action="store_true")
+    wifi_copy.add_argument("--videos-only", action="store_true", help="copy video media only")
     wifi_copy.add_argument("--fsync-mode", choices=["per-file", "batch"], default="per-file")
     wifi_copy.add_argument("--batch-files", type=int, default=25)
     wifi_copy.add_argument("--workers", type=int, default=1, help="concurrent read-only Android downloads; catalog writes remain serialized")
@@ -220,9 +221,13 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
                     raise AndroidCompanionUnavailable("copy destination must be an existing directory on an external /Volumes drive")
                 if args.skip < 0:
                     raise AndroidCompanionUnavailable("--skip cannot be negative")
+                if args.images_only and args.videos_only:
+                    raise AndroidCompanionUnavailable("choose only one of --images-only or --videos-only")
                 items = []; skipped = 0
                 for item in source.iter_folder(args.relative_path, oldest_first=args.oldest_first):
                     if args.images_only and item.media_type != "IMAGE":
+                        continue
+                    if args.videos_only and item.media_type != "VIDEO":
                         continue
                     if skipped < args.skip:
                         skipped += 1
