@@ -2,10 +2,12 @@
 
 ## Executive summary
 
-Track A — USB/libusb: **NEEDS MORE EVIDENCE**. A disposable arm64 libusb MTP
-helper now builds and implements a state-gated session lifecycle plus a
-same-session `DCIM/Camera` JPEG stream experiment. It has not been run against
-the Pixel because this Codex process does not have a reliable USB claim.
+Track A — USB/libusb: **NOT VIABLE AS CURRENTLY IMPLEMENTED**. A disposable
+arm64 libusb MTP helper successfully probes the Pixel and opens a session, but
+its real-device JPEG stream read exactly one 64 KiB receive buffer before the
+next bulk-IN returned `LIBUSB_ERROR_IO`. The subsequent CloseSession timed out.
+Changing only from raw `IOUSBHost` to a basic synchronous libusb loop therefore
+does not solve the sustained-read failure on this Pixel/macOS combination.
 
 Track B — Android Companion Wi-Fi: **NEEDS MORE EVIDENCE**. A minimal Android
 MediaStore companion builds to a signed debug APK, and the desktop read-only
@@ -57,16 +59,24 @@ Build result: PASS, Mach-O 64-bit arm64.
 
 | Test | Result |
 | --- | --- |
-| Pixel enumeration | NOT TESTED (hardware sandbox boundary) |
-| Complete JPEG | NOT TESTED |
+| Pixel enumeration / OpenSession / storage | PASS (real Pixel) |
+| Complete JPEG | FAIL: 65,536 bytes written; next bulk-IN `LIBUSB_ERROR_IO` |
 | Sequential files | NOT TESTED |
 | 100 MB+ object | NOT TESTED |
 | Throughput | NOT MEASURED |
 | Cancellation/recovery without reconnect | NOT TESTED |
 
-Known issue: libusb lifecycle needs real-device validation. OpenMTP showed an
-independent `libusb_release_interface()` assertion on macOS 26, hence this POC
-never releases an interface it did not successfully claim.
+Real-device result (2026-08-31): `--stream-test DCIM/Camera` wrote 65,536 bytes
+of a JPEG before the next 64 KiB receive returned `LIBUSB_ERROR_IO`; total wall
+time was 22.30 seconds. The helper then reported a CloseSession timeout. This
+is a failed full-object transfer, not a partial success. It is also evidence
+against treating a simple libusb transport swap as equivalent to OpenMTP's
+complete transport and lifecycle stack.
+
+Known issue: libusb lifecycle needs further investigation only if the USB path
+is resumed. OpenMTP showed an independent `libusb_release_interface()`
+assertion on macOS 26, hence this POC never releases an interface it did not
+successfully claim.
 
 ## Track B — Android Companion Wi-Fi
 
@@ -134,7 +144,7 @@ remains reference material only.
 
 | Criterion | USB MTP/libusb | Android Companion Wi-Fi |
 | --- | --- | --- |
-| Complete JPEG | NOT TESTED | NOT TESTED |
+| Complete JPEG | FAIL: 64 KiB then bulk-IN I/O error | NOT TESTED |
 | 100 MB+ file | NOT TESTED | NOT TESTED |
 | Average MB/s | NOT MEASURED | NOT MEASURED |
 | Resume | NOT TESTED | Protocol/client Range support implemented; NOT TESTED |
@@ -148,28 +158,29 @@ remains reference material only.
 
 ## Recommendation
 
-Both paths are **NEEDS MORE EVIDENCE**. USB is still a viable fallback or
-primary candidate if the libusb helper completes several JPEGs and a large
-video without a physical reconnect. Wi-Fi is a strong primary-candidate
-direction for portability and recoverable Range semantics, but it must first
-earn that status with real throughput, permission, and interruption tests.
+The current basic libusb POC is **not** a viable fallback or primary transport:
+it has reproduced the same class of sustained-read failure after beginning the
+payload. A substantially different USB implementation/lifecycle model would
+need separate evidence before further USB work. Wi-Fi is the remaining primary
+candidate direction for portability and recoverable Range semantics, but it
+must first earn that status with real throughput, permission, and interruption
+tests.
 
 The raw IOUSBHost backend remains frozen as a reference backend, not removed.
 
 ## Tomorrow's manual test checklist
 
 1. Reconnect/unlock Pixel and select **File Transfer / Android Auto**.
-2. Run the three Track A commands above; keep `/tmp/photovault-libusb-test.jpg`.
-3. Note `LIBUSB_MTP_*` output, file size, SHA-256, and whether the Pixel still
-   works without reconnecting.
-4. Install the APK: `adb install -r android-companion/build/photovault-companion-debug.apk`.
-5. Open **PhotoVault Companion**, grant Photos and Videos permission, and keep
+2. Treat the current basic libusb experiment as a recorded failure; do not use
+   its partial output as a photo or continue tuning buffer sizes.
+3. Install the APK: `adb install -r android-companion/build/photovault-companion-debug.apk`.
+4. Open **PhotoVault Companion**, grant Photos and Videos permission, and keep
    its screen open on the same Wi-Fi as the Mac.
-6. Copy the displayed URL and token into the three Track B commands above.
-7. Run `list`; choose one JPEG `OBJECT_ID`; run `stream` and record bytes/time.
-8. Repeat `stream` for two more photos without restarting the app.
-9. If there is a safe 100 MB+ video, stream it and record elapsed time.
-10. Send the exact outputs back; do not use external backup disks or delete
+5. Copy the displayed URL and token into the three Track B commands above.
+6. Run `list`; choose one JPEG `OBJECT_ID`; run `stream` and record bytes/time.
+7. Repeat `stream` for two more photos without restarting the app.
+8. If there is a safe 100 MB+ video, stream it and record elapsed time.
+9. Send the exact outputs back; do not use external backup disks or delete
     phone media.
 
 ## Git and validation summary
