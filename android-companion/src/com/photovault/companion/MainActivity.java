@@ -92,7 +92,7 @@ public final class MainActivity extends Activity {
         if (snapshot == null) { status.setText("Local sharing is stopped. Choose a sharing duration above."); return; }
         String ip = localIpv4();
         status.setText("PhotoVault Companion — read-only POC\n" +
-            "Build: 0.4 — media folder count\n\n" +
+            "Build: 0.5 — folder inventory\n\n" +
             "Status: sharing active — " + snapshot.durationLabel + "\n" +
             "Desktop URL: http://" + ip + ":" + PORT + "\n" +
             "Token: " + snapshot.token + "\n\n" +
@@ -124,6 +124,7 @@ public final class MainActivity extends Activity {
                 String path=first[1]; int query=path.indexOf('?'); Map<String,String> args=parseQuery(query<0?"":path.substring(query+1)); path=query<0?path:path.substring(0,query);
                 if(!token.equals(args.get("token"))) { reply(out,401,"application/json",jsonError("token required").getBytes(StandardCharsets.UTF_8)); return; }
                 if("/api/device".equals(path)) device(out);
+                else if("/api/folders".equals(path)) folders(out);
                 else if("/api/media/count".equals(path)) mediaCount(out,args);
                 else if("/api/media".equals(path)) media(out,args);
                 else if(path.startsWith("/api/media/")) object(out,path.substring(11),headers.get("range"));
@@ -136,28 +137,53 @@ public final class MainActivity extends Activity {
             reply(out,200,"application/json",body.getBytes(StandardCharsets.UTF_8));
         }
         private void mediaCount(BufferedOutputStream out, Map<String,String> args) throws IOException {
-            String relativePath=args.get("relative_path");
-            if(relativePath==null || relativePath.isEmpty()) { reply(out,400,"application/json",jsonError("relative_path required").getBytes(StandardCharsets.UTF_8)); return; }
-            if(!relativePath.endsWith("/")) relativePath += "/";
+            String relativePath=normalRelativePath(args.get("relative_path"));
+            if(relativePath==null) { reply(out,400,"application/json",jsonError("relative_path required").getBytes(StandardCharsets.UTF_8)); return; }
             int count=count(MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL), mediaSelection()+" AND "+MediaStore.MediaColumns.RELATIVE_PATH+" = ?", new String[]{relativePath});
             String body="{\"ok\":true,\"relative_path\":\""+escape(relativePath)+"\",\"count\":"+count+"}";
             reply(out,200,"application/json",body.getBytes(StandardCharsets.UTF_8));
         }
         private int count(Uri uri, String selection, String[] selectionArgs) { try(Cursor c=resolver.query(uri,new String[]{MediaStore.Files.FileColumns._ID},selection,selectionArgs,null)){return c==null?0:c.getCount();} }
         private void media(BufferedOutputStream out,Map<String,String> args) throws IOException {
-            int limit=Math.min(500,Math.max(1,integer(args.get("limit"),100))); List<String> rows=new ArrayList<>();
+            int limit=Math.min(500,Math.max(1,integer(args.get("limit"),100))); int offset=Math.max(0,integer(args.get("offset"),0)); List<String> rows=new ArrayList<>();
             String[] cols=columns(); Uri uri=MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL);
             // MediaProvider on recent Android versions validates sort-order text and
             // rejects a hand-built "... LIMIT n" suffix. Use the public query
             // arguments instead so the endpoint works across Android releases.
             Bundle query=new Bundle();
-            query.putString(ContentResolver.QUERY_ARG_SQL_SELECTION,mediaSelection());
+            String relativePath=normalRelativePath(args.get("relative_path"));
+            String selection=mediaSelection();
+            if(relativePath!=null) {
+                selection += " AND " + MediaStore.MediaColumns.RELATIVE_PATH + " = ?";
+                query.putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS,new String[]{relativePath});
+            }
+            query.putString(ContentResolver.QUERY_ARG_SQL_SELECTION,selection);
             query.putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER,MediaStore.MediaColumns.DATE_MODIFIED+" DESC");
             query.putInt(ContentResolver.QUERY_ARG_LIMIT,limit);
+            query.putInt(ContentResolver.QUERY_ARG_OFFSET,offset);
             try(Cursor c=resolver.query(uri,cols,query,null)){
                 while(c!=null&&c.moveToNext()) rows.add(mediaJson(c));
             }
             String body="{\"ok\":true,\"items\":["+String.join(",",rows)+"]}"; reply(out,200,"application/json",body.getBytes(StandardCharsets.UTF_8));
+        }
+        private void folders(BufferedOutputStream out) throws IOException {
+            HashMap<String,FolderStats> totals=new HashMap<>();
+            Uri uri=MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL);
+            String[] cols=new String[]{MediaStore.MediaColumns.RELATIVE_PATH,MediaStore.MediaColumns.SIZE,MediaStore.MediaColumns.MIME_TYPE};
+            try(Cursor c=resolver.query(uri,cols,mediaSelection(),null,null)) {
+                while(c!=null && c.moveToNext()) {
+                    String path=normalRelativePath(c.getString(0)); if(path==null) path="/";
+                    FolderStats stats=totals.get(path); if(stats==null){stats=new FolderStats(path); totals.put(path,stats);}
+                    stats.count++; stats.bytes+=Math.max(0,c.getLong(1));
+                    String mime=c.getString(2);
+                    if(mime != null && mime.startsWith("video/")) stats.videos++; else stats.images++;
+                }
+            }
+            List<FolderStats> rows=new ArrayList<>(totals.values());
+            Collections.sort(rows, new java.util.Comparator<FolderStats>() { @Override public int compare(FolderStats a,FolderStats b){return a.path.compareTo(b.path);} });
+            List<String> json=new ArrayList<>(); for(FolderStats row:rows) json.add(row.json());
+            String body="{\"ok\":true,\"folders\":["+String.join(",",json)+"]}";
+            reply(out,200,"application/json",body.getBytes(StandardCharsets.UTF_8));
         }
         private void object(BufferedOutputStream out,String text,String range) throws IOException {
             long id; try { id=Long.parseLong(text); } catch(NumberFormatException e){reply(out,400,"application/json",jsonError("bad id").getBytes());return;}
@@ -171,6 +197,7 @@ public final class MainActivity extends Activity {
         }
         private static void skipFully(FileInputStream f,long amount)throws IOException{while(amount>0){long n=f.skip(amount);if(n<=0)throw new IOException("cannot seek media");amount-=n;}}
         private static String[] columns(){return new String[]{MediaStore.MediaColumns._ID,MediaStore.MediaColumns.DISPLAY_NAME,MediaStore.MediaColumns.RELATIVE_PATH,MediaStore.MediaColumns.MIME_TYPE,MediaStore.MediaColumns.SIZE,MediaStore.MediaColumns.DATE_TAKEN,MediaStore.MediaColumns.DATE_MODIFIED,MediaStore.MediaColumns.WIDTH,MediaStore.MediaColumns.HEIGHT,MediaStore.MediaColumns.DURATION};}
+        private static String normalRelativePath(String path){if(path==null)return null;path=path.trim();if(path.isEmpty())return null;return path.endsWith("/")?path:path+"/";}
         private static String mediaSelection(){return MediaStore.Files.FileColumns.MEDIA_TYPE+" IN ("+MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE+","+MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO+")";}
         private static String mediaJson(Cursor c){return "{\"object_id\":\""+c.getLong(0)+"\",\"name\":\""+escape(c.getString(1))+"\",\"relative_path\":\""+escape(c.getString(2))+"\",\"mime_type\":\""+escape(c.getString(3))+"\",\"size_bytes\":"+c.getLong(4)+",\"date_taken\":"+c.getLong(5)+",\"modified_at\":"+c.getLong(6)+",\"width\":"+c.getInt(7)+",\"height\":"+c.getInt(8)+",\"duration\":"+c.getLong(9)+"}";}
         private static void reply(BufferedOutputStream out,int status,String type,byte[] body)throws IOException{String h="HTTP/1.1 "+status+" OK\r\nContent-Type: "+type+"\r\nContent-Length: "+body.length+"\r\nConnection: close\r\n\r\n";out.write(h.getBytes(StandardCharsets.US_ASCII));out.write(body);out.flush();}
@@ -179,5 +206,10 @@ public final class MainActivity extends Activity {
         private static int integer(String s,int fallback){try{return Integer.parseInt(s);}catch(Exception e){return fallback;}}
         private static String escape(String s){return s==null?"":s.replace("\\","\\\\").replace("\"","\\\"").replace("\n","\\n");}
         private static String jsonError(String s){return "{\"ok\":false,\"error\":\""+escape(s)+"\"}";}
+        private static final class FolderStats {
+            final String path; int count; int images; int videos; long bytes;
+            FolderStats(String path){this.path=path;}
+            String json(){return "{\"relative_path\":\""+escape(path)+"\",\"count\":"+count+",\"images\":"+images+",\"videos\":"+videos+",\"size_bytes\":"+bytes+"}";}
+        }
     }
 }

@@ -4,9 +4,9 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import BinaryIO, Iterable
+from typing import BinaryIO, Iterable, Iterator
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -15,6 +15,15 @@ from .base import PhotoItem, PhotoSource, SourceIdentity, SourceStorage
 
 class AndroidCompanionUnavailable(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class AndroidMediaFolder:
+    relative_path: str
+    count: int
+    image_count: int
+    video_count: int
+    size_bytes: int
 
 
 def _when_millis(value: object) -> datetime | None:
@@ -32,17 +41,19 @@ class AndroidCompanionWifiSource(PhotoSource):
     base_url: str
     token: str
     timeout: float = 30.0
+    _identity_cache: SourceIdentity | None = field(default=None, init=False, repr=False)
 
-    def _request(self, path: str, *, headers: dict[str, str] | None = None):
-        query = urlencode({"token": self.token})
-        url = f"{self.base_url.rstrip('/')}{path}?{query}"
+    def _request(self, path: str, *, headers: dict[str, str] | None = None, params: dict[str, object] | None = None):
+        query = urlencode({"token": self.token, **(params or {})})
+        separator = "&" if "?" in path else "?"
+        url = f"{self.base_url.rstrip('/')}{path}{separator}{query}"
         try:
             return urlopen(Request(url, headers=headers or {}), timeout=self.timeout)
         except OSError as exc:
             raise AndroidCompanionUnavailable(str(exc)) from exc
 
-    def _json(self, path: str) -> dict:
-        with self._request(path) as response:
+    def _json(self, path: str, *, params: dict[str, object] | None = None) -> dict:
+        with self._request(path, params=params) as response:
             try:
                 payload = json.load(response)
             except (ValueError, OSError) as exc:
@@ -52,15 +63,18 @@ class AndroidCompanionWifiSource(PhotoSource):
         return payload
 
     def identity(self) -> SourceIdentity:
+        if self._identity_cache is not None:
+            return self._identity_cache
         device = self._json("/api/device")["device"]
         fingerprint = hashlib.sha256(f"{device.get('manufacturer')}|{device.get('model')}|{self.base_url}".encode()).hexdigest()[:24]
-        return SourceIdentity(
+        self._identity_cache = SourceIdentity(
             source_id=f"android_wifi_{fingerprint}",
             manufacturer=device.get("manufacturer", "Android"),
             model=device.get("model", "Android device"),
             display_name=device.get("friendly_name") or device.get("model", "Android device"),
             adapter="android_companion_wifi",
         )
+        return self._identity_cache
 
     def list_storages(self) -> Iterable[SourceStorage]:
         yield SourceStorage(1, "Android MediaStore")
@@ -82,6 +96,30 @@ class AndroidCompanionWifiSource(PhotoSource):
         if parent_id is not None:
             return iter(())
         return iter([self._item(row) for row in self._json("/api/media").get("items", [])])
+
+    def folders(self) -> list[AndroidMediaFolder]:
+        rows = self._json("/api/folders").get("folders", [])
+        return [AndroidMediaFolder(
+            relative_path=str(row["relative_path"]), count=int(row["count"]),
+            image_count=int(row.get("images", 0)), video_count=int(row.get("videos", 0)),
+            size_bytes=int(row.get("size_bytes", 0)),
+        ) for row in rows]
+
+    def folder_count(self, relative_path: str) -> int:
+        return int(self._json("/api/media/count", params={"relative_path": relative_path})["count"])
+
+    def list_folder_page(self, relative_path: str, *, offset: int = 0, limit: int = 500) -> list[PhotoItem]:
+        rows = self._json("/api/media", params={"relative_path": relative_path, "offset": offset, "limit": min(500, max(1, limit))}).get("items", [])
+        return [self._item(row) for row in rows]
+
+    def iter_folder(self, relative_path: str, *, page_size: int = 500) -> Iterator[PhotoItem]:
+        offset = 0
+        while True:
+            page = self.list_folder_page(relative_path, offset=offset, limit=page_size)
+            yield from page
+            if len(page) < page_size:
+                return
+            offset += len(page)
 
     def stat_item(self, object_id: str) -> PhotoItem:
         for item in self.list_children(None):

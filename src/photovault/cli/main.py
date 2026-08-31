@@ -127,10 +127,22 @@ def parser() -> argparse.ArgumentParser:
     wifi.add_argument("--token", required=True)
     wifi_sub = wifi.add_subparsers(dest="wifi_command", required=True)
     wifi_sub.add_parser("devices")
+    wifi_sub.add_parser("folders", help="list read-only Android MediaStore folder summaries")
+    wifi_folder = wifi_sub.add_parser("folder", help="show one folder's exact item count")
+    wifi_folder.add_argument("relative_path")
     wifi_list = wifi_sub.add_parser("list")
     wifi_list.add_argument("--limit", type=int, default=100)
+    wifi_list.add_argument("--offset", type=int, default=0)
+    wifi_list.add_argument("--folder", dest="relative_path")
     wifi_stream = wifi_sub.add_parser("stream")
     wifi_stream.add_argument("object_id")
+    wifi_benchmark = wifi_sub.add_parser("benchmark-folder", help="read a folder to a discard sink and report payload throughput")
+    wifi_benchmark.add_argument("relative_path")
+    wifi_benchmark.add_argument("--limit", type=int, default=0, help="maximum files to read; 0 means every file")
+    wifi_copy = wifi_sub.add_parser("copy-folder", help="review or verified-copy one Android folder to an external destination")
+    wifi_copy.add_argument("relative_path")
+    wifi_copy.add_argument("destination_root", type=Path, help="an existing directory under /Volumes")
+    wifi_copy.add_argument("--confirm-copy", action="store_true", help="perform the reviewed copy; omission is a read-only plan")
     sub.add_parser("gui", help="launch the optional PySide6 desktop UI")
     return p
 
@@ -143,6 +155,11 @@ def main() -> int:
             return _dispatch(args, connection)
         finally:
             connection.close()
+    if args.command == "android-wifi" and args.wifi_command != "copy-folder":
+        return _dispatch(args, None)
+    if args.command == "android-wifi" and args.wifi_command == "copy-folder":
+        if not str(args.catalog.expanduser().resolve()).startswith("/Volumes/"):
+            parser().error("android-wifi copy-folder requires --catalog on an external /Volumes drive")
     connection = connect(args.catalog)
 
     try:
@@ -154,6 +171,7 @@ def main() -> int:
 def _dispatch(args: argparse.Namespace, connection) -> int:
     if args.command == "android-wifi":
         import os
+        import time
         from photovault.sources.android_wifi import AndroidCompanionUnavailable, AndroidCompanionWifiSource
 
         source = AndroidCompanionWifiSource(args.url, args.token)
@@ -161,13 +179,56 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
             if args.wifi_command == "devices":
                 item = source.identity()
                 print(f"DEVICE\t{item.display_name}\t{item.model}\t{item.adapter}")
+            elif args.wifi_command == "folders":
+                for folder in source.folders():
+                    print(f"FOLDER\t{folder.relative_path}\t{folder.count}\t{folder.size_bytes}\t{folder.image_count}\t{folder.video_count}")
+            elif args.wifi_command == "folder":
+                print(f"FOLDER_COUNT\t{args.relative_path}\t{source.folder_count(args.relative_path)}")
             elif args.wifi_command == "list":
-                for item in list(source.list_children(None))[:args.limit]:
+                items = source.list_folder_page(args.relative_path, offset=args.offset, limit=args.limit) if args.relative_path else list(source.list_children(None))[args.offset:args.offset + args.limit]
+                for item in items:
                     print(f"ITEM\t{item.object_id}\t{item.name}\t{item.media_type}\t{item.size_bytes}")
-            else:
+            elif args.wifi_command == "stream":
                 with open(os.devnull, "wb") as sink:
                     metrics = source.stream_object(args.object_id, sink)
                 print(f"STREAM\t{args.object_id}\t{metrics['bytes_received']}\t{metrics['elapsed_seconds']:.3f}\t{metrics['bytes_per_second']:.0f}")
+            elif args.wifi_command == "benchmark-folder":
+                started = time.monotonic(); files = 0; received = 0
+                with open(os.devnull, "wb") as sink:
+                    for item in source.iter_folder(args.relative_path):
+                        if args.limit and files >= args.limit: break
+                        metrics = source.stream_object(item.object_id, sink)
+                        files += 1; received += int(metrics["bytes_received"])
+                elapsed = time.monotonic() - started
+                print(f"FOLDER_BENCHMARK\t{args.relative_path}\t{files}\t{received}\t{elapsed:.3f}\t{received / elapsed if elapsed else 0:.0f}")
+            else:
+                from photovault.backup.source_import import SourceImportItem, import_source_items, plan_source_import
+                from photovault.catalog.scanner import register_volume
+
+                destination = args.destination_root.expanduser().resolve()
+                if not destination.is_dir() or not str(destination).startswith("/Volumes/"):
+                    raise AndroidCompanionUnavailable("copy destination must be an existing directory on an external /Volumes drive")
+                items = list(source.iter_folder(args.relative_path))
+                import_items = [SourceImportItem(
+                    item.object_id, f"{args.relative_path.strip('/')}/{item.name}", item.size_bytes,
+                    media_type=item.media_type, modified_at=item.modified_at,
+                ) for item in items]
+                destination_volume = register_volume(connection, destination)
+                plan = plan_source_import(connection, source, import_items, destination, destination_volume)
+                conflicts = sum(1 for decision in plan if decision.status.value == "CONFLICT")
+                bytes_total = sum(item.size_bytes or 0 for item in items)
+                print(f"FOLDER_COPY_PLAN\t{args.relative_path}\t{len(items)}\t{bytes_total}\t{destination}\tconflicts={conflicts}")
+                if not args.confirm_copy:
+                    print("COPY_NOT_STARTED\tPass --confirm-copy only after reviewing this plan; no phone or destination files were changed.")
+                    return 0
+                if conflicts:
+                    print("COPY_NOT_STARTED\tDestination conflicts must be resolved first.")
+                    return 2
+                started = time.monotonic()
+                result = import_source_items(connection, source, import_items, destination, destination_volume)
+                elapsed = time.monotonic() - started
+                bytes_written = sum(int(row["bytes_written"]) for row in result["results"])
+                print(f"FOLDER_COPY\t{args.relative_path}\t{result['imported']}\t{result['already_imported']}\t{bytes_written}\t{elapsed:.3f}\t{bytes_written / elapsed if elapsed else 0:.0f}")
             return 0
         except AndroidCompanionUnavailable as exc:
             print(f"ANDROID_COMPANION_UNAVAILABLE\t{exc}")

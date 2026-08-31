@@ -32,3 +32,26 @@ class AndroidWifiTests(unittest.TestCase):
         self.assertEqual(metrics["bytes_received"], 3)
         self.assertTrue(seen[-1][0].endswith("/api/media/7?token=secret"))
         self.assertEqual(seen[-1][1], "bytes=2-")
+
+    def test_folder_inventory_count_and_paging(self) -> None:
+        seen = []
+        def fake_open(request, timeout):
+            seen.append(request.full_url)
+            if "/api/device?" in request.full_url:
+                return Response(json.dumps({"ok": True, "device": {"manufacturer": "Google", "model": "Pixel"}}).encode())
+            if "/api/folders?" in request.full_url:
+                return Response(json.dumps({"ok": True, "folders": [{"relative_path": "DCIM/Camera/", "count": 2, "images": 1, "videos": 1, "size_bytes": 9}]}).encode())
+            if "/api/media/count?" in request.full_url:
+                return Response(json.dumps({"ok": True, "count": 2}).encode())
+            if "/api/media?" in request.full_url:
+                return Response(json.dumps({"ok": True, "items": [{"object_id": "8", "name": "camera.jpg", "mime_type": "image/jpeg", "size_bytes": 9, "date_taken": 0, "modified_at": 0}]}).encode())
+            raise AssertionError(request.full_url)
+        with patch("photovault.sources.android_wifi.urlopen", fake_open):
+            source = AndroidCompanionWifiSource("http://phone:8765", "secret")
+            folders = source.folders()
+            self.assertEqual(folders[0].relative_path, "DCIM/Camera/")
+            self.assertEqual((folders[0].count, folders[0].size_bytes), (2, 9))
+            self.assertEqual(source.folder_count("DCIM/Camera"), 2)
+            self.assertEqual(source.list_folder_page("DCIM/Camera", offset=500, limit=500)[0].name, "camera.jpg")
+        self.assertTrue(any("relative_path=DCIM%2FCamera" in url for url in seen))
+        self.assertTrue(any("offset=500" in url for url in seen))

@@ -156,6 +156,25 @@ PYTHONPATH=src python3 -m photovault.cli --catalog /tmp/photovault-wifi.db \
   android-wifi --url http://PHONE_IP:8765 --token TOKEN list --limit 20
 PYTHONPATH=src python3 -m photovault.cli --catalog /tmp/photovault-wifi.db \
   android-wifi --url http://PHONE_IP:8765 --token TOKEN stream OBJECT_ID
+
+# Read-only folder inventory: path, item count, total bytes, images, videos.
+PYTHONPATH=src python3 -m photovault.cli \
+  android-wifi --url http://PHONE_IP:8765 --token TOKEN folders
+PYTHONPATH=src python3 -m photovault.cli \
+  android-wifi --url http://PHONE_IP:8765 --token TOKEN folder DCIM/Camera
+
+# Transfer benchmark: every byte is discarded on the Mac after timing.
+PYTHONPATH=src python3 -m photovault.cli \
+  android-wifi --url http://PHONE_IP:8765 --token TOKEN \
+  benchmark-folder DCIM/Camera
+
+# This is a plan only: it neither reads photo bytes nor writes the destination.
+PYTHONPATH=src python3 -m photovault.cli \
+  --catalog /Volumes/EXTERNAL_DRIVE/photovault-benchmark.db \
+  android-wifi --url http://PHONE_IP:8765 --token TOKEN \
+  copy-folder DCIM/Camera /Volumes/EXTERNAL_DRIVE/PhotoVault-Camera-Test
+# Add --confirm-copy only after checking the plan. Copies are atomically
+# written, SHA-256 verified, and never overwrite a conflicting destination.
 ```
 
 | Test | Result |
