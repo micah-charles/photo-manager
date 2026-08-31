@@ -6,7 +6,9 @@ from pathlib import Path
 
 from photovault.backup.android_profiles import (
     finish_android_backup_snapshot,
+    get_android_backup_profile,
     list_android_backup_profiles,
+    list_android_backup_snapshots,
     start_android_backup_snapshot,
     profile_folders,
     missing_from_source,
@@ -50,6 +52,10 @@ class AndroidBackupProfileTests(unittest.TestCase):
             snapshot = connection.execute("SELECT status, imported_items, already_imported_items FROM android_backup_snapshots").fetchone()
             self.assertEqual(tuple(snapshot), ("COMPLETED", 1, 1))
             self.assertIsNotNone(connection.execute("SELECT last_completed_at FROM android_backup_profiles").fetchone()[0])
+            loaded = get_android_backup_profile(connection, profile_id)
+            self.assertEqual((loaded["id"], loaded["destination_status"], loaded["destination_mount_path"]), (profile_id, "CONNECTED", str(destination.resolve())))
+            history = list_android_backup_snapshots(connection, profile_id=profile_id)
+            self.assertEqual((len(history), history[0]["profile_name"], history[0]["status"]), (1, "Pixel Camera refreshed", "COMPLETED"))
             connection.close()
 
     def test_profile_persists_multiple_selected_folders(self) -> None:

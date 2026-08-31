@@ -383,6 +383,20 @@ if QT_AVAILABLE:
                 transfer_form.addRow("Destination directory", self.android_transfer_destination)
                 transfer_form.addRow("Concurrent workers", self.android_transfer_workers)
                 layout.addLayout(transfer_form)
+                profile_actions = QHBoxLayout()
+                self.android_saved_profile = QComboBox()
+                self.android_saved_profile.setPlaceholderText("Saved backup profile")
+                profile_actions.addWidget(self.android_saved_profile, 1)
+                refresh_profiles_button = QPushButton("Refresh profiles")
+                refresh_profiles_button.clicked.connect(self._refresh_android_backup_profiles)
+                profile_actions.addWidget(refresh_profiles_button)
+                load_profile_button = QPushButton("Load selected profile")
+                load_profile_button.clicked.connect(self._load_selected_android_backup_profile)
+                profile_actions.addWidget(load_profile_button)
+                continue_profile_button = QPushButton("Continue selected backup")
+                continue_profile_button.clicked.connect(self._continue_selected_android_backup_profile)
+                profile_actions.addWidget(continue_profile_button)
+                layout.addLayout(profile_actions)
                 transfer_button = QPushButton("Start verified Wi-Fi backup")
                 transfer_button.clicked.connect(self._start_android_companion_transfer)
                 self.android_transfer_button = transfer_button
@@ -397,6 +411,9 @@ if QT_AVAILABLE:
                 )
                 self.android_transfer_result.setWordWrap(True)
                 layout.addWidget(self.android_transfer_result)
+                self.android_profile_history = QTableWidget()
+                layout.addWidget(QLabel("Saved profiles and recent runs"))
+                layout.addWidget(self.android_profile_history)
                 self.android_helper = QLineEdit(str(_default_android_helper()))
                 form.addRow("Native helper", self.android_helper)
                 button = QPushButton("Discover USB MTP (experimental macOS fallback)")
@@ -864,6 +881,87 @@ if QT_AVAILABLE:
                 self.android_transfer_cancel_button.setEnabled(False)
                 self.android_transfer_result.setText("Cancellation requested; active network chunks will stop safely.")
 
+        def _refresh_android_backup_profiles(self) -> None:
+            """Populate saved profiles/history from the catalog without touching media."""
+            from photovault.backup.android_profiles import (
+                list_android_backup_profiles,
+                list_android_backup_snapshots,
+                profile_folders,
+            )
+
+            previous_profile_id = self.android_saved_profile.currentData()
+            profiles = list_android_backup_profiles(self.connection)
+            self.android_saved_profile.blockSignals(True)
+            self.android_saved_profile.clear()
+            self.android_saved_profile.addItem("Select a saved backup profile…", None)
+            for profile in profiles:
+                folders = ", ".join(profile_folders(self.connection, str(profile["id"])))
+                destination = profile["destination_volume_name"]
+                state = profile["destination_status"]
+                self.android_saved_profile.addItem(
+                    f"{profile['name']} — {folders} → {destination} ({state})", profile["id"],
+                )
+            if previous_profile_id is not None:
+                profile_index = self.android_saved_profile.findData(previous_profile_id)
+                if profile_index >= 0:
+                    self.android_saved_profile.setCurrentIndex(profile_index)
+            self.android_saved_profile.blockSignals(False)
+            snapshots = list_android_backup_snapshots(self.connection, limit=100)
+            self._fill_table(
+                self.android_profile_history,
+                ["Profile", "Status", "Started", "Completed", "Planned", "Imported", "Already", "Failed", "Bytes"],
+                [
+                    (snapshot["profile_name"], snapshot["status"], snapshot["started_at"], snapshot["completed_at"] or "",
+                     snapshot["planned_items"], snapshot["imported_items"], snapshot["already_imported_items"],
+                     snapshot["failed_items"], self._human_bytes(snapshot["imported_bytes"]))
+                    for snapshot in snapshots
+                ],
+            )
+
+        def _load_selected_android_backup_profile(self) -> bool:
+            """Load profile fields only; starting a backup remains an explicit next action."""
+            from photovault.backup.android_profiles import get_android_backup_profile, profile_folders
+
+            profile_id = self.android_saved_profile.currentData()
+            if not profile_id:
+                self.android_transfer_result.setText("Select a saved profile first.")
+                return False
+            try:
+                profile = get_android_backup_profile(self.connection, str(profile_id))
+                folders = profile_folders(self.connection, str(profile_id))
+                mount_path = profile["destination_mount_path"]
+                if not mount_path:
+                    raise ValueError("saved destination has no current mount path")
+                destination = Path(str(mount_path))
+                relative_root = str(profile["destination_relative_root"] or "")
+                if relative_root:
+                    destination /= relative_root
+                self.android_transfer_folders.setPlainText("\n".join(folders))
+                self.android_transfer_profile_name.setText(str(profile["name"]))
+                media_index = self.android_transfer_media_filter.findData(str(profile["media_filter"]))
+                if media_index >= 0:
+                    self.android_transfer_media_filter.setCurrentIndex(media_index)
+                self.android_transfer_destination.setText(str(destination))
+                self.android_transfer_workers.setText(str(profile["workers"]))
+                if profile["destination_status"] != "CONNECTED" or not destination.is_dir():
+                    self.android_transfer_result.setText(
+                        f"Loaded {profile['name']}, but its destination is currently unavailable: {destination}. "
+                        "Reconnect the same volume or choose the correct existing destination before continuing."
+                    )
+                    return False
+                self.android_transfer_result.setText(
+                    f"Loaded {profile['name']}: {', '.join(folders)} → {destination}. "
+                    "Review the current phone inventory, then start or continue the verified backup."
+                )
+                return True
+            except Exception as exc:
+                self.android_transfer_result.setText(f"Could not load saved profile: {type(exc).__name__}: {exc}")
+                return False
+
+        def _continue_selected_android_backup_profile(self) -> None:
+            if self._load_selected_android_backup_profile():
+                self._start_android_companion_transfer()
+
         def _android_transfer_progress(self, event: object) -> None:
             stage = event.get("stage")
             if stage == "inventory":
@@ -915,13 +1013,16 @@ if QT_AVAILABLE:
                 f"{self._human_bytes(average)}/s over {self._human_duration(elapsed)}; "
                 f"resumed {self._human_bytes(resumed)}. Destination volume: {result['destination_volume']}."
             )
+            self._refresh_android_backup_profiles()
             self.refresh()
 
         def _android_transfer_cancelled(self, message: str) -> None:
             self.android_transfer_result.setText(f"Backup cancelled safely: {message}. Retained partial files can resume.")
+            self._refresh_android_backup_profiles()
 
         def _android_transfer_failed(self, message: str) -> None:
             self.android_transfer_result.setText(f"Android backup failed: {message}")
+            self._refresh_android_backup_profiles()
 
         def _android_completed(self, result: object) -> None:
             identity = result["identity"]
@@ -1382,6 +1483,8 @@ if QT_AVAILABLE:
                 self._refresh_timeline()
             if "Library" in self._tables:
                 self._refresh_library()
+            if hasattr(self, "android_saved_profile"):
+                self._refresh_android_backup_profiles()
             if "Favourites" in self._tables:
                 from photovault.catalog.favourites import list_favourites
 

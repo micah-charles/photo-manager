@@ -128,6 +128,39 @@ def list_android_backup_profiles(connection: sqlite3.Connection) -> list[sqlite3
     ))
 
 
+def get_android_backup_profile(connection: sqlite3.Connection, profile_id: str) -> sqlite3.Row:
+    """Return one saved profile, including its current destination-volume state."""
+    profile = connection.execute(
+        """SELECT p.*, v.display_name AS destination_volume_name, v.status AS destination_status,
+                  v.current_mount_path AS destination_mount_path
+           FROM android_backup_profiles p JOIN volumes v ON v.id=p.destination_volume_id
+           WHERE p.id=?""",
+        (profile_id,),
+    ).fetchone()
+    if profile is None:
+        raise ValueError(f"unknown Android backup profile: {profile_id}")
+    return profile
+
+
+def list_android_backup_snapshots(
+    connection: sqlite3.Connection, *, profile_id: str | None = None, limit: int = 100,
+) -> list[sqlite3.Row]:
+    """Return recent profile runs for a non-destructive transfer history view."""
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    where = "WHERE s.profile_id=?" if profile_id else ""
+    params: tuple[object, ...] = (profile_id, limit) if profile_id else (limit,)
+    return list(connection.execute(
+        f"""SELECT s.*, p.name AS profile_name
+             FROM android_backup_snapshots s
+             JOIN android_backup_profiles p ON p.id=s.profile_id
+             {where}
+             ORDER BY s.started_at DESC, s.id DESC
+             LIMIT ?""",
+        params,
+    ))
+
+
 def profile_folders(connection: sqlite3.Connection, profile_id: str) -> tuple[str, ...]:
     """Return normalized selected folders, with a migration-safe legacy fallback."""
     folders = tuple(str(row[0]) for row in connection.execute(
