@@ -41,6 +41,9 @@ def parser() -> argparse.ArgumentParser:
     gallery.add_argument("output", type=Path)
     gallery.add_argument("--volume-id")
     gallery.add_argument("--limit", type=int, default=500)
+    catalog_backup = sub.add_parser("catalog-backup", help="create a new consistent SQLite catalog backup")
+    catalog_backup.add_argument("destination", type=Path)
+    sub.add_parser("catalog-check", help="run a read-only SQLite catalog integrity check")
     favourites_import = sub.add_parser("favourites-import", help="import legacy gallery favourites JSON into the catalog")
     favourites_import.add_argument("manifest", type=Path)
     perceptual = sub.add_parser("perceptual-index", help="compute persisted dHash/pHash values")
@@ -396,6 +399,19 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
         from photovault.catalog.gallery import write_gallery
 
         print(write_gallery(connection, args.output, args.volume_id, args.limit))
+    elif args.command == "catalog-backup":
+        from photovault.catalog.recovery import backup_catalog
+
+        # Close the app connection before opening a separate online-backup source.
+        # SQLite WAL still supports the operation, and no media is touched.
+        connection.commit()
+        result = backup_catalog(args.catalog, args.destination)
+        print(f"CATALOG_BACKUP\t{result.destination}\t{result.bytes_written}\t{','.join(result.integrity)}")
+    elif args.command == "catalog-check":
+        from photovault.catalog.recovery import check_catalog_integrity
+
+        connection.commit()
+        print(f"CATALOG_CHECK\t{','.join(check_catalog_integrity(args.catalog))}")
     elif args.command == "favourites-import":
         from photovault.catalog.favourites import import_legacy_favourites_json
 
