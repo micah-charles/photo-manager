@@ -76,7 +76,8 @@ public final class MainActivity extends Activity {
         try {
             server = new MediaServer(getContentResolver()); server.start();
             String ip = localIpv4();
-            status.setText("PhotoVault Companion — read-only POC\n\n" +
+            status.setText("PhotoVault Companion — read-only POC\n" +
+                "Build: 0.2 — MediaStore manifest fix\n\n" +
                 "Desktop URL: http://" + ip + ":" + PORT + "\n" +
                 "Token: " + server.token + "\n\n" +
                 "Run on the Mac:\n" +
