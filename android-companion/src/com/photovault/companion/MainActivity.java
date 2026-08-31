@@ -112,7 +112,7 @@ public final class MainActivity extends Activity {
                 else if("/api/media".equals(path)) media(out,args);
                 else if(path.startsWith("/api/media/")) object(out,path.substring(11),headers.get("range"));
                 else reply(out,404,"application/json",jsonError("not found").getBytes(StandardCharsets.UTF_8));
-            } catch (Exception ignored) { }
+            } catch (Exception e) { e.printStackTrace(); }
         }
         private void device(BufferedOutputStream out) throws IOException {
             int count=count(MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL));
@@ -123,7 +123,14 @@ public final class MainActivity extends Activity {
         private void media(BufferedOutputStream out,Map<String,String> args) throws IOException {
             int limit=Math.min(500,Math.max(1,integer(args.get("limit"),100))); List<String> rows=new ArrayList<>();
             String[] cols=columns(); Uri uri=MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL);
-            try(Cursor c=resolver.query(uri,cols,mediaSelection(),null,MediaStore.MediaColumns.DATE_MODIFIED+" DESC LIMIT "+limit)){
+            // MediaProvider on recent Android versions validates sort-order text and
+            // rejects a hand-built "... LIMIT n" suffix. Use the public query
+            // arguments instead so the endpoint works across Android releases.
+            Bundle query=new Bundle();
+            query.putString(ContentResolver.QUERY_ARG_SQL_SELECTION,mediaSelection());
+            query.putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER,MediaStore.MediaColumns.DATE_MODIFIED+" DESC");
+            query.putInt(ContentResolver.QUERY_ARG_LIMIT,limit);
+            try(Cursor c=resolver.query(uri,cols,query,null)){
                 while(c!=null&&c.moveToNext()) rows.add(mediaJson(c));
             }
             String body="{\"ok\":true,\"items\":["+String.join(",",rows)+"]}"; reply(out,200,"application/json",body.getBytes(StandardCharsets.UTF_8));
