@@ -34,8 +34,8 @@ The grouping is defined in `ui/spec.py`; the old services are not removed.
 - `src/photovault/ui/theme.py`: centralized light-theme tokens and stylesheet
 - `src/photovault/ui/spec.py`: grouped navigation contract
 - `src/photovault/ui/main_window.py`: grouped sidebar, shared theme, and
-  collection/category double-click interactions plus the dedicated Photo
-  Viewer navigation flow
+  collection/category double-click interactions, catalog-only user albums,
+  and the dedicated Photo Viewer navigation flow
 - `src/photovault/catalog/collections.py`: catalog-derived browse views
 - `src/photovault/catalog/classification.py`: optional local ONNX category
   indexing with resumable checkpoints
@@ -56,7 +56,8 @@ The current implementation has working pages for Home/Dashboard, Library
 Favourites, Visual Duplicates, Android Devices, Backup Sets, Disks, Operations,
   Timeline, Categories, Backup Health, and the advanced storage tools. Collections and
   categories can be opened by double-clicking a row and route to the normal
-  Library grid.
+  Library grid. Users can create albums and add selected Library items without
+  copying or moving originals.
 
 ## 7. Deviations from the mockup
 
@@ -126,8 +127,8 @@ environment from source control.
 2. Finish the photo-first Home and richer connected-device Android Backup
    workflow from the supplied mockup; the basic Viewer/inspector flow is now
    available.
-3. Add visual album cards and user-created collections while preserving smart
-   collection semantics.
+3. Replace the current album table with visual cover mosaics while preserving
+   the catalog-only user-created collection semantics.
 4. Add a readable Activity feed and richer drive cards; Backup Health summary
    is now available from the grouped Storage navigation.
 5. Normalize model labels into PhotoVault categories and move AI indexing into

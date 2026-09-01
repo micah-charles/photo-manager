@@ -626,6 +626,14 @@ if QT_AVAILABLE:
                 favourite_button = QPushButton("Toggle favourite for selected item(s)")
                 favourite_button.clicked.connect(self._toggle_selected_library_favourites)
                 layout.addWidget(favourite_button)
+                collection_actions = QHBoxLayout()
+                self.library_collection_target = QComboBox()
+                self.library_collection_target.addItem("Select an album…", None)
+                collection_actions.addWidget(self.library_collection_target, 1)
+                add_collection_button = QPushButton("Add selected to album")
+                add_collection_button.clicked.connect(self._add_selected_to_collection)
+                collection_actions.addWidget(add_collection_button)
+                layout.addLayout(collection_actions)
                 self.library_result = QLabel("Catalog-backed results remain visible when an original volume is offline.")
                 self.library_result.setWordWrap(True)
                 layout.addWidget(self.library_result)
@@ -673,6 +681,14 @@ if QT_AVAILABLE:
                 open_button = QPushButton("Open selected collection in Library")
                 open_button.clicked.connect(self._open_selected_collection)
                 layout.addWidget(open_button)
+                create_actions = QHBoxLayout()
+                self.new_collection_title = QLineEdit()
+                self.new_collection_title.setPlaceholderText("New album name")
+                create_actions.addWidget(self.new_collection_title, 1)
+                create_button = QPushButton("Create album")
+                create_button.clicked.connect(self._create_user_collection)
+                create_actions.addWidget(create_button)
+                layout.addLayout(create_actions)
                 table = QTableWidget()
                 table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
                 table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -1668,8 +1684,49 @@ if QT_AVAILABLE:
                     [(item.id, item.kind, item.title, item.item_count, item.detail) for item in collections],
                 )
                 self.collections_result.setText(f"{len(collections)} collection(s), derived from the catalog without reading or changing originals.")
+                if hasattr(self, "library_collection_target"):
+                    self.library_collection_target.blockSignals(True)
+                    self.library_collection_target.clear()
+                    self.library_collection_target.addItem("Select an album…", None)
+                    for item in collections:
+                        if item.kind == "ALBUM":
+                            self.library_collection_target.addItem(f"{item.title} ({item.item_count})", item.id)
+                    self.library_collection_target.blockSignals(False)
             except Exception as exc:
                 self.collections_result.setText(f"Collection query failed: {type(exc).__name__}: {exc}")
+
+        def _create_user_collection(self) -> None:
+            try:
+                from photovault.catalog.collections import create_user_collection
+
+                collection_id = create_user_collection(self.connection, self.new_collection_title.text())
+                self.new_collection_title.clear()
+                self.collections_result.setText("Album created. Select photos in Library and add them to this album.")
+                self.refresh()
+                self.library_collection_target.setCurrentIndex(self.library_collection_target.findData(collection_id))
+            except Exception as exc:
+                self.collections_result.setText(f"Could not create album: {type(exc).__name__}: {exc}")
+
+        def _add_selected_to_collection(self) -> None:
+            selected = self.library_grid.selectedItems()
+            collection_id = self.library_collection_target.currentData()
+            if not selected:
+                self.library_result.setText("Select one or more photos first.")
+                return
+            if not collection_id:
+                self.library_result.setText("Create or select an album first.")
+                return
+            try:
+                from photovault.catalog.collections import add_to_user_collection
+
+                asset_ids = [str(item.data(Qt.ItemDataRole.UserRole)["asset_id"]) for item in selected]
+                added = add_to_user_collection(self.connection, str(collection_id), asset_ids)
+                self.library_result.setText(
+                    f"Added {added} photo(s) to the album. Existing album members were left unchanged; originals are untouched."
+                )
+                self.refresh()
+            except Exception as exc:
+                self.library_result.setText(f"Could not update album: {type(exc).__name__}: {exc}")
 
         def _refresh_backup_health(self) -> None:
             try:

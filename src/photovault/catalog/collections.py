@@ -8,6 +8,7 @@ provenance explicitly.
 from __future__ import annotations
 
 import sqlite3
+import uuid
 from collections import Counter
 from dataclasses import dataclass
 
@@ -72,6 +73,12 @@ def list_collections(connection: sqlite3.Connection) -> list[CatalogCollection]:
            ORDER BY COUNT(DISTINCT asset_id) DESC, model, label"""
     ):
         result.append(CatalogCollection(f"category:{row[0]}:{row[1]}", "CATEGORY", row[1], int(row[2]), f"{row[0]}; local model candidate"))
+    for row in connection.execute(
+        """SELECT c.id, c.title, COUNT(m.asset_id), c.updated_at
+           FROM user_collections c LEFT JOIN user_collection_members m ON m.collection_id=c.id
+           GROUP BY c.id ORDER BY c.title"""
+    ):
+        result.append(CatalogCollection(f"user:{row[0]}", "ALBUM", row[1], int(row[2]), "user-created album"))
     return result
 
 
@@ -98,6 +105,11 @@ def collection_query(connection: sqlite3.Connection, collection_id: str, *, limi
         except ValueError as exc:
             raise ValueError("invalid category collection") from exc
         rows = connection.execute("SELECT asset_id FROM image_categories WHERE model=? AND label=? ORDER BY score DESC, asset_id", (model, label)).fetchall()
+    elif collection_id.startswith("user:"):
+        rows = connection.execute(
+            "SELECT asset_id FROM user_collection_members WHERE collection_id=? ORDER BY added_at, asset_id",
+            (collection_id[5:],),
+        ).fetchall()
     else:
         raise ValueError("unknown collection")
     if not rows:
@@ -111,3 +123,34 @@ def list_collection_items(connection: sqlite3.Connection, collection_id: str, *,
 
 def count_collection_items(connection: sqlite3.Connection, collection_id: str) -> int:
     return count_library_items(connection, collection_query(connection, collection_id, limit=1))
+
+
+def create_user_collection(connection: sqlite3.Connection, title: str) -> str:
+    """Create an album in the catalog; original media is never touched."""
+    clean_title = title.strip()
+    if not clean_title:
+        raise ValueError("collection title is required")
+    collection_id = str(uuid.uuid4())
+    now = "datetime('now')"
+    connection.execute(
+        f"INSERT INTO user_collections(id, title, created_at, updated_at) VALUES (?, ?, {now}, {now})",
+        (collection_id, clean_title),
+    )
+    connection.commit()
+    return f"user:{collection_id}"
+
+
+def add_to_user_collection(connection: sqlite3.Connection, collection_id: str, asset_ids: list[str] | tuple[str, ...]) -> int:
+    """Add catalog assets to an album idempotently, without copying or moving files."""
+    if collection_id.startswith("user:"):
+        collection_id = collection_id[5:]
+    exists = connection.execute("SELECT 1 FROM user_collections WHERE id=?", (collection_id,)).fetchone()
+    if exists is None:
+        raise ValueError("unknown user collection")
+    cursor = connection.executemany(
+        "INSERT OR IGNORE INTO user_collection_members(collection_id, asset_id, added_at) VALUES (?, ?, datetime('now'))",
+        ((collection_id, asset_id) for asset_id in dict.fromkeys(str(item) for item in asset_ids)),
+    )
+    connection.execute("UPDATE user_collections SET updated_at=datetime('now') WHERE id=?", (collection_id,))
+    connection.commit()
+    return max(0, int(cursor.rowcount))

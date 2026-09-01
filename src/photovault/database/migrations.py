@@ -415,6 +415,25 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX idx_image_categories_label ON image_categories(model, label, score DESC);
         """,
     ),
+    (
+        17,
+        """
+        CREATE TABLE user_collections (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE user_collection_members (
+            collection_id TEXT NOT NULL REFERENCES user_collections(id) ON DELETE CASCADE,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            added_at TEXT NOT NULL,
+            PRIMARY KEY(collection_id, asset_id)
+        );
+        CREATE INDEX idx_user_collection_members_asset
+            ON user_collection_members(asset_id);
+        """,
+    ),
 ]
 
 

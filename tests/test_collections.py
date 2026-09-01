@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from photovault.catalog.collections import collection_query, count_collection_items, list_collection_items, list_collections
+from photovault.catalog.collections import add_to_user_collection, collection_query, count_collection_items, create_user_collection, list_collection_items, list_collections
 from photovault.catalog.favourites import set_favourite
 from photovault.catalog.scanner import register_volume, scan_volume
 from photovault.database.connection import connect
@@ -33,4 +33,19 @@ class CollectionTests(unittest.TestCase):
             self.assertTrue(collection_query(connection, "favourites").favourite_only)
             with self.assertRaises(ValueError):
                 collection_query(connection, "semantic:invented")
+
+    def test_user_album_membership_is_catalog_only_and_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            root = Path(temp) / "photos"
+            root.mkdir()
+            (root / "album.jpg").write_bytes(b"album")
+            volume_id = register_volume(connection, root, FixedProvider())
+            scan_volume(connection, volume_id, root)
+            asset_id = connection.execute("SELECT id FROM assets").fetchone()[0]
+            collection_id = create_user_collection(connection, "Trip")
+            self.assertEqual(add_to_user_collection(connection, collection_id, [asset_id]), 1)
+            self.assertEqual(add_to_user_collection(connection, collection_id, [asset_id]), 0)
+            self.assertEqual(list_collection_items(connection, collection_id)[0]["filename"], "album.jpg")
+            self.assertEqual((root / "album.jpg").read_bytes(), b"album")
             connection.close()
