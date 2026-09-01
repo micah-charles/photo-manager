@@ -16,8 +16,9 @@ from photovault.ui.main_window import MainWindow
 
 
 PAGES = (
-    "Dashboard", "Library", "Collections", "Android Devices", "Backup Health",
-    "Advanced Tools", "People", "Places", "Categories", "Visual Duplicates",
+    "Dashboard", "Library", "Review", "Events", "Tags", "Sources", "Photo Viewer",
+    "Collections", "Android Devices", "Backup Health", "Advanced Tools", "People",
+    "Places", "Categories", "Visual Duplicates",
 )
 
 
