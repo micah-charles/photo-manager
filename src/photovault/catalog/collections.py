@@ -13,6 +13,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from .library import LibraryQuery, count_library_items, list_library_items
+from .category_taxonomy import normalize_label
 
 
 @dataclass(frozen=True)
@@ -108,7 +109,13 @@ def collection_query(connection: sqlite3.Connection, collection_id: str, *, limi
             _, model, label = collection_id.split(":", 2)
         except ValueError as exc:
             raise ValueError("invalid category collection") from exc
-        rows = connection.execute("SELECT asset_id FROM image_categories WHERE model=? AND label=? ORDER BY score DESC, asset_id", (model, label)).fetchall()
+        raw_rows = connection.execute(
+            "SELECT asset_id, label FROM image_categories WHERE model=? ORDER BY score DESC, asset_id", (model,)
+        ).fetchall()
+        rows = [
+            (row[0],) for row in raw_rows
+            if str(row[1]) == label or normalize_label(str(row[1])) == label
+        ]
     elif collection_id.startswith("user:"):
         rows = connection.execute(
             "SELECT asset_id FROM user_collection_members WHERE collection_id=? ORDER BY added_at, asset_id",

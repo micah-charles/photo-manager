@@ -1707,21 +1707,27 @@ if QT_AVAILABLE:
 
         def _refresh_categories(self) -> None:
             try:
-                from photovault.catalog.collections import list_collections
+                from collections import defaultdict
 
-                categories = [item for item in list_collections(self.connection) if item.kind == "CATEGORY"]
+                from photovault.catalog.category_taxonomy import normalize_label
+
+                grouped: dict[tuple[str, str], set[str]] = defaultdict(set)
+                for row in self.connection.execute(
+                    "SELECT model, label, asset_id FROM image_categories ORDER BY model, label, asset_id"
+                ):
+                    grouped[(str(row[0]), normalize_label(str(row[1])))].add(str(row[2]))
                 table = self._tables["Categories"]
                 table.setColumnCount(4)
                 table.setHorizontalHeaderLabels(["Category", "Items", "Model", "Evidence / note"])
-                table.setRowCount(len(categories))
-                for row_index, item in enumerate(categories):
-                    values = (item.title, item.item_count, item.detail.split(";", 1)[0], item.detail)
+                table.setRowCount(len(grouped))
+                for row_index, ((model, category), asset_ids) in enumerate(sorted(grouped.items(), key=lambda pair: (-len(pair[1]), pair[0]))):
+                    values = (category, len(asset_ids), model, "normalised local model candidates")
                     for column_index, value in enumerate(values):
                         table.setItem(row_index, column_index, QTableWidgetItem(str(value)))
-                    table.item(row_index, 0).setData(Qt.ItemDataRole.UserRole, item.id)
+                    table.item(row_index, 0).setData(Qt.ItemDataRole.UserRole, f"category:{model}:{category}")
                 table.resizeColumnsToContents()
                 self.categories_result.setText(
-                    f"{len(categories)} local category view(s). Select one to browse its real photos; "
+                    f"{len(grouped)} normalised local category view(s). Select one to browse its real photos; "
                     "categories remain rebuildable metadata, separate from backup protection."
                 )
             except Exception as exc:

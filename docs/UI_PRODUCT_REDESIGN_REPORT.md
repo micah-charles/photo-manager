@@ -58,6 +58,9 @@ The grouping is defined in `ui/spec.py`; the old services are not removed.
 - `src/photovault/catalog/collections.py`: catalog-derived browse views
 - `src/photovault/catalog/classification.py`: optional local ONNX category
   indexing with resumable checkpoints
+- `src/photovault/catalog/category_taxonomy.py`: deterministic display-only
+  normalization from raw model labels to user-facing categories while keeping
+  raw evidence queryable
 - `src/photovault/catalog/people_import.py`: macOS Vision derived-group import
 
 ## 5. Existing backend preserved
@@ -188,8 +191,9 @@ cached previews after the background thumbnail builder generated the first
 4. Activity now has a readable recent-operation feed alongside the detailed
    audit table; Drives now have live location cards. Backup Health summary is now
    available from the grouped Storage navigation.
-5. Normalize model labels into PhotoVault categories and move AI indexing into
-   a cancellable UI worker.
+5. Expand the initial deterministic category taxonomy and add richer category
+   cards; model indexing is already a cancellable UI worker and raw evidence
+   remains hash-invalidated in SQLite.
 6. Add cross-platform Windows volume/Android adapters and packaging checks.
 7. Extend screenshot/regression validation to connected Android and active
    transfer states, then complete a real Windows packaged-app smoke test.

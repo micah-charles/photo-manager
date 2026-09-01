@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from photovault.catalog.classification import ImageCategory, index_image_categories
+from photovault.catalog.category_taxonomy import normalize_label
 from photovault.catalog.collections import list_collections, list_collection_items
 from photovault.catalog.scanner import register_volume, scan_volume
 from photovault.database.connection import connect
@@ -24,6 +25,10 @@ class FakeClassifier:
 
 
 class ClassificationTests(unittest.TestCase):
+    def test_display_taxonomy_preserves_unknown_labels(self) -> None:
+        self.assertEqual(normalize_label("tabby cat"), "Animals")
+        self.assertEqual(normalize_label("old camera label"), "old camera label")
+
     def test_categories_are_hash_invalidated_catalog_annotations(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "media"; root.mkdir()
