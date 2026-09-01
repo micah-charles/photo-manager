@@ -596,31 +596,9 @@ if QT_AVAILABLE:
 
                 build_photo_viewer_page(self, layout)
             elif label == "People":
-                form = QFormLayout()
-                self.people_features_json = QLineEdit()
-                self.people_features_json.setPlaceholderText("Read-only macOS Vision features JSON")
-                form.addRow("Vision features JSON", self.people_features_json)
-                layout.addLayout(form)
-                import_button = QPushButton("Import macOS Vision people groups")
-                import_button.clicked.connect(self._import_people_features)
-                layout.addWidget(import_button)
-                self.people_result = QLabel(
-                    "This imports only derived face-group memberships. It never modifies originals; rerunning replaces the prior macOS Vision grouping."
-                )
-                self.people_result.setWordWrap(True)
-                layout.addWidget(self.people_result)
-                layout.addWidget(QLabel("Browse people groups"))
-                self.people_grid = QListWidget()
-                configure_tile_grid(self.people_grid, "PeopleGrid", icon_size=(120, 100), grid_size=(170, 145))
-                self.people_grid.itemDoubleClicked.connect(self._open_person_tile)
-                layout.addWidget(self.people_grid)
-                table = QTableWidget()
-                table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-                table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-                table.cellDoubleClicked.connect(self._open_person_row)
-                table.setSortingEnabled(True)
-                self._tables[label] = table
-                layout.addWidget(table)
+                from .pages.people_page import build_people_page
+
+                build_people_page(self, layout, self._tables)
             elif label == "Categories":
                 self.categories_result = QLabel(
                     "Categories are derived from local analysis and open the same photo-first Library view. "
