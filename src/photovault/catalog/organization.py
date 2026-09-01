@@ -135,6 +135,29 @@ def add_assets_to_event(
     return max(0, int(cursor.rowcount))
 
 
+def update_event(connection: sqlite3.Connection, event_id: str, *, name: str, start_datetime: str | None = None, end_datetime: str | None = None, event_type: str = "other", description: str = "") -> None:
+    clean = " ".join(name.strip().split())
+    if not clean:
+        raise ValueError("event name is required")
+    if start_datetime and end_datetime and start_datetime > end_datetime:
+        raise ValueError("event start must not be after event end")
+    changed = connection.execute(
+        "UPDATE events SET name=?, start_datetime=?, end_datetime=?, event_type=?, description=?, updated_at=? WHERE id=?",
+        (clean, start_datetime, end_datetime, event_type, description, _now(), event_id),
+    ).rowcount
+    if not changed:
+        raise ValueError("unknown event")
+    connection.commit()
+
+
+def delete_event(connection: sqlite3.Connection, event_id: str) -> None:
+    connection.execute("DELETE FROM event_assets WHERE event_id=?", (event_id,))
+    changed = connection.execute("DELETE FROM events WHERE id=?", (event_id,)).rowcount
+    if not changed:
+        raise ValueError("unknown event")
+    connection.commit()
+
+
 def remove_assets_from_event(connection: sqlite3.Connection, event_id: str, asset_ids: list[str] | tuple[str, ...]) -> int:
     cursor = connection.executemany(
         "DELETE FROM event_assets WHERE event_id=? AND asset_id=?",
@@ -168,6 +191,26 @@ def create_tag(connection: sqlite3.Connection, name: str) -> str:
     )
     connection.commit()
     return tag_id
+
+
+def rename_tag(connection: sqlite3.Connection, tag_id: str, name: str) -> None:
+    clean = " ".join(name.strip().split())
+    normalised = _normalise_tag(clean)
+    changed = connection.execute(
+        "UPDATE tags SET name=?, normalized_name=?, updated_at=? WHERE id=?",
+        (clean, normalised, _now(), tag_id),
+    ).rowcount
+    if not changed:
+        raise ValueError("unknown tag")
+    connection.commit()
+
+
+def delete_tag(connection: sqlite3.Connection, tag_id: str) -> None:
+    connection.execute("DELETE FROM asset_tags WHERE tag_id=?", (tag_id,))
+    changed = connection.execute("DELETE FROM tags WHERE id=?", (tag_id,)).rowcount
+    if not changed:
+        raise ValueError("unknown tag")
+    connection.commit()
 
 
 def assign_tags(connection: sqlite3.Connection, asset_ids: list[str] | tuple[str, ...], tag_ids: list[str] | tuple[str, ...], *, source: str = "user") -> int:
@@ -258,6 +301,27 @@ def assign_place(connection: sqlite3.Connection, asset_ids: list[str] | tuple[st
         changed += 1
     connection.commit()
     return changed
+
+
+def update_place(connection: sqlite3.Connection, place_id: str, *, name: str, country: str | None = None, region: str | None = None, city: str | None = None, latitude: float | None = None, longitude: float | None = None) -> None:
+    clean = " ".join(name.strip().split())
+    if not clean:
+        raise ValueError("place name is required")
+    changed = connection.execute(
+        "UPDATE places SET name=?, country=?, region=?, city=?, latitude=?, longitude=?, updated_at=? WHERE id=?",
+        (clean, country, region, city, latitude, longitude, _now(), place_id),
+    ).rowcount
+    if not changed:
+        raise ValueError("unknown place")
+    connection.commit()
+
+
+def delete_place(connection: sqlite3.Connection, place_id: str) -> None:
+    connection.execute("DELETE FROM asset_places WHERE place_id=?", (place_id,))
+    changed = connection.execute("DELETE FROM places WHERE id=?", (place_id,)).rowcount
+    if not changed:
+        raise ValueError("unknown place")
+    connection.commit()
 
 
 def list_places(connection: sqlite3.Connection) -> list[Place]:

@@ -1767,6 +1767,36 @@ if QT_AVAILABLE:
             except Exception as exc:
                 self.events_result.setText(f"Event creation failed: {type(exc).__name__}: {exc}")
 
+        def _selected_event_id(self) -> str | None:
+            selected = self._tables["Events"].selectedItems()
+            return str(self._tables["Events"].item(selected[0].row(), 0).data(Qt.ItemDataRole.UserRole)) if selected else None
+
+        def _update_event(self) -> None:
+            try:
+                from photovault.catalog.organization import update_event
+
+                event_id = self._selected_event_id()
+                if not event_id:
+                    raise ValueError("select an event first")
+                update_event(self.connection, event_id, name=self.event_name.text(), start_datetime=self.event_start.text().strip() or None, end_datetime=self.event_end.text().strip() or None)
+                self.events_result.setText("Event updated. Original media was not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.events_result.setText(f"Event update failed: {type(exc).__name__}: {exc}")
+
+        def _delete_event(self) -> None:
+            try:
+                from photovault.catalog.organization import delete_event
+
+                event_id = self._selected_event_id()
+                if not event_id:
+                    raise ValueError("select an event first")
+                delete_event(self.connection, event_id)
+                self.events_result.setText("Event deleted from catalog; media files were not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.events_result.setText(f"Event deletion failed: {type(exc).__name__}: {exc}")
+
         def _refresh_events(self) -> None:
             from photovault.catalog.organization import list_events
 
@@ -1800,6 +1830,36 @@ if QT_AVAILABLE:
             except Exception as exc:
                 self.tags_result.setText(f"Tag creation failed: {type(exc).__name__}: {exc}")
 
+        def _selected_tag_id(self) -> str | None:
+            selected = self._tables["Tags"].selectedItems()
+            return str(self._tables["Tags"].item(selected[0].row(), 0).data(Qt.ItemDataRole.UserRole)) if selected else None
+
+        def _rename_tag(self) -> None:
+            try:
+                from photovault.catalog.organization import rename_tag
+
+                tag_id = self._selected_tag_id()
+                if not tag_id:
+                    raise ValueError("select a tag first")
+                rename_tag(self.connection, tag_id, self.tag_name.text())
+                self.tags_result.setText("Tag renamed. Original media was not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.tags_result.setText(f"Tag rename failed: {type(exc).__name__}: {exc}")
+
+        def _delete_tag(self) -> None:
+            try:
+                from photovault.catalog.organization import delete_tag
+
+                tag_id = self._selected_tag_id()
+                if not tag_id:
+                    raise ValueError("select a tag first")
+                delete_tag(self.connection, tag_id)
+                self.tags_result.setText("Tag deleted from catalog; media files were not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.tags_result.setText(f"Tag deletion failed: {type(exc).__name__}: {exc}")
+
         def _create_manual_place(self) -> None:
             try:
                 from photovault.catalog.organization import create_place
@@ -1811,6 +1871,17 @@ if QT_AVAILABLE:
                 self.refresh()
             except Exception as exc:
                 self._results["Places"].setText(f"Place creation failed: {type(exc).__name__}: {exc}")
+
+        def _delete_manual_place(self) -> None:
+            try:
+                from photovault.catalog.organization import delete_place
+
+                delete_place(self.connection, self.place_id_input.text().strip())
+                self.place_id_input.clear()
+                self._results["Places"].setText("Place deleted from catalog; media files were not changed.")
+                self.refresh()
+            except Exception as exc:
+                self._results["Places"].setText(f"Place deletion failed: {type(exc).__name__}: {exc}")
 
         def _selected_library_asset_ids(self) -> list[str]:
             return [str(item.data(Qt.ItemDataRole.UserRole)["asset_id"]) for item in self.library_grid.selectedItems()]
