@@ -53,6 +53,47 @@ class UIFoundationTests(unittest.TestCase):
             window.close()
             connection.close()
 
+    def test_gui_navigates_all_user_facing_pages_with_empty_catalog(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            for page in ("Dashboard", "Library", "Photo Viewer", "Collections", "People", "Places", "Categories", "Visual Duplicates", "Android Devices", "Backup Profiles", "Backup Health", "Operations", "Settings", "Advanced Tools"):
+                window._select_page(page)
+                self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index(page))
+            self.assertIn("No photos indexed yet", [window.dashboard_recent_grid.item(i).text() for i in range(window.dashboard_recent_grid.count())])
+            self.assertIn("No Android backup profiles yet", window.backup_profiles_result.text())
+            self.assertIn("No backup profiles", window.backup_health_result.text())
+            window.close()
+            connection.close()
+
+    def test_collections_double_click_opens_library_for_empty_album(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window.new_collection_title.setText("Empty test album")
+            window._create_user_collection()
+            table = window._tables["Collections"]
+            self.assertEqual(table.rowCount(), 1)
+            window._open_collection_row(0, 0)
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Library"))
+            self.assertIn("empty", window.library_result.text().lower())
+            window.close()
+            connection.close()
+
     def test_scan_uses_a_worker_thread_for_file_backed_catalog(self) -> None:
         from photovault.ui import main_window
 

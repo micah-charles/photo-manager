@@ -2178,7 +2178,20 @@ if QT_AVAILABLE:
                     self.library_folder.setText(selected_filter.folder_prefix)
                 self.library_favourites_only.setChecked(selected_filter.favourite_only)
                 self._refresh_library()
-                self.navigation.setCurrentRow(NAVIGATION_ITEMS.index("Library"))
+                # Use the grouped-navigation selector so the visible sidebar and
+                # stacked page always move together.  Setting a raw row index
+                # bypasses that mapping when headings are present.
+                self._select_page("Library")
+            except ValueError as exc:
+                if str(exc) == "collection has no members":
+                    self._library_collection_id = collection_id
+                    self.library_collection_result.setText(f"Active collection: {collection_id}")
+                    self.library_result.setText("This collection is empty. Add photos from Library, then refresh.")
+                    self._fill_table(self._tables["Library"], [], [])
+                    self._populate_library_grid([])
+                    self._select_page("Library")
+                    return
+                result_label.setText(f"Could not open collection: {type(exc).__name__}: {exc}")
             except Exception as exc:
                 result_label.setText(f"Could not open collection: {type(exc).__name__}: {exc}")
 
