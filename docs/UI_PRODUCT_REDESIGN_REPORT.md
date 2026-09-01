@@ -115,6 +115,9 @@ deliberately separate from the cached preview path.
 For catalogs imported without previews, Library now provides a cancellable
 background "Build missing thumbnails" action; generated previews are stored
 beside the catalog as rebuildable data, never in the original media tree.
+The Library controls were subsequently compacted into a search header and
+filter row so the photo grid expands into the primary visual surface; this was
+verified against the live external regression catalog in the UI review pack.
 
 ## 10. Storage and Backup Health
 
