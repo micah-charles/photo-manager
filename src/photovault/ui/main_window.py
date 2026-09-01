@@ -1020,6 +1020,16 @@ if QT_AVAILABLE:
             elapsed = time.monotonic() - self._android_transfer_started
             average = self._android_transfer_bytes / elapsed if elapsed else 0.0
             resumed = sum(int(row.get("resumed_bytes", 0)) for row in result["results"])
+            failed = int(result.get("failed", 0))
+            considered = int(result.get("imported", 0)) + int(result.get("already_imported", 0)) + failed
+            terminal_label = "Backup complete ✓" if failed == 0 else "Backup completed with issues"
+            self.android_backup_completion.setText(
+                f"{terminal_label}\n"
+                f"{considered:,} items considered · {result['imported']:,} copied · "
+                f"{result['already_imported']:,} already verified · {failed:,} failed\n"
+                f"{self._human_bytes(self._android_transfer_bytes)} transferred · {self._human_duration(elapsed)}\n"
+                "Completed files were verified before atomic rename; failed or partial files are not reported as protected."
+            )
             self.android_transfer_result.setText(
                 f"Backup complete: imported {result['imported']}, already verified {result['already_imported']}, "
                 f"planned {result['planned']}; {self._human_bytes(self._android_transfer_bytes)} at "
@@ -1041,6 +1051,11 @@ if QT_AVAILABLE:
             self.android_device_card.setText("Android Companion\nConnected · backup paused safely; resume is available")
             self.android_backup_summary.setText("Partial files are retained safely and can be resumed later.")
             self.android_backup_progress.setFormat("Cancelled — safe to resume")
+            self.android_backup_completion.setText(
+                "Backup cancelled safely\n"
+                f"{self._android_transfer_completed:,} file(s) completed and verified; "
+                "partial files are retained for a later resume."
+            )
             self.android_transfer_result.setText(f"Backup cancelled safely: {message}. Retained partial files can resume.")
             self._refresh_android_backup_profiles()
 
@@ -1049,6 +1064,11 @@ if QT_AVAILABLE:
             self.android_device_card.setText("Android Companion\nConnected · backup needs attention")
             self.android_backup_summary.setText("The destination and source were not modified beyond verified completed files.")
             self.android_backup_progress.setFormat("Failed — review details")
+            self.android_backup_completion.setText(
+                "Backup completed with issues\n"
+                f"{self._android_transfer_completed:,} file(s) completed and verified before the failure. "
+                "Review the error and retry; the phone and verified completed files remain safe."
+            )
             self.android_transfer_result.setText(f"Android backup failed: {message}")
             self._refresh_android_backup_profiles()
 

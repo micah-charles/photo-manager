@@ -34,6 +34,10 @@ def build_android_backup_page(owner: object, layout: object, tables: dict[str, Q
     owner.android_backup_progress.setTextVisible(True)
     owner.android_backup_progress.setFormat("Ready")
     layout.addWidget(owner.android_backup_progress)
+    owner.android_backup_completion = QLabel("No backup completed in this session.")
+    owner.android_backup_completion.setObjectName("SettingsCard")
+    owner.android_backup_completion.setWordWrap(True)
+    layout.addWidget(owner.android_backup_completion)
 
     from photovault.cli.main import _default_android_helper
 

@@ -72,6 +72,32 @@ class UIFoundationTests(unittest.TestCase):
             window.close()
             connection.close()
 
+    def test_android_backup_terminal_states_have_explicit_safe_summary(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._android_transfer_completed = 3
+            window._android_transfer_bytes = 3072
+            window._android_transfer_completed_result({
+                "imported": 3, "already_imported": 0, "planned": 3,
+                "results": [], "destination_volume": "test-volume",
+            })
+            self.assertIn("Backup complete", window.android_backup_completion.text())
+            self.assertIn("3 copied", window.android_backup_completion.text())
+            window._android_transfer_cancelled("user requested")
+            self.assertIn("cancelled safely", window.android_backup_completion.text())
+            window._android_transfer_failed("destination unavailable")
+            self.assertIn("completed with issues", window.android_backup_completion.text())
+            window.close()
+            connection.close()
+
     def test_gui_navigates_all_user_facing_pages_with_empty_catalog(self) -> None:
         from photovault.ui import main_window
 
