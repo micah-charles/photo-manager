@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,8 +48,10 @@ def _date_value(raw: object) -> str | None:
 def _coordinate(value: object) -> float | None:
     try:
         if isinstance(value, (tuple, list)) and len(value) == 3:
-            return float(value[0]) + float(value[1]) / 60 + float(value[2]) / 3600
-        return float(value)
+            result = float(value[0]) + float(value[1]) / 60 + float(value[2]) / 3600
+        else:
+            result = float(value)
+        return result if math.isfinite(result) else None
     except (TypeError, ValueError, ZeroDivisionError):
         return None
 
@@ -61,11 +65,14 @@ def _image_metadata(path: Path) -> MetadataRecord:
         capture = _date_value(values.get("DateTimeOriginal")) or _date_value(values.get("DateTimeDigitized")) or _date_value(values.get("DateTime"))
         source = "exif" if capture else None
         latitude = longitude = None
-        gps = exif.get(34853)
+        # Pillow exposes the EXIF GPS pointer through ``get`` on many JPEGs;
+        # the actual GPS tag mapping is available through ``get_ifd``.
+        # Retain a mapping fallback for older Pillow versions.
+        gps = exif.get_ifd(34853) if hasattr(exif, "get_ifd") else exif.get(34853)
         # Some real-world files contain a malformed GPS pointer/value instead
         # of the expected nested EXIF mapping. Treat that field as unavailable;
         # one damaged tag must not abort a whole read-only library scan.
-        if hasattr(gps, "items"):
+        if isinstance(gps, Mapping):
             gps_values = {ExifTags.GPSTAGS.get(key, key): value for key, value in gps.items()} if ExifTags else {}
             latitude = _coordinate(gps_values.get("GPSLatitude"))
             longitude = _coordinate(gps_values.get("GPSLongitude"))

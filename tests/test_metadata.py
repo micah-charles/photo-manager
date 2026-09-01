@@ -10,7 +10,7 @@ try:
 except ImportError:  # pragma: no cover
     Image = None
 
-from photovault.catalog.metadata import _image_metadata
+from photovault.catalog.metadata import _coordinate, _image_metadata
 from photovault.catalog.scanner import register_volume, scan_volume
 from photovault.catalog.gallery import write_gallery
 from photovault.catalog.timeline import list_timeline
@@ -24,6 +24,10 @@ class FixedProvider:
 
 
 class MetadataTests(unittest.TestCase):
+    def test_nan_gps_coordinate_is_not_treated_as_a_real_location(self) -> None:
+        self.assertIsNone(_coordinate(float("nan")))
+        self.assertIsNone(_coordinate((float("nan"), 0, 0)))
+
     def test_malformed_gps_value_does_not_abort_image_metadata(self) -> None:
         if Image is None:
             self.skipTest("Pillow is not installed")
