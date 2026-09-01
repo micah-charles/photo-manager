@@ -92,6 +92,9 @@ Favourites (with a Library smart-view handoff), Visual Duplicates, Android Devic
   Folder collection tiles use a cached catalog thumbnail as a live cover when
   available, and dashboard technical metrics are behind an explicit
   advanced-details toggle rather than dominating the home screen.
+  Home also includes a live Android phone card based on the persistent source
+  profile and last-seen timestamp; it does not claim that a phone is currently
+  connected when the catalog only knows that it existed previously.
 
 ## 7. Deviations from the mockup
 
