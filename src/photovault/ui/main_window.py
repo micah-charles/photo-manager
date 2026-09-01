@@ -930,6 +930,15 @@ if QT_AVAILABLE:
                     result.setWordWrap(True)
                     self._results[label] = result
                     layout.addWidget(result)
+                    layout.addWidget(QLabel("Browse place clusters"))
+                    self.places_grid = QListWidget()
+                    self.places_grid.setObjectName("PlacesGrid")
+                    self.places_grid.setViewMode(QListWidget.ViewMode.IconMode)
+                    self.places_grid.setResizeMode(QListWidget.ResizeMode.Adjust)
+                    self.places_grid.setIconSize(QSize(150, 100))
+                    self.places_grid.setGridSize(QSize(190, 140))
+                    self.places_grid.itemDoubleClicked.connect(self._open_place_tile)
+                    layout.addWidget(self.places_grid)
             elif label == "Favourites":
                 form = QFormLayout()
                 self.favourite_asset_id = QLineEdit()
@@ -2438,12 +2447,40 @@ if QT_AVAILABLE:
                 from photovault.catalog.places import cluster_places
 
                 clusters = cluster_places(self.connection, float(radius.text().strip()))
+                self._populate_places_grid(clusters)
                 self._results["Places"].setText(
                     f"{len(clusters)} coordinate cluster(s), offline-safe. "
                     + "; ".join(f"{cluster.latitude:.4f},{cluster.longitude:.4f} ({len(cluster.asset_ids)} assets)" for cluster in clusters)
                 )
             except Exception as exc:
                 self._results["Places"].setText(f"Place clustering failed: {exc}")
+
+        def _populate_places_grid(self, clusters: object) -> None:
+            if not hasattr(self, "places_grid"):
+                return
+            self.places_grid.clear()
+            for cluster in clusters:
+                label = cluster.label or f"{cluster.latitude:.4f}, {cluster.longitude:.4f}"
+                item = QListWidgetItem(f"{label}\n{len(cluster.asset_ids):,} photos")
+                item.setToolTip(
+                    f"{label}\n{cluster.latitude:.6f}, {cluster.longitude:.6f}\n"
+                    f"Cluster radius {cluster.radius_meters:.1f} m; embedded GPS only"
+                )
+                thumbnail = self.connection.execute(
+                    "SELECT path FROM thumbnails WHERE asset_id=? AND version='v1-320' LIMIT 1",
+                    (cluster.asset_ids[0],),
+                ).fetchone() if cluster.asset_ids else None
+                if thumbnail and Path(str(thumbnail[0])).is_file():
+                    item.setIcon(QIcon(str(thumbnail[0])))
+                item.setData(Qt.ItemDataRole.UserRole, f"place:{cluster.id}")
+                self.places_grid.addItem(item)
+            if not clusters:
+                self.places_grid.addItem("No embedded GPS clusters yet")
+
+        def _open_place_tile(self, item: QListWidgetItem) -> None:
+            collection_id = item.data(Qt.ItemDataRole.UserRole)
+            if collection_id:
+                self._open_collection_in_library(str(collection_id), self._results["Places"])
 
         def _set_favourite(self) -> None:
             try:
