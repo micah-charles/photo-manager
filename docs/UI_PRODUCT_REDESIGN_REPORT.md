@@ -89,6 +89,9 @@ Favourites (with a Library smart-view handoff), Visual Duplicates, Android Devic
   Collection and album tiles explicitly handle mouse double-click as well as
   keyboard activation, including on macOS Qt styles that do not consistently
   emit `itemActivated` for a mouse double-click.
+  Folder collection tiles use a cached catalog thumbnail as a live cover when
+  available, and dashboard technical metrics are behind an explicit
+  advanced-details toggle rather than dominating the home screen.
 
 ## 7. Deviations from the mockup
 
