@@ -103,7 +103,9 @@ the detailed audit pages remain available for technical review.
 
 ## 11. People, Places, Categories, and Duplicates
 
-People supports importing existing macOS Vision derived memberships. Places
+People supports importing existing macOS Vision derived memberships and now
+shows real catalogued people groups as thumbnail cards; cards and table rows
+open the corresponding photo-first Library view. Places
 remain an advisory catalog view. Visual duplicates now show real thumbnail
 review rows and double-click into the normal Library view; they remain
 advisory only. Local ONNX classification

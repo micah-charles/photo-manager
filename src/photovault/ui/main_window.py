@@ -828,7 +828,19 @@ if QT_AVAILABLE:
                 )
                 self.people_result.setWordWrap(True)
                 layout.addWidget(self.people_result)
+                layout.addWidget(QLabel("Browse people groups"))
+                self.people_grid = QListWidget()
+                self.people_grid.setObjectName("PeopleGrid")
+                self.people_grid.setViewMode(QListWidget.ViewMode.IconMode)
+                self.people_grid.setResizeMode(QListWidget.ResizeMode.Adjust)
+                self.people_grid.setIconSize(QSize(120, 100))
+                self.people_grid.setGridSize(QSize(170, 145))
+                self.people_grid.itemDoubleClicked.connect(self._open_person_tile)
+                layout.addWidget(self.people_grid)
                 table = QTableWidget()
+                table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+                table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+                table.cellDoubleClicked.connect(self._open_person_row)
                 table.setSortingEnabled(True)
                 self._tables[label] = table
                 layout.addWidget(table)
@@ -2184,6 +2196,18 @@ if QT_AVAILABLE:
             table.selectRow(row)
             self._open_selected_category()
 
+        def _open_person_tile(self, item: QListWidgetItem) -> None:
+            person_id = item.data(Qt.ItemDataRole.UserRole)
+            if person_id:
+                self._open_collection_in_library(f"person:{person_id}", self.people_result)
+
+        def _open_person_row(self, row: int, _column: int) -> None:
+            table = self._tables["People"]
+            table.selectRow(row)
+            person_id = table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            if person_id:
+                self._open_collection_in_library(f"person:{person_id}", self.people_result)
+
         def _open_selected_collection(self) -> None:
             table = self._tables["Collections"]
             selected = table.selectedItems()
@@ -2520,11 +2544,33 @@ if QT_AVAILABLE:
                 self._refresh_categories()
             if "People" in self._tables:
                 rows = self.connection.execute(
-                    """SELECT p.id, p.display_name, p.engine, COUNT(m.asset_id), p.updated_at
+                    """SELECT p.id, p.display_name, p.engine, COUNT(m.asset_id), p.updated_at,
+                              (SELECT t.path FROM person_members pm
+                               JOIN thumbnails t ON t.asset_id=pm.asset_id AND t.version='v1-320'
+                               WHERE pm.person_id=p.id ORDER BY pm.asset_id LIMIT 1)
                        FROM people p LEFT JOIN person_members m ON m.person_id=p.id
                        GROUP BY p.id ORDER BY COUNT(m.asset_id) DESC, p.id"""
                 ).fetchall()
-                self._fill_table(self._tables["People"], ["Person", "Name", "Engine", "Assets", "Updated"], [tuple(row) for row in rows])
+                self._fill_table(self._tables["People"], ["Person", "Name", "Engine", "Assets", "Updated"], [tuple(row[:5]) for row in rows])
+                for row_index, row in enumerate(rows):
+                    self._tables["People"].item(row_index, 0).setData(Qt.ItemDataRole.UserRole, str(row[0]))
+                if hasattr(self, "people_grid"):
+                    self.people_grid.clear()
+                    for row in rows:
+                        person_id, display_name, engine, count, _updated, cover_path = row
+                        title = str(display_name or f"Person {str(person_id)[-6:]}")
+                        tile = QListWidgetItem(f"{title}\n{int(count):,} photos")
+                        if cover_path and Path(str(cover_path)).is_file():
+                            tile.setIcon(QIcon(str(cover_path)))
+                        tile.setToolTip(f"{title}\n{engine}; {count:,} catalogued photo(s)")
+                        tile.setData(Qt.ItemDataRole.UserRole, str(person_id))
+                        self.people_grid.addItem(tile)
+                    if not rows:
+                        self.people_grid.addItem("No people groups yet")
+                    self.people_result.setText(
+                        f"{len(rows):,} derived people group(s). Double-click a card to browse its catalogued photos."
+                        if rows else "No people groups imported yet. Import macOS Vision derived memberships to begin."
+                    )
             if hasattr(self, "android_saved_profile"):
                 self._refresh_android_backup_profiles()
             if "Backup Profiles" in self._tables:
