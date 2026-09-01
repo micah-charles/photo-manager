@@ -41,12 +41,16 @@ def build_collections_page(owner: object, layout: object, tables: dict[str, QTab
     layout.addWidget(QLabel("Browse collections"))
     owner.collections_grid = QListWidget()
     configure_tile_grid(owner.collections_grid, "CollectionGrid")
+    # Some macOS Qt styles do not consistently promote a mouse double-click
+    # to itemActivated. Keep the explicit mouse signal so cards are reliable.
+    owner.collections_grid.itemDoubleClicked.connect(owner._open_collection_tile)
     owner.collections_grid.itemActivated.connect(owner._open_collection_tile)
     layout.addWidget(owner.collections_grid)
 
     layout.addWidget(QLabel("Your albums"))
     owner.collections_album_grid = QListWidget()
     configure_tile_grid(owner.collections_album_grid, "AlbumGrid", icon_size=(150, 110), grid_size=(190, 155))
+    owner.collections_album_grid.itemDoubleClicked.connect(owner._open_album_tile)
     owner.collections_album_grid.itemActivated.connect(owner._open_album_tile)
     layout.addWidget(owner.collections_album_grid)
 
