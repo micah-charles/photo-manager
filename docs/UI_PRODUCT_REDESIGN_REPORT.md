@@ -127,8 +127,9 @@ environment from source control.
 2. Finish the photo-first Home and richer connected-device Android Backup
    workflow from the supplied mockup; the basic Viewer/inspector flow is now
    available.
-3. Replace the current album table with visual cover mosaics while preserving
-   the catalog-only user-created collection semantics.
+3. Replace the remaining smart-collection table with richer visual cards;
+   user-created albums now have a live cover mosaic while preserving their
+   catalog-only semantics.
 4. Add a readable Activity feed and richer drive cards; Backup Health summary
    is now available from the grouped Storage navigation.
 5. Normalize model labels into PhotoVault categories and move AI indexing into

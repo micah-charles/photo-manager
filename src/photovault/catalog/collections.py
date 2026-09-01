@@ -22,6 +22,7 @@ class CatalogCollection:
     title: str
     item_count: int
     detail: str = ""
+    cover_path: str | None = None
 
 
 def list_collections(connection: sqlite3.Connection) -> list[CatalogCollection]:
@@ -74,11 +75,14 @@ def list_collections(connection: sqlite3.Connection) -> list[CatalogCollection]:
     ):
         result.append(CatalogCollection(f"category:{row[0]}:{row[1]}", "CATEGORY", row[1], int(row[2]), f"{row[0]}; local model candidate"))
     for row in connection.execute(
-        """SELECT c.id, c.title, COUNT(m.asset_id), c.updated_at
+        """SELECT c.id, c.title, COUNT(m.asset_id), c.updated_at,
+                  (SELECT t.path FROM user_collection_members cm
+                   JOIN thumbnails t ON t.asset_id=cm.asset_id AND t.version='default'
+                   WHERE cm.collection_id=c.id ORDER BY cm.added_at, cm.asset_id LIMIT 1)
            FROM user_collections c LEFT JOIN user_collection_members m ON m.collection_id=c.id
            GROUP BY c.id ORDER BY c.title"""
     ):
-        result.append(CatalogCollection(f"user:{row[0]}", "ALBUM", row[1], int(row[2]), "user-created album"))
+        result.append(CatalogCollection(f"user:{row[0]}", "ALBUM", row[1], int(row[2]), "user-created album", row[4]))
     return result
 
 

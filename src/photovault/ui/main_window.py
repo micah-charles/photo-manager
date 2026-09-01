@@ -689,6 +689,15 @@ if QT_AVAILABLE:
                 create_button.clicked.connect(self._create_user_collection)
                 create_actions.addWidget(create_button)
                 layout.addLayout(create_actions)
+                self.collections_album_grid = QListWidget()
+                self.collections_album_grid.setObjectName("AlbumGrid")
+                self.collections_album_grid.setViewMode(QListWidget.ViewMode.IconMode)
+                self.collections_album_grid.setResizeMode(QListWidget.ResizeMode.Adjust)
+                self.collections_album_grid.setIconSize(QSize(150, 110))
+                self.collections_album_grid.setGridSize(QSize(190, 155))
+                self.collections_album_grid.itemDoubleClicked.connect(self._open_album_tile)
+                layout.addWidget(QLabel("Your albums"))
+                layout.addWidget(self.collections_album_grid)
                 table = QTableWidget()
                 table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
                 table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -1684,6 +1693,16 @@ if QT_AVAILABLE:
                     [(item.id, item.kind, item.title, item.item_count, item.detail) for item in collections],
                 )
                 self.collections_result.setText(f"{len(collections)} collection(s), derived from the catalog without reading or changing originals.")
+                if hasattr(self, "collections_album_grid"):
+                    self.collections_album_grid.clear()
+                    albums = [item for item in collections if item.kind == "ALBUM"]
+                    for album in albums:
+                        tile = QListWidgetItem(f"{album.title}\n{album.item_count:,} items")
+                        if album.cover_path and Path(album.cover_path).is_file():
+                            tile.setIcon(QIcon(album.cover_path))
+                        tile.setToolTip(f"{album.title}\n{album.detail}")
+                        tile.setData(Qt.ItemDataRole.UserRole, album.id)
+                        self.collections_album_grid.addItem(tile)
                 if hasattr(self, "library_collection_target"):
                     self.library_collection_target.blockSignals(True)
                     self.library_collection_target.clear()
@@ -1706,6 +1725,9 @@ if QT_AVAILABLE:
                 self.library_collection_target.setCurrentIndex(self.library_collection_target.findData(collection_id))
             except Exception as exc:
                 self.collections_result.setText(f"Could not create album: {type(exc).__name__}: {exc}")
+
+        def _open_album_tile(self, item: QListWidgetItem) -> None:
+            self._open_collection_in_library(str(item.data(Qt.ItemDataRole.UserRole)), self.collections_result)
 
         def _add_selected_to_collection(self) -> None:
             selected = self.library_grid.selectedItems()
