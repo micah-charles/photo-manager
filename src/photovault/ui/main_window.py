@@ -1731,6 +1731,9 @@ if QT_AVAILABLE:
             self._replace_library_filter(self.library_event_filter, "Any event", events, lambda row: f"{row.name} ({row.item_count:,})")
             self._replace_library_filter(self.library_tag_filter, "Any tag", tags, lambda row: f"{row.name} ({row.item_count:,})")
             self._replace_library_filter(self.library_place_filter, "Any place", places, lambda row: f"{row.name} ({row.item_count:,})")
+            self._replace_library_filter(self.library_assign_event, "Select event…", events, lambda row: f"{row.name} ({row.item_count:,})")
+            self._replace_library_filter(self.library_assign_tag, "Select tag…", tags, lambda row: f"{row.name} ({row.item_count:,})")
+            self._replace_library_filter(self.library_assign_place, "Select place…", places, lambda row: f"{row.name} ({row.item_count:,})")
 
         def _clear_library_organisation_filters(self) -> None:
             for combo in (self.library_source_filter, self.library_event_filter, self.library_tag_filter, self.library_place_filter,
@@ -1791,6 +1794,66 @@ if QT_AVAILABLE:
                 self.refresh()
             except Exception as exc:
                 self.tags_result.setText(f"Tag creation failed: {type(exc).__name__}: {exc}")
+
+        def _create_manual_place(self) -> None:
+            try:
+                from photovault.catalog.organization import create_place
+
+                create_place(self.connection, self.place_name.text(), city=self.place_city.text().strip() or None)
+                self.place_name.clear()
+                self.place_city.clear()
+                self._results["Places"].setText("Manual place created. Select media in Library to assign it.")
+                self.refresh()
+            except Exception as exc:
+                self._results["Places"].setText(f"Place creation failed: {type(exc).__name__}: {exc}")
+
+        def _selected_library_asset_ids(self) -> list[str]:
+            return [str(item.data(Qt.ItemDataRole.UserRole)["asset_id"]) for item in self.library_grid.selectedItems()]
+
+        def _assign_selected_event(self) -> None:
+            asset_ids = self._selected_library_asset_ids()
+            event_id = self.library_assign_event.currentData()
+            if not asset_ids or not event_id:
+                self.library_result.setText("Select media and an event first.")
+                return
+            try:
+                from photovault.catalog.organization import add_assets_to_event
+
+                changed = add_assets_to_event(self.connection, str(event_id), asset_ids)
+                self.library_result.setText(f"Added {changed} selected item(s) to the event. Originals were not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.library_result.setText(f"Event assignment failed: {type(exc).__name__}: {exc}")
+
+        def _assign_selected_tag(self) -> None:
+            asset_ids = self._selected_library_asset_ids()
+            tag_id = self.library_assign_tag.currentData()
+            if not asset_ids or not tag_id:
+                self.library_result.setText("Select media and a tag first.")
+                return
+            try:
+                from photovault.catalog.organization import assign_tags
+
+                changed = assign_tags(self.connection, asset_ids, [str(tag_id)])
+                self.library_result.setText(f"Assigned tag to {changed} selected item(s). Originals were not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.library_result.setText(f"Tag assignment failed: {type(exc).__name__}: {exc}")
+
+        def _assign_selected_place(self) -> None:
+            asset_ids = self._selected_library_asset_ids()
+            place_id = self.library_assign_place.currentData()
+            if not asset_ids or not place_id:
+                self.library_result.setText("Select media and a place first.")
+                return
+            try:
+                from photovault.catalog.organization import assign_place
+
+                changed = assign_place(self.connection, asset_ids, str(place_id))
+                self.library_result.setText(f"Assigned place to {changed} selected item(s). Originals were not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.library_result.setText(f"Place assignment failed: {type(exc).__name__}: {exc}")
 
         def _refresh_tags(self) -> None:
             from photovault.catalog.organization import list_tags
@@ -2613,6 +2676,7 @@ if QT_AVAILABLE:
             if "Timeline" in self._tables:
                 self._refresh_timeline()
             if "Library" in self._tables:
+                self._refresh_library_organisation_filters()
                 self._refresh_library()
             if "Collections" in self._tables:
                 self._refresh_collections()
