@@ -155,7 +155,18 @@ tree intentionally excludes the external model, pip cache, and virtual
 environment from source control. A local PyInstaller macOS build was also
 completed successfully with an arm64 `dist/PhotoVault.app`; its bundled
 executable passed the `--help` smoke test. Windows packaging remains a CI or
-real-Windows validation item.
+real-Windows validation item. Pillow and NumPy are installed in the
+external-drive `.venv` so thumbnail generation and perceptual hashing are
+available; neither dependency or its cache is committed.
+
+A repeatable visual review harness is available at
+`scripts/capture_ui_review.py`. It captured Dashboard, Library, Collections,
+Android Devices, Backup Health, Advanced Tools, People, Places, Categories,
+and Visual Duplicates against the external regression catalog. The review
+pack is stored outside the repository at
+`/Volumes/ExtremePro/PhotoVault-UI-Review`; the Library capture shows real
+cached previews after the background thumbnail builder generated the first
+12 previews.
 
 ## 14. Remaining known gaps
 
@@ -177,8 +188,8 @@ real-Windows validation item.
 5. Normalize model labels into PhotoVault categories and move AI indexing into
    a cancellable UI worker.
 6. Add cross-platform Windows volume/Android adapters and packaging checks.
-7. Add final screenshot/regression validation for the redesigned shell and
-   complete a real Windows packaged-app smoke test.
+7. Extend screenshot/regression validation to connected Android and active
+   transfer states, then complete a real Windows packaged-app smoke test.
 
 ## 16. Cross-platform packaging note
 
