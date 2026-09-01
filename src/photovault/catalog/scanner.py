@@ -15,6 +15,8 @@ from .thumbnails import generate_thumbnail
 from photovault.observability import log_event
 from photovault.platform.base import VolumeProvider
 from photovault.platform.provider import default_volume_provider
+from photovault.catalog.sources import register_source
+from photovault.sources.base import SourceIdentity
 
 
 MEDIA_EXTENSIONS = {
@@ -130,6 +132,15 @@ def scan_volume(
     row = connection.execute("SELECT id FROM volumes WHERE id = ?", (volume_id,)).fetchone()
     if row is None:
         raise ValueError(f"unknown volume: {volume_id}")
+    volume = connection.execute("SELECT display_name FROM volumes WHERE id=?", (volume_id,)).fetchone()
+    source_id = f"folder:{volume_id}"
+    register_source(connection, SourceIdentity(
+        source_id=source_id,
+        manufacturer="Local filesystem",
+        model="Folder / removable media",
+        display_name=str(volume[0] if volume else volume_id),
+        adapter="local_folder",
+    ))
     session_id = "scan_" + uuid.uuid4().hex
     started = utc_now()
     started_clock = time.monotonic()
@@ -179,17 +190,18 @@ def scan_volume(
                 connection.execute(
                     """
                     INSERT INTO asset_locations(asset_id, volume_id, relative_path, filename,
-                                                size_bytes, modified_ns, capture_date, scan_session_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                                size_bytes, modified_ns, capture_date, scan_session_id, source_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(volume_id, relative_path) DO UPDATE SET
                       asset_id=excluded.asset_id,
                       size_bytes=excluded.size_bytes, modified_ns=excluded.modified_ns,
                       filename=excluded.filename, capture_date=excluded.capture_date,
                       scan_session_id=excluded.scan_session_id,
+                      source_id=excluded.source_id,
                       missing_since=NULL
                     """,
                     (asset_id, volume_id, relative, path.name, stat.st_size, stat.st_mtime_ns,
-                     metadata.capture_datetime[:10] if metadata.capture_datetime else None, session_id),
+                     metadata.capture_datetime[:10] if metadata.capture_datetime else None, session_id, source_id),
                 )
                 if obsolete_asset_id:
                     remaining = connection.execute(

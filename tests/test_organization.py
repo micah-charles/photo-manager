@@ -39,6 +39,10 @@ class OrganisationTests(unittest.TestCase):
         db = connect(Path(temp) / "catalog.db")
         volume_id = register_volume(db, root, FixedProvider())
         scan_volume(db, volume_id, root)
+        source = db.execute("SELECT source_id, source_type FROM source_profiles WHERE source_id=?", (f"folder:{volume_id}",)).fetchone()
+        self.assertEqual(tuple(source), (f"folder:{volume_id}", "local_folder"))
+        location_source = db.execute("SELECT source_id FROM asset_locations LIMIT 1").fetchone()[0]
+        self.assertEqual(location_source, f"folder:{volume_id}")
         return db
 
     def test_source_provenance_is_separate_from_volume_identity(self) -> None:
