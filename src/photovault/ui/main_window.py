@@ -541,22 +541,18 @@ if QT_AVAILABLE:
                 from .pages.categories_page import build_categories_page
 
                 build_categories_page(self, layout, self._tables)
-            elif label in {"Timeline", "Visual Duplicates", "Places"}:
-                if label == "Timeline":
-                    button = QPushButton("Refresh timeline")
-                    button.clicked.connect(self._refresh_timeline)
-                    layout.addWidget(button)
-                    table = QTableWidget()
-                    self._tables[label] = table
-                    layout.addWidget(table)
-                elif label == "Visual Duplicates":
-                    from .pages.duplicates_page import build_duplicates_page
+            elif label == "Timeline":
+                from .pages.timeline_page import build_timeline_page
 
-                    build_duplicates_page(self, layout)
-                else:
-                    from .pages.places_page import build_places_page
+                build_timeline_page(self, layout, self._tables)
+            elif label == "Visual Duplicates":
+                from .pages.duplicates_page import build_duplicates_page
 
-                    build_places_page(self, layout)
+                build_duplicates_page(self, layout)
+            elif label == "Places":
+                from .pages.places_page import build_places_page
+
+                build_places_page(self, layout)
             elif label == "Favourites":
                 form = QFormLayout()
                 self.favourite_asset_id = QLineEdit()
