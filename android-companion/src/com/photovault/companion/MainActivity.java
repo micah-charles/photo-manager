@@ -96,7 +96,7 @@ public final class MainActivity extends Activity {
         if (snapshot == null) { status.setText("Local sharing is stopped. Choose a sharing duration above."); return; }
         String ip = localIpv4();
         status.setText("PhotoVault Companion — read-only POC\n" +
-            "Build: 0.6 — benchmark selection\n\n" +
+            "Build: 0.7 — MediaStore location\n\n" +
             "Status: sharing active — " + snapshot.durationLabel + "\n" +
             "Desktop URL: http://" + ip + ":" + PORT + "\n" +
             "Token: " + snapshot.token + "\n\n" +
