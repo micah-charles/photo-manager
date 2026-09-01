@@ -19,6 +19,9 @@ The desktop UI currently exposes:
 - Viewer organisation metadata inspection;
 - source-aware unified Timeline display time while retaining raw capture time.
 - Timeline day grouping and a cross-source filter for chronological browsing.
+- Paginated Library and Timeline browsing, with explicit page-size and
+  Previous/Next controls so large catalogs are not truncated to the first page.
+- Manual Places table with select-to-edit, update, delete, and Library assignment.
 - Durable import-batch history with per-run source/destination identity,
   lifecycle status, verified counters, byte totals, and Activity-page display.
 
@@ -56,9 +59,8 @@ The current macOS release smoke check also passes:
 ## Remaining work before final completion
 
 The master brief still requires a final product pass for multi-source import
-batch controls/resume UX, richer Event/Tag/Place editing and removal, complete
-timeline pagination, bulk metadata UX polish, accessibility checks,
+batch controls/resume UX, bulk metadata UX polish, accessibility checks,
 cross-platform packaging validation, and a final end-to-end acceptance
-walkthrough on representative media. Those items remain deliberately open;
+walkthrough on representative media. These items remain deliberately open;
 the green regression suite is not treated as proof that the entire brief is
 complete.
