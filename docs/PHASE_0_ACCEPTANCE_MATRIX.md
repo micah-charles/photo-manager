@@ -3,6 +3,7 @@
 This matrix records the current implementation against the supplied Phase 0
 brief. “Verified” means there is a local automated or rendered check; it does
 not imply that an external device or operating system has been tested.
+The latest local evidence is from commit `50de0da`.
 
 | Area | Current evidence | Status |
 | --- | --- | --- |
@@ -21,6 +22,12 @@ not imply that an external device or operating system has been tested.
 | macOS packaging | `scripts/build_app.py --clean`, arm64 `dist/PhotoVault.app`, bundled `--help` smoke test | Verified locally |
 | Windows packaging | Cross-platform provider, CI matrix, Windows package smoke test and artifact upload are defined | Awaiting Windows runner result |
 | Visual review deliverables | `scripts/capture_ui_review.py` and external screenshot/source archives | Verified locally |
+
+The current local verification totals are 17/17 PySide6 UI tests and 78/78
+non-UI tests. The corresponding external-drive delivery files are
+`/Volumes/ExtremePro/PhotoVault-UI-Review-20260901/photovault-source-50de0da.zip`
+and
+`/Volumes/ExtremePro/PhotoVault-UI-Review-20260901/photovault-ui-review-50de0da.zip`.
 
 ## Remaining gates
 
