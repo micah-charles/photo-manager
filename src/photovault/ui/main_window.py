@@ -344,6 +344,8 @@ if QT_AVAILABLE:
             self._copy_plan = None
             self._quarantine_plan = None
             self._library_collection_id: str | None = None
+            self._viewer_items: list[dict[str, object]] = []
+            self._viewer_index = -1
 
             shell = QWidget()
             shell_layout = QHBoxLayout(shell)
@@ -677,6 +679,30 @@ if QT_AVAILABLE:
                 table.cellDoubleClicked.connect(self._open_collection_row)
                 self._tables[label] = table
                 layout.addWidget(table)
+            elif label == "Photo Viewer":
+                toolbar = QHBoxLayout()
+                back_button = QPushButton("Back to Library")
+                back_button.clicked.connect(lambda: self._select_page("Library"))
+                toolbar.addWidget(back_button)
+                self.viewer_previous = QPushButton("Previous")
+                self.viewer_previous.clicked.connect(lambda: self._show_viewer_item(self._viewer_index - 1))
+                toolbar.addWidget(self.viewer_previous)
+                self.viewer_next = QPushButton("Next")
+                self.viewer_next.clicked.connect(lambda: self._show_viewer_item(self._viewer_index + 1))
+                toolbar.addWidget(self.viewer_next)
+                toolbar.addStretch(1)
+                layout.addLayout(toolbar)
+                viewer_body = QHBoxLayout()
+                self.viewer_image = QLabel("Open a photo from Library to view it here.")
+                self.viewer_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.viewer_image.setMinimumSize(640, 480)
+                self.viewer_image.setWordWrap(True)
+                viewer_body.addWidget(self.viewer_image, 3)
+                self.viewer_details = QLabel("Photo details appear here.")
+                self.viewer_details.setWordWrap(True)
+                self.viewer_details.setMinimumWidth(280)
+                viewer_body.addWidget(self.viewer_details, 1)
+                layout.addLayout(viewer_body)
             elif label == "People":
                 form = QFormLayout()
                 self.people_features_json = QLineEdit()
@@ -1765,6 +1791,8 @@ if QT_AVAILABLE:
 
         def _populate_library_grid(self, rows: list[sqlite3.Row]) -> None:
             self.library_grid.clear()
+            self._viewer_items = []
+            self._viewer_index = -1
             self.library_preview.setPixmap(QPixmap())
             self.library_preview.setText("Select a catalogued item to preview its cached thumbnail.")
             self.library_preview_details.setText("Original availability appears here.")
@@ -1777,7 +1805,7 @@ if QT_AVAILABLE:
                 elif row["media_type"] == "VIDEO":
                     item.setText(title + "\n(video; no poster cached)")
                 item.setToolTip(f"{row['relative_path']}\n{row['volume_name']} ({row['volume_status']})")
-                item.setData(Qt.ItemDataRole.UserRole, {
+                details = {
                     "asset_id": row["asset_id"], "filename": row["filename"],
                     "relative_path": row["relative_path"], "volume_name": row["volume_name"],
                     "volume_status": row["volume_status"], "thumbnail_path": thumbnail,
@@ -1787,16 +1815,69 @@ if QT_AVAILABLE:
                     "width": row["width"], "height": row["height"],
                     "latitude": row["latitude"], "longitude": row["longitude"],
                     "date_source": row["date_source"],
-                })
+                }
+                item.setData(Qt.ItemDataRole.UserRole, details)
                 self.library_grid.addItem(item)
+                self._viewer_items.append(details)
 
         def _set_library_technical_visible(self, visible: bool) -> None:
             self._tables["Library"].setVisible(visible)
 
-        def _open_library_item(self, _item: QListWidgetItem) -> None:
-            """Double-click opens the selected item's cached preview/inspector."""
-            self._library_selection_changed()
-            self.library_result.setText("Photo opened in the inspector. Use the Library filters to continue browsing.")
+        def _open_library_item(self, item: QListWidgetItem) -> None:
+            """Double-click opens the selected item in the dedicated viewer."""
+            details = item.data(Qt.ItemDataRole.UserRole)
+            self._viewer_index = next(
+                (index for index, candidate in enumerate(self._viewer_items) if candidate["asset_id"] == details["asset_id"]),
+                -1,
+            )
+            self._show_viewer_item(self._viewer_index)
+            self._select_page("Photo Viewer")
+            self.library_result.setText("Photo opened in Viewer. Use Back to Library to continue browsing.")
+
+        def _show_viewer_item(self, index: int) -> None:
+            if not self._viewer_items:
+                self._viewer_index = -1
+                self.viewer_image.setPixmap(QPixmap())
+                self.viewer_image.setText("Open a photo from Library to view it here.")
+                self.viewer_details.setText("Photo details appear here.")
+                return
+            self._viewer_index = max(0, min(index, len(self._viewer_items) - 1))
+            details = self._viewer_items[self._viewer_index]
+            thumbnail = Path(str(details["thumbnail_path"])) if details["thumbnail_path"] else None
+            if thumbnail is not None and thumbnail.is_file():
+                pixmap = QPixmap(str(thumbnail))
+                self.viewer_image.setPixmap(pixmap.scaled(
+                    820, 620, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
+                ))
+                self.viewer_image.setText("")
+            else:
+                self.viewer_image.setPixmap(QPixmap())
+                self.viewer_image.setText(
+                    "No cached thumbnail is available. The catalog entry is still intact; return to Library for details."
+                )
+            self.viewer_details.setText(self._format_library_details(details))
+            self.viewer_previous.setEnabled(self._viewer_index > 0)
+            self.viewer_next.setEnabled(self._viewer_index < len(self._viewer_items) - 1)
+
+        def _format_library_details(self, details: dict[str, object]) -> str:
+            size = self._human_bytes(int(details["size_bytes"] or 0))
+            dimensions = f"{details['width']} × {details['height']}" if details["width"] and details["height"] else "Dimensions unavailable"
+            camera = " ".join(filter(None, (details["camera_make"], details["camera_model"]))) or "Camera unavailable"
+            location = (
+                f"{float(details['latitude']):.6f}, {float(details['longitude']):.6f} ({details['date_source'] or 'embedded metadata'})"
+                if details["latitude"] is not None and details["longitude"] is not None else "No embedded location"
+            )
+            verified = self.connection.execute(
+                "SELECT COUNT(DISTINCT path) FROM verification_history WHERE asset_id=? AND result='VERIFIED'",
+                (details["asset_id"],),
+            ).fetchone()[0]
+            protection = f"Protected — {verified} verified copie{'s' if verified != 1 else ''}" if verified else "Not yet verified elsewhere"
+            return (
+                f"{details['filename']}\n{details['captured'] or 'Date unavailable'}\n\n"
+                f"Camera\n{camera}\n{dimensions} · {size}\n\nLocation\n{location}\n\n"
+                f"File\n{details['relative_path']}\n{details['volume_name']} — {details['volume_status']}\n\n"
+                f"Backup protection\n{protection}"
+            )
 
         def _library_selection_changed(self) -> None:
             selected = self.library_grid.selectedItems()
@@ -1821,22 +1902,7 @@ if QT_AVAILABLE:
                 label = "Video (no poster cached)" if details["media_type"] == "VIDEO" else "No cached thumbnail"
                 self.library_preview.setText(label)
             availability = "Original is currently available" if details["volume_status"] == "CONNECTED" else "Original volume is offline; catalog/thumbnail remains available"
-            size = self._human_bytes(int(details["size_bytes"]))
-            dimensions = f"{details['width']} × {details['height']}" if details["width"] and details["height"] else "Dimensions unavailable"
-            camera = " ".join(filter(None, (details["camera_make"], details["camera_model"]))) or "Camera unavailable"
-            location = (
-                f"{float(details['latitude']):.6f}, {float(details['longitude']):.6f} ({details['date_source'] or 'embedded metadata'})"
-                if details["latitude"] is not None and details["longitude"] is not None else "No embedded location"
-            )
-            verified = self.connection.execute(
-                "SELECT COUNT(DISTINCT path) FROM verification_history WHERE asset_id=? AND result='VERIFIED'",
-                (details["asset_id"],),
-            ).fetchone()[0]
-            protection = f"Protected — {verified} verified copy" + ("ies" if verified != 1 else "") if verified else "Not yet verified elsewhere"
-            self.library_preview_details.setText(
-                f"{details['filename']}\n{details['captured'] or 'Date unavailable'}\n{camera}\n{dimensions} · {size}\n"
-                f"Location: {location}\nFile: {details['relative_path']}\n{details['volume_name']}: {availability}\n{protection}"
-            )
+            self.library_preview_details.setText(self._format_library_details(details) + f"\n\n{availability}")
 
         def _toggle_selected_library_favourites(self) -> None:
             selected = self.library_grid.selectedItems()

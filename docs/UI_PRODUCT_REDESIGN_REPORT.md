@@ -34,7 +34,8 @@ The grouping is defined in `ui/spec.py`; the old services are not removed.
 - `src/photovault/ui/theme.py`: centralized light-theme tokens and stylesheet
 - `src/photovault/ui/spec.py`: grouped navigation contract
 - `src/photovault/ui/main_window.py`: grouped sidebar, shared theme, and
-  collection and category double-click interactions
+  collection/category double-click interactions plus the dedicated Photo
+  Viewer navigation flow
 - `src/photovault/catalog/collections.py`: catalog-derived browse views
 - `src/photovault/catalog/classification.py`: optional local ONNX category
   indexing with resumable checkpoints
@@ -51,7 +52,7 @@ outside the catalog and are never changed by browsing or enrichment.
 ## 6. Mockup screens implemented
 
 The current implementation has working pages for Home/Dashboard, Library
-thumbnail browsing and inspector preview, Collections, People, Places,
+  thumbnail browsing, dedicated Photo Viewer/inspector, Collections, People, Places,
 Favourites, Visual Duplicates, Android Devices, Backup Sets, Disks, Operations,
   Timeline, Categories, Backup Health, and the advanced storage tools. Collections and
   categories can be opened by double-clicking a row and route to the normal
@@ -79,10 +80,12 @@ card with last-backup/new-item summaries remains P1 work.
 
 Library supports real catalog queries, media filters, search/folder filters,
 sorting, favourites, pagination, thumbnail grid selection, multi-select,
-double-click/open, and single-item cached-thumbnail preview. The grid is now
-the primary view; the raw asset table is hidden by default behind an Advanced
-catalog-details toggle. The next redesign step is a fuller photo inspector
-with provenance and backup-protection sections.
+double-click/open, and single-item cached-thumbnail preview. The dedicated
+Photo Viewer now provides previous/next navigation, Back to Library, real
+metadata, location provenance, and verified-copy protection status. The grid
+is the primary view; the raw asset table is hidden by default behind an
+Advanced catalog-details toggle. Full-resolution/original loading remains
+deliberately separate from the cached preview path.
 
 ## 10. Storage and Backup Health
 
@@ -120,8 +123,9 @@ environment from source control.
 
 1. Replace the remaining flat page construction branches with page and
    reusable component modules.
-2. Finish the photo-first Home, Library, viewer/inspector, and Android Backup
-   workflows from the supplied mockup.
+2. Finish the photo-first Home and richer connected-device Android Backup
+   workflow from the supplied mockup; the basic Viewer/inspector flow is now
+   available.
 3. Add visual album cards and user-created collections while preserving smart
    collection semantics.
 4. Add a readable Activity feed and richer drive cards; Backup Health summary

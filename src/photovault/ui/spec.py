@@ -3,6 +3,7 @@ from __future__ import annotations
 NAVIGATION_ITEMS: tuple[str, ...] = (
     "Dashboard",
     "Library",
+    "Photo Viewer",
     "Collections",
     "People",
     "Disks",
@@ -27,7 +28,7 @@ NAVIGATION_ITEMS: tuple[str, ...] = (
 # User-facing groups for the sidebar. Page names remain stable so existing
 # backend pages and deep links continue to work during migration.
 NAVIGATION_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Photos", ("Dashboard", "Library", "Collections", "Favourites")),
+    ("Photos", ("Dashboard", "Library", "Photo Viewer", "Collections", "Favourites")),
     ("Explore", ("People", "Places", "Categories", "Visual Duplicates")),
     ("Backup", ("Android Devices", "Backup Sets")),
     ("Storage", ("Disks", "Backup Health", "Redundancy Audit", "Reconciliation", "Folder Safety Audit")),
