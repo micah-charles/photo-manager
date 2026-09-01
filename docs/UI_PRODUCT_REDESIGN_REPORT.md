@@ -45,6 +45,7 @@ The grouping is defined in `ui/spec.py`; the old services are not removed.
   stable deep-link routing
 - `src/photovault/ui/pages/activity_page.py`, `collections_page.py`,
   `library_page.py`, `photo_viewer_page.py`, `android_backup_page.py`,
+  `disks_page.py`, `backup_sets_page.py`,
   `people_page.py`, `places_page.py`, `categories_page.py`,
   `duplicates_page.py`, `backup_profiles_page.py`, `backup_health_page.py`,
   `settings_page.py`, `advanced_tools_page.py`, `home_page.py`,
@@ -157,8 +158,8 @@ real-Windows validation item.
    reusable component modules; dedicated Activity, Collections, Library,
    Photo Viewer, Android Backup, People, Places, Categories, Visual
   Duplicates, Backup Profiles, Backup Health, Settings, Advanced Tools, Home,
-  Timeline, and Favourites builders plus shared tile components are now in
-  place.
+  Drives, Backup Sets, Timeline, and Favourites builders plus shared tile
+  components are now in place.
 2. Finish the photo-first Home and richer connected-device Android Backup
    workflow from the supplied mockup; the device card, status, progress, and
    profile flow are now available, while the final card composition remains.
