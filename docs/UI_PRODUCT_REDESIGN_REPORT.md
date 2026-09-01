@@ -51,7 +51,8 @@ outside the catalog and are never changed by browsing or enrichment.
 
 ## 6. Mockup screens implemented
 
-The current implementation has working pages for Home/Dashboard, Library
+The current implementation has working pages for Home/Dashboard, including a
+live recent-photo thumbnail strip, Library
   thumbnail browsing, dedicated Photo Viewer/inspector, Collections, People, Places,
 Favourites, Visual Duplicates, Android Devices, Backup Sets, Disks, Operations,
   Timeline, Categories, Backup Health, and the advanced storage tools. Collections and

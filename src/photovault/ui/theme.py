@@ -33,4 +33,5 @@ def stylesheet() -> str:
     QLabel#StatusSummary {{ color: {t['muted']}; background: transparent; padding: 2px 0 8px; }}
     QLabel#SettingsCard {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 8px; padding: 12px; }}
     QListWidget#ReviewList {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 8px; padding: 8px; }}
+    QListWidget#RecentPhotoGrid {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 8px; padding: 8px; min-height: 130px; }}
     """

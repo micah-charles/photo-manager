@@ -458,6 +458,15 @@ if QT_AVAILABLE:
                     action.clicked.connect(lambda _checked=False, page=target: self._select_page(page))
                     quick_actions.addWidget(action)
                 layout.addLayout(quick_actions)
+                layout.addWidget(QLabel("Recent photos"))
+                self.dashboard_recent_grid = QListWidget()
+                self.dashboard_recent_grid.setObjectName("RecentPhotoGrid")
+                self.dashboard_recent_grid.setViewMode(QListWidget.ViewMode.IconMode)
+                self.dashboard_recent_grid.setResizeMode(QListWidget.ResizeMode.Adjust)
+                self.dashboard_recent_grid.setIconSize(QSize(120, 90))
+                self.dashboard_recent_grid.setGridSize(QSize(150, 125))
+                self.dashboard_recent_grid.itemDoubleClicked.connect(self._open_dashboard_item)
+                layout.addWidget(self.dashboard_recent_grid)
                 dashboard_table = QTableWidget()
                 self._tables[label] = dashboard_table
                 layout.addWidget(dashboard_table)
@@ -1769,6 +1778,27 @@ if QT_AVAILABLE:
                 f"Volumes: {metrics.connected_volumes}/{metrics.volumes} connected. "
                 f"Last Android backup: {metrics.last_backup or 'none yet'}."
             )
+            if hasattr(self, "dashboard_recent_grid"):
+                self.dashboard_recent_grid.clear()
+                recent = self.connection.execute(
+                    """SELECT al.asset_id, al.filename, al.relative_path, th.path
+                       FROM asset_locations al
+                       JOIN assets a ON a.id=al.asset_id
+                       LEFT JOIN media_metadata mm ON mm.asset_id=al.asset_id
+                       LEFT JOIN thumbnails th ON th.asset_id=al.asset_id AND th.version='v1-320'
+                       WHERE al.missing_since IS NULL
+                       ORDER BY COALESCE(mm.capture_datetime, al.capture_date, al.modified_ns) DESC
+                       LIMIT 12"""
+                ).fetchall()
+                for row in recent:
+                    item = QListWidgetItem(str(row[1]))
+                    if row[3] and Path(str(row[3])).is_file():
+                        item.setIcon(QIcon(str(row[3])))
+                    item.setToolTip(str(row[2]))
+                    item.setData(Qt.ItemDataRole.UserRole, str(row[1]))
+                    self.dashboard_recent_grid.addItem(item)
+                if not recent:
+                    self.dashboard_recent_grid.addItem("No photos indexed yet")
             self._fill_table(
                 self._tables["Dashboard"], ["Metric", "Value"],
                 [
@@ -1781,6 +1811,14 @@ if QT_AVAILABLE:
                     ("Active/partial operations", metrics.active_operations),
                 ],
             )
+
+        def _open_dashboard_item(self, item: QListWidgetItem) -> None:
+            filename = str(item.data(Qt.ItemDataRole.UserRole) or "")
+            if not filename:
+                return
+            self.library_search.setText(filename)
+            self._refresh_library()
+            self._select_page("Library")
 
         def _refresh_library(self) -> None:
             try:
