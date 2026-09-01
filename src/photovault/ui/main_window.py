@@ -612,24 +612,9 @@ if QT_AVAILABLE:
                     self._tables[label] = table
                     layout.addWidget(table)
                 elif label == "Visual Duplicates":
-                    form = QFormLayout()
-                    algorithm = QLineEdit("phash64")
-                    threshold = QLineEdit("8")
-                    form.addRow("Algorithm", algorithm)
-                    form.addRow("Hamming threshold", threshold)
-                    layout.addLayout(form)
-                    button = QPushButton("Find advisory groups")
-                    button.clicked.connect(lambda _checked=False, a=algorithm, t=threshold: self._visual_duplicates(a, t))
-                    layout.addWidget(button)
-                    result = QLabel("Visual similarity never authorizes deletion.")
-                    result.setWordWrap(True)
-                    self._results[label] = result
-                    layout.addWidget(result)
-                    self.duplicate_groups_list = QListWidget()
-                    self.duplicate_groups_list.setObjectName("ReviewList")
-                    self.duplicate_groups_list.itemDoubleClicked.connect(self._open_duplicate_group)
-                    layout.addWidget(QLabel("Review groups — double-click to browse"))
-                    layout.addWidget(self.duplicate_groups_list)
+                    from .pages.duplicates_page import build_duplicates_page
+
+                    build_duplicates_page(self, layout)
                 else:
                     from .pages.places_page import build_places_page
 
