@@ -497,16 +497,9 @@ if QT_AVAILABLE:
                 self.scan_result = QLabel("Ready")
                 layout.addWidget(self.scan_result)
             elif label == "Backup Health":
-                self.backup_health_result = QLabel("No health check has been run yet.")
-                self.backup_health_result.setObjectName("StatusSummary")
-                self.backup_health_result.setWordWrap(True)
-                layout.addWidget(self.backup_health_result)
-                button = QPushButton("Run Backup Health check")
-                button.clicked.connect(self._refresh_backup_health)
-                layout.addWidget(button)
-                table = QTableWidget()
-                self._tables[label] = table
-                layout.addWidget(table)
+                from .pages.backup_health_page import build_backup_health_page
+
+                build_backup_health_page(self, layout, self._tables)
             elif label in {"Redundancy Audit", "Reconciliation"}:
                 form = QFormLayout()
                 set_id = QLineEdit()
