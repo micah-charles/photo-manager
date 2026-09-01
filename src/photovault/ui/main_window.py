@@ -1472,11 +1472,18 @@ if QT_AVAILABLE:
 
             metrics = dashboard_metrics(self.connection)
             if hasattr(self, "dashboard_cards"):
+                android = self.connection.execute(
+                    """SELECT display_name, adapter, last_seen
+                       FROM source_profiles ORDER BY last_seen DESC LIMIT 1"""
+                ).fetchone()
                 self.dashboard_cards["safety"].setText(
                     "All good" if metrics.connected_volumes == metrics.volumes and metrics.volumes else "Needs attention"
                 )
                 self.dashboard_cards["library"].setText(f"{metrics.images:,} photos · {metrics.videos:,} videos")
                 self.dashboard_cards["storage"].setText(f"{metrics.connected_volumes}/{metrics.volumes} drives connected")
+                self.dashboard_cards["android"].setText(
+                    f"{android[0]}\nLast seen {android[2]}" if android else "No phone connected\nOpen Android Devices to connect"
+                )
                 self.dashboard_cards["activity"].setText(
                     f"{metrics.active_operations} active operation(s)" if metrics.active_operations else "No active operations"
                 )

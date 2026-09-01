@@ -15,7 +15,8 @@ def build_home_page(owner: object, layout: object, tables: dict[str, QTableWidge
     cards = QHBoxLayout()
     for card_name, card_title in (
         ("safety", "Backup status"), ("library", "Your library"),
-        ("storage", "Storage"), ("activity", "Recent activity"),
+        ("storage", "Storage"), ("android", "Android phone"),
+        ("activity", "Recent activity"),
     ):
         card = QWidget()
         card.setStyleSheet("QWidget { background: white; border: 1px solid #dfe3eb; border-radius: 10px; padding: 10px; }")
