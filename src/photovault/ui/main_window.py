@@ -567,6 +567,22 @@ if QT_AVAILABLE:
                 table = QTableWidget()
                 self._tables[label] = table
                 layout.addWidget(table)
+            elif label == "Backup Profiles":
+                self.backup_profiles_result = QLabel(
+                    "Reusable Android backup recipes. A profile records the phone, selected folders, media filter, destination, and worker setting."
+                )
+                self.backup_profiles_result.setObjectName("StatusSummary")
+                self.backup_profiles_result.setWordWrap(True)
+                layout.addWidget(self.backup_profiles_result)
+                open_button = QPushButton("Open selected profile in Android Backup")
+                open_button.clicked.connect(self._open_selected_backup_profile)
+                layout.addWidget(open_button)
+                table = QTableWidget()
+                table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+                table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+                table.cellDoubleClicked.connect(self._open_backup_profile_row)
+                self._tables[label] = table
+                layout.addWidget(table)
             elif label == "Scan":
                 form = QFormLayout()
                 self.scan_volume_id = QLineEdit()
@@ -2001,6 +2017,52 @@ if QT_AVAILABLE:
             except Exception as exc:
                 self.categories_result.setText(f"Category query failed: {type(exc).__name__}: {exc}")
 
+        def _refresh_backup_profiles(self) -> None:
+            try:
+                from photovault.backup.android_profiles import list_android_backup_profiles, profile_folders
+
+                profiles = list_android_backup_profiles(self.connection)
+                rows = []
+                for profile in profiles:
+                    folders = ", ".join(profile_folders(self.connection, str(profile["id"])))
+                    rows.append((profile["id"], profile["name"], profile["source_id"], folders, profile["media_filter"], profile["destination_volume_name"], profile["last_completed_at"] or "Never"))
+                table = self._tables["Backup Profiles"]
+                table.setColumnCount(6)
+                table.setHorizontalHeaderLabels(["Profile", "Phone", "Folders", "Media", "Destination", "Last backup"])
+                table.setRowCount(len(rows))
+                for row_index, row in enumerate(rows):
+                    for column_index, value in enumerate(row[1:]):
+                        table.setItem(row_index, column_index, QTableWidgetItem(str(value)))
+                    table.item(row_index, 0).setData(Qt.ItemDataRole.UserRole, row[0])
+                table.resizeColumnsToContents()
+                self.backup_profiles_result.setText(
+                    f"{len(profiles):,} saved Android backup profile(s). Select one to load its current settings; no backup starts automatically."
+                    if profiles else "No Android backup profiles yet. Connect a phone and complete a backup to save a reusable profile."
+                )
+            except Exception as exc:
+                self.backup_profiles_result.setText(f"Could not load backup profiles: {type(exc).__name__}: {exc}")
+
+        def _open_selected_backup_profile(self) -> None:
+            selected = self._tables["Backup Profiles"].selectedItems()
+            if not selected:
+                self.backup_profiles_result.setText("Select one backup profile first.")
+                return
+            profile_id = self._tables["Backup Profiles"].item(selected[0].row(), 0).data(Qt.ItemDataRole.UserRole)
+            self._open_backup_profile(str(profile_id))
+
+        def _open_backup_profile_row(self, row: int, _column: int) -> None:
+            self._tables["Backup Profiles"].selectRow(row)
+            self._open_selected_backup_profile()
+
+        def _open_backup_profile(self, profile_id: str) -> None:
+            self._select_page("Android Devices")
+            index = self.android_saved_profile.findData(profile_id)
+            if index >= 0:
+                self.android_saved_profile.setCurrentIndex(index)
+                self._load_selected_android_backup_profile()
+            else:
+                self.android_result.setText("Saved profile is no longer available; refresh profiles and try again.")
+
         def _start_category_analysis(self) -> None:
             if self._classification_thread is not None and self._classification_thread.isRunning():
                 return
@@ -2427,6 +2489,8 @@ if QT_AVAILABLE:
                 self._fill_table(self._tables["People"], ["Person", "Name", "Engine", "Assets", "Updated"], [tuple(row) for row in rows])
             if hasattr(self, "android_saved_profile"):
                 self._refresh_android_backup_profiles()
+            if "Backup Profiles" in self._tables:
+                self._refresh_backup_profiles()
             if "Favourites" in self._tables:
                 from photovault.catalog.favourites import list_favourites
 
