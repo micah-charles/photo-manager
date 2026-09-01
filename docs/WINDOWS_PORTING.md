@@ -40,7 +40,8 @@ The first Windows run exposed a test-harness portability issue rather than a
 volume-provider failure: SQLite connections held open while
 `TemporaryDirectory` cleaned up produced `WinError 32`. Test fixtures now close
 connections before temporary directories are removed; the complete non-UI
-regression suite now passes 80/80 tests locally.
+regression suite now passes 81/81 tests locally, including the stable
+drive-letter identity check.
 
 ## Remaining release checks
 

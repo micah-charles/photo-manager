@@ -233,6 +233,26 @@ class UIFoundationTests(unittest.TestCase):
             window.close()
             connection.close()
 
+    def test_collections_album_single_click_only_selects_card(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window.new_collection_title.setText("Single click album")
+            window._create_user_collection()
+            tile = window.collections_album_grid.item(0)
+            window._select_page("Collections")
+            window.collections_album_grid.itemClicked.emit(tile)
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Collections"))
+            window.close()
+            connection.close()
+
     def test_collections_empty_state_explains_no_action(self) -> None:
         from photovault.ui import main_window
 
