@@ -1882,6 +1882,31 @@ if QT_AVAILABLE:
                 self._tables["Sources"].item(index, 0).setData(Qt.ItemDataRole.UserRole, row["source_id"])
             self.sources_result.setText(f"{len(rows)} source(s). Select a row to edit its display offset.")
 
+        def _register_source_folder(self) -> None:
+            try:
+                from photovault.catalog.scanner import register_volume
+
+                root = Path(self.source_folder_path.text().strip())
+                volume_id = register_volume(self.connection, root)
+                self.source_folder_volume_id = volume_id
+                self.sources_result.setText(f"Registered folder source for {root} ({volume_id}). Choose Scan into Library to catalog its media.")
+                self.refresh()
+            except Exception as exc:
+                self.sources_result.setText(f"Folder registration failed: {type(exc).__name__}: {exc}")
+
+        def _scan_source_folder(self) -> None:
+            try:
+                if not self.source_folder_path.text().strip():
+                    raise ValueError("folder path is required")
+                self._register_source_folder()
+                self.scan_volume_id.setText(str(getattr(self, "source_folder_volume_id", "")))
+                self.scan_root.setText(self.source_folder_path.text().strip())
+                self._select_page("Scan")
+                self._scan()
+                self.sources_result.setText("Folder scan started in the background. The source will appear in Library when complete.")
+            except Exception as exc:
+                self.sources_result.setText(f"Folder scan failed: {type(exc).__name__}: {exc}")
+
         def _select_source_row(self, row: int, _column: int) -> None:
             source_id = self._tables["Sources"].item(row, 0).data(Qt.ItemDataRole.UserRole)
             if source_id:
