@@ -1675,6 +1675,7 @@ if QT_AVAILABLE:
                 from photovault.catalog.library import LibraryQuery, count_library_items, list_library_items
 
                 limit = int(self.library_limit.text().strip())
+                offset = int(getattr(self, "_library_offset", 0))
                 base_query = LibraryQuery(
                     search=self.library_search.text(), folder_prefix=self.library_folder.text(),
                     media_type=self.library_media_type.currentText(),
@@ -1686,7 +1687,7 @@ if QT_AVAILABLE:
                     review_status=str(self.library_review_filter.currentData() or ""),
                     min_rating=self.library_rating_filter.currentData(),
                     include_rejected=self.library_include_rejected.isChecked(),
-                    sort=str(self.library_sort.currentData()), limit=limit,
+                    sort=str(self.library_sort.currentData()), limit=limit, offset=offset,
                 )
                 collection_filter = collection_query(self.connection, self._library_collection_id, limit=limit) if self._library_collection_id else LibraryQuery(limit=limit)
                 query = LibraryQuery(
@@ -1704,12 +1705,12 @@ if QT_AVAILABLE:
                     review_status=base_query.review_status,
                     min_rating=base_query.min_rating,
                     include_rejected=base_query.include_rejected,
-                    sort=base_query.sort, limit=limit,
+                    sort=base_query.sort, limit=limit, offset=offset,
                 )
                 rows = list_library_items(self.connection, query)
                 total = count_library_items(self.connection, query)
                 self.library_result.setText(
-                    f"Showing {len(rows)} of {total} catalogued location(s). "
+                    f"Showing {offset + 1 if rows else 0}–{offset + len(rows)} of {total} catalogued location(s). "
                     "OFFLINE rows retain metadata and cached thumbnails; originals are not removed."
                 )
                 self.library_collection_result.setText(
@@ -1726,8 +1727,26 @@ if QT_AVAILABLE:
                     ],
                 )
                 self._populate_library_grid(rows)
+                if hasattr(self, "library_previous"):
+                    self.library_previous.setEnabled(offset > 0)
+                if hasattr(self, "library_next"):
+                    self.library_next.setEnabled(offset + len(rows) < total)
             except Exception as exc:
                 self.library_result.setText(f"Library query failed: {type(exc).__name__}: {exc}")
+
+        def _reset_library_page(self) -> None:
+            self._library_offset = 0
+            self._refresh_library()
+
+        def _library_previous_page(self) -> None:
+            limit = int(self.library_limit.text().strip())
+            self._library_offset = max(0, int(getattr(self, "_library_offset", 0)) - limit)
+            self._refresh_library()
+
+        def _library_next_page(self) -> None:
+            limit = int(self.library_limit.text().strip())
+            self._library_offset = int(getattr(self, "_library_offset", 0)) + limit
+            self._refresh_library()
 
         def _clear_library_collection(self) -> None:
             self._library_collection_id = None

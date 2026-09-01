@@ -46,6 +46,13 @@ def build_library_page(owner: object, layout: object, tables: dict[str, QTableWi
     owner.library_limit.setMaximumWidth(70)
     owner.library_limit.setToolTip("Maximum items loaded into the current page")
     filters.addWidget(owner.library_limit)
+    owner.library_previous = QPushButton("Previous")
+    owner.library_previous.setEnabled(False)
+    owner.library_previous.clicked.connect(owner._library_previous_page)
+    filters.addWidget(owner.library_previous)
+    owner.library_next = QPushButton("Next")
+    owner.library_next.clicked.connect(owner._library_next_page)
+    filters.addWidget(owner.library_next)
     layout.addLayout(filters)
 
     organisation = QHBoxLayout()
@@ -92,8 +99,8 @@ def build_library_page(owner: object, layout: object, tables: dict[str, QTableWi
         owner.library_source_filter, owner.library_event_filter, owner.library_tag_filter,
         owner.library_place_filter, owner.library_review_filter, owner.library_rating_filter,
     ):
-        combo.currentIndexChanged.connect(owner._refresh_library)
-    owner.library_include_rejected.toggled.connect(owner._refresh_library)
+        combo.currentIndexChanged.connect(owner._reset_library_page)
+    owner.library_include_rejected.toggled.connect(owner._reset_library_page)
 
     owner.library_collection_result = QLabel("All catalogued media")
     owner.library_collection_result.setObjectName("StatusSummary")
