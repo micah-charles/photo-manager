@@ -192,8 +192,9 @@ CI environments continue to skip those tests cleanly. The current working
 tree intentionally excludes the external model, pip cache, and virtual
 environment from source control. A local PyInstaller macOS build was also
 completed successfully with an arm64 `dist/PhotoVault.app`; its bundled
-executable passed the `--help` smoke test. Windows packaging remains a CI or
-real-Windows validation item. Pillow and NumPy are installed in the
+executable passed the `--help` smoke test. Packaging CI now builds and
+smoke-tests both target operating systems and uploads the resulting macOS and
+Windows packages as workflow artifacts. Pillow and NumPy are installed in the
 external-drive `.venv` so thumbnail generation and perceptual hashing are
 available; neither dependency or its cache is committed.
 
