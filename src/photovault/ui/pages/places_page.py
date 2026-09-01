@@ -1,12 +1,12 @@
 """Places page construction for offline-safe GPS browsing."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QLabel, QListWidget, QLineEdit, QFormLayout, QPushButton
+from PySide6.QtWidgets import QLabel, QListWidget, QLineEdit, QFormLayout, QPushButton, QTableWidget
 
 from ..components import configure_tile_grid
 
 
-def build_places_page(owner: object, layout: object) -> None:
+def build_places_page(owner: object, layout: object, tables: dict[str, QTableWidget]) -> None:
     form = QFormLayout()
     radius = QLineEdit("100")
     form.addRow("Cluster radius (m)", radius)
@@ -28,6 +28,9 @@ def build_places_page(owner: object, layout: object) -> None:
     delete_place_button = QPushButton("Delete selected/manual place ID")
     delete_place_button.clicked.connect(owner._delete_manual_place)
     layout.addWidget(delete_place_button)
+    update_place_button = QPushButton("Update selected place")
+    update_place_button.clicked.connect(owner._update_manual_place)
+    layout.addWidget(update_place_button)
     button = QPushButton("Cluster GPS places")
     button.clicked.connect(lambda _checked=False, r=radius: owner._places(r))
     layout.addWidget(button)
@@ -42,3 +45,11 @@ def build_places_page(owner: object, layout: object) -> None:
     owner.places_grid.itemDoubleClicked.connect(owner._open_place_tile)
     owner.places_grid.addItem("No embedded GPS clusters yet")
     layout.addWidget(owner.places_grid)
+    layout.addWidget(QLabel("Manual places"))
+    owner.manual_places_hint = QLabel("Select a place to load its name and city into the form.")
+    owner.manual_places_hint.setWordWrap(True)
+    layout.addWidget(owner.manual_places_hint)
+    table = QTableWidget()
+    table.cellClicked.connect(owner._select_manual_place_row)
+    tables["Places"] = table
+    layout.addWidget(table)

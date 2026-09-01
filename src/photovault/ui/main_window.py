@@ -633,7 +633,7 @@ if QT_AVAILABLE:
             elif label == "Places":
                 from .pages.places_page import build_places_page
 
-                build_places_page(self, layout)
+                build_places_page(self, layout, self._tables)
             elif label == "Favourites":
                 from .pages.favourites_page import build_favourites_page
 
@@ -1923,6 +1923,36 @@ if QT_AVAILABLE:
             except Exception as exc:
                 self._results["Places"].setText(f"Place deletion failed: {type(exc).__name__}: {exc}")
 
+        def _select_manual_place_row(self, row: int, _column: int) -> None:
+            item = self._tables["Places"].item(row, 0)
+            if item is None:
+                return
+            place_id = str(item.data(Qt.ItemDataRole.UserRole) or item.text())
+            self.place_id_input.setText(place_id)
+            name = self._tables["Places"].item(row, 1)
+            city = self._tables["Places"].item(row, 2)
+            self.place_name.setText(name.text() if name else "")
+            self.place_city.setText(city.text() if city and city.text() != "—" else "")
+            self.manual_places_hint.setText(f"Selected {place_id}. Edit the fields above, then update or delete it.")
+
+        def _update_manual_place(self) -> None:
+            try:
+                from photovault.catalog.organization import update_place
+
+                place_id = self.place_id_input.text().strip()
+                if not place_id:
+                    raise ValueError("select a place first")
+                update_place(
+                    self.connection,
+                    place_id,
+                    name=self.place_name.text(),
+                    city=self.place_city.text().strip() or None,
+                )
+                self._results["Places"].setText("Place updated in catalog; media files were not changed.")
+                self.refresh()
+            except Exception as exc:
+                self._results["Places"].setText(f"Place update failed: {type(exc).__name__}: {exc}")
+
         def _selected_library_asset_ids(self) -> list[str]:
             return [str(item.data(Qt.ItemDataRole.UserRole)["asset_id"]) for item in self.library_grid.selectedItems()]
 
@@ -2877,6 +2907,19 @@ if QT_AVAILABLE:
                 self._refresh_tags()
             if "Sources" in self._tables:
                 self._refresh_sources()
+            if "Places" in self._tables:
+                from photovault.catalog.organization import list_places
+
+                places = list_places(self.connection)
+                self._fill_table(
+                    self._tables["Places"],
+                    ["Place ID", "Name", "City", "Country", "Items"],
+                    [(place.id, place.name, place.city or "—", place.country or "—", place.item_count) for place in places],
+                )
+                for row, place in enumerate(places):
+                    self._tables["Places"].item(row, 0).setData(Qt.ItemDataRole.UserRole, place.id)
+                if hasattr(self, "manual_places_hint") and not places:
+                    self.manual_places_hint.setText("No manual places yet. Create one above, or assign a place from Library.")
             if "Operations" in self._tables:
                 rows = self.connection.execute("SELECT id, operation_type, status, dry_run, created_at, completed_at FROM operations ORDER BY created_at DESC").fetchall()
                 labels = {
