@@ -228,7 +228,6 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
                 print(f"FOLDER_BENCHMARK\t{args.relative_path}\t{files}\t{received}\t{elapsed:.3f}\t{received / elapsed if elapsed else 0:.0f}")
             else:
                 from photovault.backup.source_import import SourceImportItem, import_source_items, plan_source_import
-                from photovault.catalog.scanner import register_volume
 
                 destination = args.destination_root.expanduser().resolve()
                 if not destination.is_dir():
