@@ -21,6 +21,10 @@ class ImageClassifier(Protocol):
     def classify(self, path: Path, top_k: int) -> list[ImageCategory]: ...
 
 
+class ClassificationCancelled(Exception):
+    """Raised when a user stops a rebuildable enrichment pass."""
+
+
 class OnnxImageNetClassifier:
     """Local ONNX ImageNet classifier with explicit labels and preprocessing."""
 
@@ -78,6 +82,8 @@ def index_image_categories(
     top_k: int = 5,
     commit_every: int = 25,
     offset: int = 0,
+    progress_callback=None,
+    cancel_callback=None,
 ) -> dict[str, int]:
     """Classify connected images only; originals remain untouched and hash-invalidated."""
     if top_k < 1:
@@ -105,9 +111,14 @@ def index_image_categories(
     indexed = skipped = errors = 0; now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     processed_since_commit = 0
     for asset_id, (path, sha256) in representatives.items():
+        if cancel_callback is not None and cancel_callback():
+            raise ClassificationCancelled("category analysis cancelled")
         current = connection.execute("SELECT COUNT(*), MIN(source_sha256), MAX(source_sha256) FROM image_categories WHERE asset_id=? AND model=?", (asset_id, classifier.model_name)).fetchone()
         if current[0] and current[1] == sha256 and current[2] == sha256:
-            skipped += 1; continue
+            skipped += 1
+            if progress_callback is not None:
+                progress_callback({"processed": indexed + skipped + errors, "assets": len(representatives), "indexed": indexed, "skipped": skipped, "errors": errors})
+            continue
         try:
             categories = classifier.classify(path, top_k)
             if not categories or any(not item.label or not math.isfinite(item.score) or not 0 <= item.score <= 1 for item in categories):
@@ -126,5 +137,7 @@ def index_image_categories(
         if processed_since_commit >= commit_every:
             connection.commit()
             processed_since_commit = 0
+        if progress_callback is not None:
+            progress_callback({"processed": indexed + skipped + errors, "assets": len(representatives), "indexed": indexed, "skipped": skipped, "errors": errors})
     connection.commit()
     return {"indexed": indexed, "skipped": skipped, "errors": errors, "assets": len(representatives)}

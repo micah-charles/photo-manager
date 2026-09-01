@@ -248,6 +248,48 @@ if QT_AVAILABLE:
                 if connection is not None:
                     connection.close()
 
+    class ClassificationWorker(QObject):
+        """Run optional local image enrichment without blocking the desktop UI."""
+
+        progress = Signal(object)
+        completed = Signal(object)
+        cancelled = Signal(str)
+        failed = Signal(str)
+
+        def __init__(self, catalog_path: Path, model_path: Path, labels_path: Path, limit: int, top_k: int):
+            super().__init__()
+            self.catalog_path = catalog_path
+            self.model_path = model_path
+            self.labels_path = labels_path
+            self.limit = limit
+            self.top_k = top_k
+            self._cancel = Event()
+
+        def request_cancel(self) -> None:
+            self._cancel.set()
+
+        @Slot()
+        def run(self) -> None:
+            from photovault.catalog.classification import ClassificationCancelled, OnnxImageNetClassifier, index_image_categories
+            from photovault.database.connection import connect
+
+            connection: sqlite3.Connection | None = None
+            try:
+                connection = connect(self.catalog_path)
+                classifier = OnnxImageNetClassifier(self.model_path, self.labels_path)
+                result = index_image_categories(
+                    connection, classifier, limit=self.limit, top_k=self.top_k,
+                    progress_callback=self.progress.emit, cancel_callback=self._cancel.is_set,
+                )
+                self.completed.emit(result)
+            except ClassificationCancelled as exc:
+                self.cancelled.emit(str(exc))
+            except Exception as exc:
+                self.failed.emit(f"{type(exc).__name__}: {exc}")
+            finally:
+                if connection is not None:
+                    connection.close()
+
     class CatalogRecoveryWorker(QObject):
         """Run catalog backup/integrity work without blocking the desktop UI."""
 
@@ -330,6 +372,8 @@ if QT_AVAILABLE:
             self._android_companion_worker: AndroidCompanionDiscoveryWorker | None = None
             self._android_transfer_thread: QThread | None = None
             self._android_transfer_worker: AndroidCompanionTransferWorker | None = None
+            self._classification_thread: QThread | None = None
+            self._classification_worker: ClassificationWorker | None = None
             self._catalog_recovery_thread: QThread | None = None
             self._catalog_recovery_worker: CatalogRecoveryWorker | None = None
             self._android_transfer_completed = 0
@@ -760,6 +804,32 @@ if QT_AVAILABLE:
                 )
                 self.categories_result.setWordWrap(True)
                 layout.addWidget(self.categories_result)
+                analysis_form = QFormLayout()
+                self.category_model_path = QLineEdit()
+                self.category_model_path.setPlaceholderText("Path to local ONNX model (stored outside Git)")
+                self.category_labels_path = QLineEdit()
+                self.category_labels_path.setPlaceholderText("Path to matching labels.txt")
+                self.category_limit = QLineEdit("0")
+                self.category_top_k = QLineEdit("5")
+                analysis_form.addRow("ONNX model", self.category_model_path)
+                analysis_form.addRow("Labels", self.category_labels_path)
+                analysis_form.addRow("Limit (0 = all)", self.category_limit)
+                analysis_form.addRow("Top labels", self.category_top_k)
+                layout.addLayout(analysis_form)
+                analysis_actions = QHBoxLayout()
+                self.category_start_button = QPushButton("Run local category analysis")
+                self.category_start_button.clicked.connect(self._start_category_analysis)
+                analysis_actions.addWidget(self.category_start_button)
+                self.category_cancel_button = QPushButton("Cancel analysis")
+                self.category_cancel_button.setEnabled(False)
+                self.category_cancel_button.clicked.connect(self._cancel_category_analysis)
+                analysis_actions.addWidget(self.category_cancel_button)
+                layout.addLayout(analysis_actions)
+                self.category_progress = QProgressBar()
+                self.category_progress.setRange(0, 100)
+                self.category_progress.setValue(0)
+                self.category_progress.setFormat("Ready")
+                layout.addWidget(self.category_progress)
                 actions = QHBoxLayout()
                 refresh_button = QPushButton("Refresh categories")
                 refresh_button.clicked.connect(self._refresh_categories)
@@ -1872,6 +1942,88 @@ if QT_AVAILABLE:
                 )
             except Exception as exc:
                 self.categories_result.setText(f"Category query failed: {type(exc).__name__}: {exc}")
+
+        def _start_category_analysis(self) -> None:
+            if self._classification_thread is not None and self._classification_thread.isRunning():
+                return
+            if self._catalog_path is None:
+                self.categories_result.setText("A file-backed catalog is required before running local analysis.")
+                return
+            model = Path(self.category_model_path.text().strip()).expanduser()
+            labels = Path(self.category_labels_path.text().strip()).expanduser()
+            if not model.is_file() or not labels.is_file():
+                self.categories_result.setText("Choose an existing local ONNX model and matching labels file first.")
+                return
+            try:
+                limit = int(self.category_limit.text().strip())
+                top_k = int(self.category_top_k.text().strip())
+                if limit < 0 or top_k < 1:
+                    raise ValueError
+            except ValueError:
+                self.categories_result.setText("Limit must be 0 or greater, and Top labels must be at least 1.")
+                return
+            self.category_start_button.setEnabled(False)
+            self.category_cancel_button.setEnabled(True)
+            self.category_progress.setValue(0)
+            self.category_progress.setFormat("Starting…")
+            self.categories_result.setText("Local category analysis is running in the background. Originals are read-only.")
+            self._classification_thread = QThread(self)
+            self._classification_worker = ClassificationWorker(self._catalog_path, model, labels, limit, top_k)
+            self._classification_worker.moveToThread(self._classification_thread)
+            self._classification_thread.started.connect(self._classification_worker.run)
+            self._classification_worker.progress.connect(self._category_analysis_progress)
+            self._classification_worker.completed.connect(self._category_analysis_completed)
+            self._classification_worker.cancelled.connect(self._category_analysis_cancelled)
+            self._classification_worker.failed.connect(self._category_analysis_failed)
+            self._classification_worker.completed.connect(self._classification_thread.quit)
+            self._classification_worker.cancelled.connect(self._classification_thread.quit)
+            self._classification_worker.failed.connect(self._classification_thread.quit)
+            self._classification_worker.completed.connect(self._classification_worker.deleteLater)
+            self._classification_worker.cancelled.connect(self._classification_worker.deleteLater)
+            self._classification_worker.failed.connect(self._classification_worker.deleteLater)
+            self._classification_thread.finished.connect(self._classification_thread_finished)
+            self._classification_thread.finished.connect(self._classification_thread.deleteLater)
+            self._classification_thread.start()
+
+        def _cancel_category_analysis(self) -> None:
+            if self._classification_worker is not None:
+                self._classification_worker.request_cancel()
+                self.category_cancel_button.setEnabled(False)
+                self.categories_result.setText("Cancellation requested; the current image will finish safely.")
+
+        def _category_analysis_progress(self, event: object) -> None:
+            total = int(event.get("assets", 0))
+            processed = int(event.get("processed", 0))
+            percent = int(processed / total * 100) if total else 0
+            self.category_progress.setValue(max(0, min(percent, 100)))
+            self.category_progress.setFormat(f"{processed:,}/{total:,} images")
+            self.categories_result.setText(
+                f"Analysing locally… {processed:,}/{total:,}; indexed {event.get('indexed', 0):,}, "
+                f"skipped {event.get('skipped', 0):,}, errors {event.get('errors', 0):,}."
+            )
+
+        def _category_analysis_completed(self, result: object) -> None:
+            self.category_progress.setValue(100)
+            self.category_progress.setFormat("Complete")
+            self.categories_result.setText(
+                f"Category analysis complete: indexed {result['indexed']:,}, skipped {result['skipped']:,}, "
+                f"errors {result['errors']:,} across {result['assets']:,} images."
+            )
+            self._refresh_categories()
+
+        def _category_analysis_cancelled(self, message: str) -> None:
+            self.category_progress.setFormat("Cancelled — safe to resume")
+            self.categories_result.setText(f"Category analysis cancelled safely: {message}.")
+
+        def _category_analysis_failed(self, message: str) -> None:
+            self.category_progress.setFormat("Failed — review details")
+            self.categories_result.setText(f"Category analysis failed: {message}")
+
+        def _classification_thread_finished(self) -> None:
+            self.category_start_button.setEnabled(True)
+            self.category_cancel_button.setEnabled(False)
+            self._classification_worker = None
+            self._classification_thread = None
 
         def _open_selected_category(self) -> None:
             table = self._tables["Categories"]
