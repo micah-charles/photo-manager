@@ -1507,8 +1507,10 @@ if QT_AVAILABLE:
                     """SELECT display_name, adapter, last_seen
                        FROM source_profiles ORDER BY last_seen DESC LIMIT 1"""
                 ).fetchone()
+                backup_sets = int(self.connection.execute("SELECT COUNT(*) FROM backup_sets").fetchone()[0])
                 self.dashboard_cards["safety"].setText(
-                    "All good" if metrics.connected_volumes == metrics.volumes and metrics.volumes else "Needs attention"
+                    "Backup configured\nRun Health Check"
+                    if backup_sets else "Needs setup\nNo backup set configured"
                 )
                 self.dashboard_cards["library"].setText(f"{metrics.images:,} photos · {metrics.videos:,} videos")
                 self.dashboard_cards["storage"].setText(f"{metrics.connected_volumes}/{metrics.volumes} drives connected")
