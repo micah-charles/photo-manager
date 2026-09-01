@@ -185,6 +185,11 @@ full-resolution loading for the library.
 
 ## 13. Test results
 
+The latest visual review was captured from the rebuilt macOS application
+against the external regression catalog at commit `50de0da`. The Collections
+screen visibly explains its interaction model: a single click selects a card,
+while double-click or Enter opens it in Library.
+
 The PySide6 UI foundation suite (including deterministic Android transfer
 progress/ETA coverage) and full Python test suite pass in the
 external `.venv`. The optional UI suite runs when PySide6 is present; headless
