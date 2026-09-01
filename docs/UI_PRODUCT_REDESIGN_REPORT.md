@@ -185,7 +185,8 @@ full-resolution loading for the library.
 
 ## 13. Test results
 
-The PySide6 UI foundation suite and full Python test suite pass in the
+The PySide6 UI foundation suite (including deterministic Android transfer
+progress/ETA coverage) and full Python test suite pass in the
 external `.venv`. The optional UI suite runs when PySide6 is present; headless
 CI environments continue to skip those tests cleanly. The current working
 tree intentionally excludes the external model, pip cache, and virtual

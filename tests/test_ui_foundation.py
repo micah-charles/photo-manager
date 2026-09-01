@@ -103,6 +103,36 @@ class UIFoundationTests(unittest.TestCase):
             window.close()
             connection.close()
 
+    def test_android_transfer_progress_surfaces_speed_eta_and_current_file(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._android_transfer_started = time.monotonic() - 2
+            window._android_transfer_checkpoint = time.monotonic() - 1
+            window._android_transfer_progress({
+                "stage": "planned", "items": 2, "bytes_total": 10_000,
+                "conflicts": 0, "new": 2, "unchanged": 0, "missing": 0,
+                "destination_volume": "test-volume",
+            })
+            window._android_transfer_progress({
+                "stage": "file",
+                "row": {"destination": "/tmp/PXL_test.jpg", "bytes_written": 5_000},
+            })
+            self.assertIn("1/2 files", window.android_backup_summary.text())
+            self.assertIn("average", window.android_backup_summary.text())
+            self.assertIn("ETA", window.android_transfer_result.text())
+            self.assertIn("PXL_test.jpg", window.android_transfer_result.text())
+            self.assertEqual(window.android_backup_progress.value(), 50)
+            window.close()
+            connection.close()
+
     def test_android_manifest_populates_checkable_folder_picker(self) -> None:
         from photovault.ui import main_window
 
