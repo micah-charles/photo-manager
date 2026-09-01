@@ -1952,10 +1952,18 @@ if QT_AVAILABLE:
         def _open_selected_collection(self) -> None:
             table = self._tables["Collections"]
             selected = table.selectedItems()
-            if not selected:
-                self.collections_result.setText("Select one collection row first.")
-                return
-            collection_id = table.item(selected[0].row(), 0).text()
+            if selected:
+                collection_id = table.item(selected[0].row(), 0).text()
+            else:
+                # The visual cards are the primary interaction. Keep the
+                # explicit button useful when a user single-clicks a card.
+                card = next(iter(self.collections_grid.selectedItems()), None)
+                if card is None and hasattr(self, "collections_album_grid"):
+                    card = next(iter(self.collections_album_grid.selectedItems()), None)
+                collection_id = card.data(Qt.ItemDataRole.UserRole) if card is not None else None
+                if not collection_id:
+                    self.collections_result.setText("Select a collection card or advanced-details row first.")
+                    return
             self._open_collection_in_library(collection_id, self.collections_result)
 
         def _open_collection_in_library(self, collection_id: str, result_label: QLabel) -> None:
