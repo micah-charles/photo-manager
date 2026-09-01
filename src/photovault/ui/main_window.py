@@ -429,52 +429,9 @@ if QT_AVAILABLE:
             title.setObjectName("PageTitle")
             layout.addWidget(title)
             if label == "Dashboard":
-                self.dashboard_result = QLabel("Loading catalog health…")
-                self.dashboard_result.setWordWrap(True)
-                layout.addWidget(self.dashboard_result)
-                self.dashboard_cards = {}
-                cards = QHBoxLayout()
-                for card_name, card_title in (
-                    ("safety", "Backup status"),
-                    ("library", "Your library"),
-                    ("storage", "Storage"),
-                    ("activity", "Recent activity"),
-                ):
-                    card = QWidget()
-                    card.setStyleSheet("QWidget { background: white; border: 1px solid #dfe3eb; border-radius: 10px; padding: 10px; }")
-                    card_layout = QVBoxLayout(card)
-                    card_layout.setContentsMargins(12, 10, 12, 10)
-                    heading = QLabel(card_title)
-                    heading.setStyleSheet("font-weight: 600; color: #647084; background: transparent; border: 0;")
-                    value = QLabel("Loading…")
-                    value.setWordWrap(True)
-                    value.setStyleSheet("font-size: 15px; font-weight: 700; background: transparent; border: 0;")
-                    card_layout.addWidget(heading)
-                    card_layout.addWidget(value)
-                    self.dashboard_cards[card_name] = value
-                    cards.addWidget(card)
-                layout.addLayout(cards)
-                quick_actions = QHBoxLayout()
-                for action_name, target in (("Browse Library", "Library"), ("View People", "People"), ("View Places", "Places")):
-                    action = QPushButton(action_name)
-                    action.clicked.connect(lambda _checked=False, page=target: self._select_page(page))
-                    quick_actions.addWidget(action)
-                layout.addLayout(quick_actions)
-                layout.addWidget(QLabel("Recent photos"))
-                self.dashboard_recent_grid = QListWidget()
-                self.dashboard_recent_grid.setObjectName("RecentPhotoGrid")
-                self.dashboard_recent_grid.setViewMode(QListWidget.ViewMode.IconMode)
-                self.dashboard_recent_grid.setResizeMode(QListWidget.ResizeMode.Adjust)
-                self.dashboard_recent_grid.setIconSize(QSize(120, 90))
-                self.dashboard_recent_grid.setGridSize(QSize(150, 125))
-                self.dashboard_recent_grid.itemDoubleClicked.connect(self._open_dashboard_item)
-                layout.addWidget(self.dashboard_recent_grid)
-                dashboard_table = QTableWidget()
-                self._tables[label] = dashboard_table
-                layout.addWidget(dashboard_table)
-                button = QPushButton("Refresh dashboard")
-                button.clicked.connect(self._refresh_dashboard)
-                layout.addWidget(button)
+                from .pages.home_page import build_home_page
+
+                build_home_page(self, layout, self._tables)
             elif label == "Android Devices":
                 from .pages.android_backup_page import build_android_backup_page
 
