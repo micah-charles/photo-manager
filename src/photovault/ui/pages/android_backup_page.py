@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QComboBox,
+    QCheckBox,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -11,6 +13,8 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QTableWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 
@@ -53,11 +57,28 @@ def build_android_backup_page(owner: object, layout: object, tables: dict[str, Q
     companion_button.clicked.connect(owner._discover_android_companion)
     owner.android_companion_discover_button = companion_button
     layout.addWidget(companion_button)
-    layout.addWidget(QLabel("Advanced connection settings"))
     owner.android_result = QLabel("Production path: connect the read-only Android Companion over Wi-Fi. The device identity remains stable when its IP address changes.")
     owner.android_result.setWordWrap(True)
     layout.addWidget(owner.android_result)
 
+    advanced_toggle = QCheckBox("Show advanced connection settings")
+    advanced_body = QWidget()
+    advanced_body.setVisible(False)
+    advanced_form = QFormLayout(advanced_body)
+    owner.android_helper = QLineEdit(str(_default_android_helper()))
+    advanced_form.addRow("Native helper", owner.android_helper)
+    usb_button = QPushButton("Discover USB MTP (experimental macOS fallback)")
+    usb_button.clicked.connect(owner._discover_android)
+    owner.android_discover_button = usb_button
+    advanced_form.addRow("USB fallback", usb_button)
+    advanced_toggle.toggled.connect(advanced_body.setVisible)
+    layout.addWidget(advanced_toggle)
+    layout.addWidget(advanced_body)
+
+    transfer_group = QGroupBox("Backup setup")
+    transfer_group.setEnabled(False)
+    owner.android_transfer_group = transfer_group
+    transfer_layout = QVBoxLayout(transfer_group)
     transfer_form = QFormLayout()
     owner.android_transfer_folders = QPlainTextEdit("DCIM/Camera")
     owner.android_transfer_folders.setPlaceholderText("One MediaStore relative folder per line, e.g. DCIM/Camera")
@@ -73,7 +94,7 @@ def build_android_backup_page(owner: object, layout: object, tables: dict[str, Q
     transfer_form.addRow("Media", owner.android_transfer_media_filter)
     transfer_form.addRow("Destination directory", owner.android_transfer_destination)
     transfer_form.addRow("Concurrent workers", owner.android_transfer_workers)
-    layout.addLayout(transfer_form)
+    transfer_layout.addLayout(transfer_form)
 
     profile_actions = QHBoxLayout()
     owner.android_saved_profile = QComboBox()
@@ -88,30 +109,25 @@ def build_android_backup_page(owner: object, layout: object, tables: dict[str, Q
     continue_profile_button = QPushButton("Continue selected backup")
     continue_profile_button.clicked.connect(owner._continue_selected_android_backup_profile)
     profile_actions.addWidget(continue_profile_button)
-    layout.addLayout(profile_actions)
+    transfer_layout.addLayout(profile_actions)
 
     transfer_button = QPushButton("Start verified Wi-Fi backup")
     transfer_button.clicked.connect(owner._start_android_companion_transfer)
     owner.android_transfer_button = transfer_button
-    layout.addWidget(transfer_button)
+    transfer_layout.addWidget(transfer_button)
     cancel_transfer_button = QPushButton("Cancel transfer (partial files can resume)")
     cancel_transfer_button.setEnabled(False)
     cancel_transfer_button.clicked.connect(owner._cancel_android_companion_transfer)
     owner.android_transfer_cancel_button = cancel_transfer_button
-    layout.addWidget(cancel_transfer_button)
+    transfer_layout.addWidget(cancel_transfer_button)
     owner.android_transfer_result = QLabel("A transfer copies new items only, SHA-256 verifies each completed file, and never changes phone files.")
     owner.android_transfer_result.setWordWrap(True)
-    layout.addWidget(owner.android_transfer_result)
+    transfer_layout.addWidget(owner.android_transfer_result)
+    layout.addWidget(transfer_group)
     owner.android_profile_history = QTableWidget()
     layout.addWidget(QLabel("Saved profiles and recent runs"))
     layout.addWidget(owner.android_profile_history)
 
-    form.addRow("Native helper", QLineEdit(str(_default_android_helper())))
-    owner.android_helper = form.itemAt(form.rowCount() - 1, QFormLayout.ItemRole.FieldRole).widget()
-    usb_button = QPushButton("Discover USB MTP (experimental macOS fallback)")
-    usb_button.clicked.connect(owner._discover_android)
-    owner.android_discover_button = usb_button
-    layout.addWidget(usb_button)
     table = QTableWidget()
     tables["Android Devices"] = table
     layout.addWidget(table)
