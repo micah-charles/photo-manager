@@ -942,6 +942,7 @@ if QT_AVAILABLE:
                     self.places_grid.setIconSize(QSize(150, 100))
                     self.places_grid.setGridSize(QSize(190, 140))
                     self.places_grid.itemDoubleClicked.connect(self._open_place_tile)
+                    self.places_grid.addItem("No embedded GPS clusters yet")
                     layout.addWidget(self.places_grid)
             elif label == "Favourites":
                 form = QFormLayout()
