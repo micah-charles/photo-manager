@@ -144,6 +144,13 @@ real-Windows validation item.
 7. Add final screenshot/regression validation for the redesigned shell and
    complete a real Windows packaged-app smoke test.
 
+## 16. Cross-platform packaging note
+
+The build instructions use a platform-neutral `<project-root>` placeholder;
+they do not assume macOS `/Volumes` paths. The application uses `pathlib` and
+the platform volume-provider boundary for drive behavior. macOS packaging has
+passed locally; Windows packaging remains to be run on Windows.
+
 ## 15. Recommended next sprint
 
 Build shared `PageHeader`, `PhotoGrid`, `PhotoTile`, `StatusBadge`,

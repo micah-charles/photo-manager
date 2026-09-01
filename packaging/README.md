@@ -3,7 +3,7 @@
 PhotoVault uses the same Python application entry point on macOS and Windows. Build on the target operating system so PyInstaller bundles that platform's Qt and filesystem behavior.
 
 ```bash
-cd /Volumes/ExtremePro/project/codex/photovault
+cd <project-root>
 python3 -m pip install -e '.[desktop,packaging]'
 python3 scripts/build_app.py --clean
 ```

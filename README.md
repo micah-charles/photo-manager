@@ -29,7 +29,7 @@ Design and safety details: [architecture](docs/ARCHITECTURE.md), [database schem
 ## Quick start
 
 ```bash
-cd /Volumes/ExtremePro/project/codex/photovault
+cd <project-root>
 python3 -m unittest discover -s tests -v
 PYTHONPATH=src python3 -m photovault.cli --help
 ```
