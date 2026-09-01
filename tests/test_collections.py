@@ -47,5 +47,12 @@ class CollectionTests(unittest.TestCase):
             self.assertEqual(add_to_user_collection(connection, collection_id, [asset_id]), 1)
             self.assertEqual(add_to_user_collection(connection, collection_id, [asset_id]), 0)
             self.assertEqual(list_collection_items(connection, collection_id)[0]["filename"], "album.jpg")
+            connection.execute(
+                "INSERT INTO thumbnails(asset_id, version, path, width, height, created_at) VALUES (?, 'v1-320', ?, 320, 240, datetime('now'))",
+                (asset_id, str(root / "album-thumb.jpg")),
+            )
+            connection.commit()
+            album = next(item for item in list_collections(connection) if item.id == collection_id)
+            self.assertEqual(album.cover_path, str(root / "album-thumb.jpg"))
             self.assertEqual((root / "album.jpg").read_bytes(), b"album")
             connection.close()

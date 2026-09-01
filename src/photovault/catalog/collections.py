@@ -77,7 +77,7 @@ def list_collections(connection: sqlite3.Connection) -> list[CatalogCollection]:
     for row in connection.execute(
         """SELECT c.id, c.title, COUNT(m.asset_id), c.updated_at,
                   (SELECT t.path FROM user_collection_members cm
-                   JOIN thumbnails t ON t.asset_id=cm.asset_id AND t.version='default'
+                   JOIN thumbnails t ON t.asset_id=cm.asset_id AND t.version='v1-320'
                    WHERE cm.collection_id=c.id ORDER BY cm.added_at, cm.asset_id LIMIT 1)
            FROM user_collections c LEFT JOIN user_collection_members m ON m.collection_id=c.id
            GROUP BY c.id ORDER BY c.title"""
