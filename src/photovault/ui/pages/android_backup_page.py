@@ -45,6 +45,16 @@ def build_android_backup_page(owner: object, layout: object, tables: dict[str, Q
     owner.android_backup_completion.setObjectName("SettingsCard")
     owner.android_backup_completion.setWordWrap(True)
     layout.addWidget(owner.android_backup_completion)
+    completion_actions = QHBoxLayout()
+    owner.android_view_photos_button = QPushButton("View Photos")
+    owner.android_view_photos_button.setEnabled(False)
+    owner.android_view_photos_button.clicked.connect(owner._view_android_backup_photos)
+    completion_actions.addWidget(owner.android_view_photos_button)
+    owner.android_view_details_button = QPushButton("View Backup Details")
+    owner.android_view_details_button.setEnabled(False)
+    owner.android_view_details_button.clicked.connect(owner._view_android_backup_details)
+    completion_actions.addWidget(owner.android_view_details_button)
+    layout.addLayout(completion_actions)
 
     from photovault.cli.main import _default_android_helper
 

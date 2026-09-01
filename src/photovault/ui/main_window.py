@@ -1176,6 +1176,8 @@ if QT_AVAILABLE:
             )
             self.android_backup_status.setText("Backup complete")
             self.android_device_card.setText("Android Companion\nConnected · latest backup completed successfully")
+            self.android_view_photos_button.setEnabled(True)
+            self.android_view_details_button.setEnabled(True)
             self.android_backup_summary.setText(
                 f"Imported {result['imported']:,} new files; {result['already_imported']:,} were already verified."
             )
@@ -1183,6 +1185,21 @@ if QT_AVAILABLE:
             self.android_backup_progress.setFormat("Complete")
             self._refresh_android_backup_profiles()
             self.refresh()
+
+        def _view_android_backup_photos(self) -> None:
+            """Return to the photo-first library after a completed backup."""
+            self._library_collection_id = None
+            self.library_search.clear()
+            self.library_folder.setText("DCIM/Camera")
+            self._refresh_library()
+            self._select_page("Library")
+
+        def _view_android_backup_details(self) -> None:
+            """Open the auditable profile/history view without starting work."""
+            self._select_page("Android Devices")
+            self._refresh_android_backup_profiles()
+            self.android_profile_history_label.setVisible(True)
+            self.android_profile_history.setVisible(True)
 
         def _android_transfer_cancelled(self, message: str) -> None:
             self.android_backup_status.setText("Backup cancelled")
