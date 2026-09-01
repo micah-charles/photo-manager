@@ -29,4 +29,6 @@ def stylesheet() -> str:
     QPushButton:disabled {{ background: #b9c3d2; color: #eef1f5; }}
     QLabel#PageTitle {{ font-size: 25px; font-weight: 700; padding: 8px 0; background: transparent; }}
     QLabel#SectionHeading {{ color: {t['muted']}; font-size: 11px; font-weight: 700; padding: 12px 10px 4px; }}
+    QLabel#StatusBadge {{ color: {t['primary']}; font-size: 16px; font-weight: 700; background: {t['selection']}; border: 1px solid #c9dbff; border-radius: 8px; padding: 10px; }}
+    QLabel#StatusSummary {{ color: {t['muted']}; background: transparent; padding: 2px 0 8px; }}
     """

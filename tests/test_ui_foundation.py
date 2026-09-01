@@ -35,6 +35,24 @@ class UIFoundationTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "PySide6 is not installed"):
                 main_window._require_qt()
 
+    def test_android_page_exposes_stateful_backup_status(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._select_page("Android Devices")
+            self.assertEqual(window.android_backup_status.text(), "Not connected")
+            window.android_backup_status.setText("Phone connected")
+            self.assertEqual(window.android_backup_status.text(), "Phone connected")
+            window.close()
+            connection.close()
+
     def test_scan_uses_a_worker_thread_for_file_backed_catalog(self) -> None:
         from photovault.ui import main_window
 
