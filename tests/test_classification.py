@@ -39,4 +39,5 @@ class ClassificationTests(unittest.TestCase):
                 {row["filename"] for row in list_collection_items(connection, category.id)},
                 {"cat.jpg", "cat-two.jpg"},
             )
+            self.assertEqual(index_image_categories(connection, FakeClassifier(), limit=1, offset=1)["skipped"], 1)
             connection.close()

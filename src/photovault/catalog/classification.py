@@ -77,12 +77,15 @@ def index_image_categories(
     limit: int = 0,
     top_k: int = 5,
     commit_every: int = 25,
+    offset: int = 0,
 ) -> dict[str, int]:
     """Classify connected images only; originals remain untouched and hash-invalidated."""
     if top_k < 1:
         raise ValueError("top_k must be positive")
     if commit_every < 1:
         raise ValueError("commit_every must be positive")
+    if offset < 0:
+        raise ValueError("offset must not be negative")
     sql = """SELECT al.asset_id, v.current_mount_path, al.relative_path, eh.sha256
              FROM asset_locations al JOIN assets a ON a.id=al.asset_id JOIN volumes v ON v.id=al.volume_id
              JOIN exact_hashes eh ON eh.asset_id=al.asset_id
@@ -93,8 +96,12 @@ def index_image_categories(
     representatives: dict[str, tuple[Path, str]] = {}
     for asset_id, mount, relative_path, sha256 in connection.execute(sql + " ORDER BY al.asset_id, al.id", params):
         representatives.setdefault(str(asset_id), (Path(str(mount)) / str(relative_path), str(sha256)))
+    candidates = list(representatives.items())
     if limit > 0:
-        representatives = dict(list(representatives.items())[:limit])
+        candidates = candidates[offset : offset + limit]
+    elif offset:
+        candidates = candidates[offset:]
+    representatives = dict(candidates)
     indexed = skipped = errors = 0; now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     processed_since_commit = 0
     for asset_id, (path, sha256) in representatives.items():

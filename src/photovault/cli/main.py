@@ -92,6 +92,7 @@ def parser() -> argparse.ArgumentParser:
     classify.add_argument("--image-size", type=int, default=224)
     classify.add_argument("--volume-id")
     classify.add_argument("--limit", type=int, default=0)
+    classify.add_argument("--offset", type=int, default=0, help="skip this many stable catalog image entries before indexing")
     classify.add_argument("--top-k", type=int, default=5)
     classify.add_argument("--commit-every", type=int, default=25, help="persist derived category annotations after this many images")
     create_set = sub.add_parser("backup-set-create", help="create a backup set")
@@ -509,7 +510,7 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
         from photovault.catalog.classification import OnnxImageNetClassifier, index_image_categories
 
         classifier = OnnxImageNetClassifier(args.model, args.labels, args.model_name, args.image_size)
-        print(index_image_categories(connection, classifier, args.volume_id, args.limit, args.top_k, args.commit_every))
+        print(index_image_categories(connection, classifier, args.volume_id, args.limit, args.top_k, args.commit_every, args.offset))
     elif args.command == "backup-set-create":
         print(create_backup_set(connection, args.name, args.required_copies, args.scope))
     elif args.command == "backup-set-add":
