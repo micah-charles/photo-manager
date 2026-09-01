@@ -867,6 +867,11 @@ if QT_AVAILABLE:
                     result.setWordWrap(True)
                     self._results[label] = result
                     layout.addWidget(result)
+                    self.duplicate_groups_list = QListWidget()
+                    self.duplicate_groups_list.setObjectName("ReviewList")
+                    self.duplicate_groups_list.itemDoubleClicked.connect(self._open_duplicate_group)
+                    layout.addWidget(QLabel("Review groups — double-click to browse"))
+                    layout.addWidget(self.duplicate_groups_list)
                 else:
                     form = QFormLayout()
                     radius = QLineEdit("100")
@@ -2236,12 +2241,32 @@ if QT_AVAILABLE:
                 from photovault.catalog.perceptual import find_visual_duplicate_groups
 
                 groups = find_visual_duplicate_groups(self.connection, algorithm.text().strip(), int(threshold.text().strip()))
+                self.duplicate_groups_list.clear()
+                for group in groups:
+                    members = group["members"]
+                    item = QListWidgetItem(
+                        f"{group['group_type'].replace('_', ' ').title()}\n"
+                        f"{len(members)} similar photos · Review manually"
+                    )
+                    member_id = str(members[0]["asset_id"])
+                    thumbnail = self.connection.execute(
+                        "SELECT path FROM thumbnails WHERE asset_id=? AND version='v1-320' LIMIT 1",
+                        (member_id,),
+                    ).fetchone()
+                    if thumbnail and Path(str(thumbnail[0])).is_file():
+                        item.setIcon(QIcon(str(thumbnail[0])))
+                    item.setData(Qt.ItemDataRole.UserRole, f"duplicate:{group['id']}")
+                    item.setToolTip("Advisory similarity group. No deletion is performed.")
+                    self.duplicate_groups_list.addItem(item)
                 self._results["Visual Duplicates"].setText(
                     f"{len(groups)} advisory group(s). Review manually; no deletion is performed. "
                     + "; ".join(f"{group['id']} ({len(group['members'])} assets)" for group in groups)
                 )
             except Exception as exc:
                 self._results["Visual Duplicates"].setText(f"Similarity search failed: {exc}")
+
+        def _open_duplicate_group(self, item: QListWidgetItem) -> None:
+            self._open_collection_in_library(str(item.data(Qt.ItemDataRole.UserRole)), self._results["Visual Duplicates"])
 
         def _places(self, radius: QLineEdit) -> None:
             try:

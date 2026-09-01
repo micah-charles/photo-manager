@@ -102,7 +102,9 @@ the detailed audit pages remain available for technical review.
 ## 11. People, Places, Categories, and Duplicates
 
 People supports importing existing macOS Vision derived memberships. Places
-and visual duplicates remain advisory catalog views. Local ONNX classification
+remain an advisory catalog view. Visual duplicates now show real thumbnail
+review rows and double-click into the normal Library view; they remain
+advisory only. Local ONNX classification
 stores hash-invalidated, rebuildable candidate labels in SQLite and exposes
 them as category collections; it does not infer Google Photos locations or
 modify originals.
