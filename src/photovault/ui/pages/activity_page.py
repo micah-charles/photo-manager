@@ -39,6 +39,17 @@ def build_activity_page(owner: object, layout: object, tables: dict[str, QTableW
     owner.activity_feed.addItem("No activity recorded yet")
     layout.addWidget(owner.activity_feed)
 
+    layout.addWidget(QLabel("Recent import batches"))
+    owner.import_batch_summary = QLabel(
+        "Each verified source transfer is recorded as one resumable batch."
+    )
+    owner.import_batch_summary.setWordWrap(True)
+    layout.addWidget(owner.import_batch_summary)
+    batch_table = QTableWidget()
+    batch_table.setSortingEnabled(True)
+    tables["Import Batches"] = batch_table
+    layout.addWidget(batch_table)
+
     table = QTableWidget()
     table.setSortingEnabled(True)
     table.setVisible(False)

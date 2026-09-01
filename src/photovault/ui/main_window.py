@@ -2882,6 +2882,27 @@ if QT_AVAILABLE:
                         f"{len(rows):,} recorded operation(s). Completed work remains auditable; technical operation IDs are available in Advanced details."
                         if rows else "No activity recorded yet. Completed scans and backups will appear here."
                     )
+            if "Import Batches" in self._tables:
+                from photovault.backup.source_import import list_import_batches
+
+                batches = list_import_batches(self.connection, limit=50)
+                self._fill_table(
+                    self._tables["Import Batches"],
+                    ["Batch", "Source", "Destination", "Status", "Started", "Completed", "Planned", "Imported", "Already", "Failed", "Bytes"],
+                    [(
+                        row["id"], row["source_name"], row["destination_volume_name"],
+                        row["status"].title(), row["started_at"], row["completed_at"] or "—",
+                        row["planned_items"], row["imported_items"], row["already_imported_items"],
+                        row["failed_items"], self._human_bytes(row["imported_bytes"]),
+                    ) for row in batches],
+                )
+                if hasattr(self, "import_batch_summary"):
+                    active = sum(row["status"] == "RUNNING" for row in batches)
+                    self.import_batch_summary.setText(
+                        f"{len(batches):,} import batch(es) recorded; {active:,} currently running. "
+                        "Counters include verified files only."
+                        if batches else "No import batches recorded yet."
+                    )
             if "Timeline" in self._tables:
                 self._refresh_timeline()
             if "Library" in self._tables:
