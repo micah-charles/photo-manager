@@ -293,6 +293,63 @@ if QT_AVAILABLE:
                 if connection is not None:
                     connection.close()
 
+    class ThumbnailWorker(QObject):
+        """Build rebuildable catalog thumbnails without blocking the UI."""
+
+        progress = Signal(object)
+        completed = Signal(object)
+        failed = Signal(str)
+
+        def __init__(self, catalog_path: Path, limit: int = 200):
+            super().__init__()
+            self.catalog_path = catalog_path
+            self.limit = limit
+            self._cancel = Event()
+
+        def request_cancel(self) -> None:
+            self._cancel.set()
+
+        @Slot()
+        def run(self) -> None:
+            from photovault.catalog.thumbnails import generate_thumbnail
+            from photovault.database.connection import connect
+
+            connection: sqlite3.Connection | None = None
+            generated = skipped = 0
+            try:
+                connection = connect(self.catalog_path)
+                cache_root = self.catalog_path.parent / ".photovault-thumbnails"
+                rows = connection.execute(
+                    """SELECT a.id, a.media_type, al.relative_path, v.current_mount_path
+                       FROM assets a JOIN asset_locations al ON al.asset_id=a.id
+                       JOIN volumes v ON v.id=al.volume_id
+                       LEFT JOIN thumbnails t ON t.asset_id=a.id AND t.version='v1-320'
+                       WHERE al.missing_since IS NULL AND t.asset_id IS NULL
+                       ORDER BY a.id LIMIT ?""", (self.limit,)
+                ).fetchall()
+                total = len(rows)
+                for index, row in enumerate(rows, 1):
+                    if self._cancel.is_set():
+                        break
+                    source = Path(str(row[3])) / str(row[2])
+                    if str(row[1]) == "IMAGE" and source.is_file():
+                        if generate_thumbnail(connection, str(row[0]), source, cache_root) is not None:
+                            generated += 1
+                        else:
+                            skipped += 1
+                    else:
+                        skipped += 1
+                    if index % 25 == 0:
+                        connection.commit()
+                    self.progress.emit({"processed": index, "total": total, "generated": generated, "skipped": skipped})
+                connection.commit()
+                self.completed.emit({"processed": generated + skipped, "total": total, "generated": generated, "skipped": skipped, "cancelled": self._cancel.is_set()})
+            except Exception as exc:
+                self.failed.emit(f"{type(exc).__name__}: {exc}")
+            finally:
+                if connection is not None:
+                    connection.close()
+
     class CatalogRecoveryWorker(QObject):
         """Run catalog backup/integrity work without blocking the desktop UI."""
 
@@ -377,6 +434,8 @@ if QT_AVAILABLE:
             self._android_transfer_worker: AndroidCompanionTransferWorker | None = None
             self._classification_thread: QThread | None = None
             self._classification_worker: ClassificationWorker | None = None
+            self._thumbnail_thread: QThread | None = None
+            self._thumbnail_worker: ThumbnailWorker | None = None
             self._catalog_recovery_thread: QThread | None = None
             self._catalog_recovery_worker: CatalogRecoveryWorker | None = None
             self._android_transfer_completed = 0
@@ -816,6 +875,60 @@ if QT_AVAILABLE:
             self._android_transfer_thread.finished.connect(self._android_transfer_thread_finished)
             self._android_transfer_thread.finished.connect(self._android_transfer_thread.deleteLater)
             self._android_transfer_thread.start()
+
+        def _start_thumbnail_generation(self) -> None:
+            if self._catalog_path is None:
+                self.library_thumbnail_status.setText("Thumbnail generation requires a file-backed catalog.")
+                return
+            if self._thumbnail_thread is not None and self._thumbnail_thread.isRunning():
+                self.library_thumbnail_status.setText("Thumbnail generation is already running in the background.")
+                return
+            self.library_thumbnail_button.setEnabled(False)
+            self.library_thumbnail_cancel_button.setEnabled(True)
+            self.library_thumbnail_status.setText("Building missing thumbnails in the background; originals remain read-only…")
+            self._thumbnail_thread = QThread(self)
+            self._thumbnail_worker = ThumbnailWorker(self._catalog_path, limit=200)
+            self._thumbnail_worker.moveToThread(self._thumbnail_thread)
+            self._thumbnail_thread.started.connect(self._thumbnail_worker.run)
+            self._thumbnail_worker.progress.connect(self._thumbnail_progress)
+            self._thumbnail_worker.completed.connect(self._thumbnail_completed)
+            self._thumbnail_worker.failed.connect(self._thumbnail_failed)
+            self._thumbnail_worker.completed.connect(self._thumbnail_thread.quit)
+            self._thumbnail_worker.failed.connect(self._thumbnail_thread.quit)
+            self._thumbnail_worker.completed.connect(self._thumbnail_worker.deleteLater)
+            self._thumbnail_worker.failed.connect(self._thumbnail_worker.deleteLater)
+            self._thumbnail_thread.finished.connect(self._thumbnail_thread_finished)
+            self._thumbnail_thread.finished.connect(self._thumbnail_thread.deleteLater)
+            self._thumbnail_thread.start()
+
+        def _cancel_thumbnail_generation(self) -> None:
+            if self._thumbnail_worker is not None:
+                self.library_thumbnail_status.setText("Stopping thumbnail build safely after the current preview…")
+                self._thumbnail_worker.request_cancel()
+
+        def _thumbnail_progress(self, event: object) -> None:
+            self.library_thumbnail_status.setText(
+                f"Building thumbnails… {event['processed']}/{event['total']} processed; "
+                f"{event['generated']} generated, {event['skipped']} skipped."
+            )
+
+        def _thumbnail_completed(self, result: object) -> None:
+            state = "cancelled" if result["cancelled"] else "complete"
+            self.library_thumbnail_status.setText(
+                f"Thumbnail build {state}: {result['generated']} generated, {result['skipped']} skipped. "
+                "Previews are rebuildable catalog data; originals were not changed."
+            )
+            self._refresh_library()
+            self._refresh_dashboard()
+
+        def _thumbnail_failed(self, message: str) -> None:
+            self.library_thumbnail_status.setText(f"Thumbnail build failed safely: {message}")
+
+        def _thumbnail_thread_finished(self) -> None:
+            self.library_thumbnail_button.setEnabled(True)
+            self.library_thumbnail_cancel_button.setEnabled(False)
+            self._thumbnail_worker = None
+            self._thumbnail_thread = None
 
         def _cancel_android_companion_transfer(self) -> None:
             if self._android_transfer_worker is not None:

@@ -53,6 +53,8 @@ The grouping is defined in `ui/spec.py`; the old services are not removed.
   builders for Activity, Collections, Library, Photo Viewer/Inspector,
   Android Backup, People, Places, Categories, Visual Duplicates, Backup
   Profiles, Backup Health, Settings, and Advanced Tools
+- `src/photovault/ui/components.py`: shared `PhotoGrid` presentation component
+  used by the Home and Library photo surfaces
 - `src/photovault/catalog/collections.py`: catalog-derived browse views
 - `src/photovault/catalog/classification.py`: optional local ONNX category
   indexing with resumable checkpoints
@@ -110,6 +112,9 @@ metadata, location provenance, and verified-copy protection status. The grid
 is the primary view; the raw asset table is hidden by default behind an
 Advanced catalog-details toggle. Full-resolution/original loading remains
 deliberately separate from the cached preview path.
+For catalogs imported without previews, Library now provides a cancellable
+background "Build missing thumbnails" action; generated previews are stored
+beside the catalog as rebuildable data, never in the original media tree.
 
 ## 10. Storage and Backup Health
 
