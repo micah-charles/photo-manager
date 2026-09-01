@@ -600,52 +600,9 @@ if QT_AVAILABLE:
 
                 build_people_page(self, layout, self._tables)
             elif label == "Categories":
-                self.categories_result = QLabel(
-                    "Categories are derived from local analysis and open the same photo-first Library view. "
-                    "They are advisory metadata and never change original files."
-                )
-                self.categories_result.setWordWrap(True)
-                layout.addWidget(self.categories_result)
-                analysis_form = QFormLayout()
-                self.category_model_path = QLineEdit()
-                self.category_model_path.setPlaceholderText("Path to local ONNX model (stored outside Git)")
-                self.category_labels_path = QLineEdit()
-                self.category_labels_path.setPlaceholderText("Path to matching labels.txt")
-                self.category_limit = QLineEdit("0")
-                self.category_top_k = QLineEdit("5")
-                analysis_form.addRow("ONNX model", self.category_model_path)
-                analysis_form.addRow("Labels", self.category_labels_path)
-                analysis_form.addRow("Limit (0 = all)", self.category_limit)
-                analysis_form.addRow("Top labels", self.category_top_k)
-                layout.addLayout(analysis_form)
-                analysis_actions = QHBoxLayout()
-                self.category_start_button = QPushButton("Run local category analysis")
-                self.category_start_button.clicked.connect(self._start_category_analysis)
-                analysis_actions.addWidget(self.category_start_button)
-                self.category_cancel_button = QPushButton("Cancel analysis")
-                self.category_cancel_button.setEnabled(False)
-                self.category_cancel_button.clicked.connect(self._cancel_category_analysis)
-                analysis_actions.addWidget(self.category_cancel_button)
-                layout.addLayout(analysis_actions)
-                self.category_progress = QProgressBar()
-                self.category_progress.setRange(0, 100)
-                self.category_progress.setValue(0)
-                self.category_progress.setFormat("Ready")
-                layout.addWidget(self.category_progress)
-                actions = QHBoxLayout()
-                refresh_button = QPushButton("Refresh categories")
-                refresh_button.clicked.connect(self._refresh_categories)
-                actions.addWidget(refresh_button)
-                open_button = QPushButton("Open selected category")
-                open_button.clicked.connect(self._open_selected_category)
-                actions.addWidget(open_button)
-                layout.addLayout(actions)
-                table = QTableWidget()
-                table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-                table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-                table.cellDoubleClicked.connect(self._open_category_row)
-                self._tables[label] = table
-                layout.addWidget(table)
+                from .pages.categories_page import build_categories_page
+
+                build_categories_page(self, layout, self._tables)
             elif label in {"Timeline", "Visual Duplicates", "Places"}:
                 if label == "Timeline":
                     button = QPushButton("Refresh timeline")
