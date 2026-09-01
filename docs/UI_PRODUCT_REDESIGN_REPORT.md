@@ -227,9 +227,10 @@ cached previews after the background thumbnail builder generated the first
 5. Expand the initial deterministic category taxonomy and add richer category
    cards; model indexing is already a cancellable UI worker and raw evidence
    remains hash-invalidated in SQLite.
-6. Add cross-platform Windows volume/Android adapters and packaging checks.
+6. Run the new cross-platform packaging workflow on its Windows runner and
+   retain the uploaded executable as the first real Windows package artifact.
 7. Extend screenshot/regression validation to connected Android and active
-   transfer states, then complete a real Windows packaged-app smoke test.
+   transfer states, then review the Windows artifact on a real Windows host.
 
 The recent-photo and Library ordering now share a metadata-aware fallback: when
 embedded capture time is unavailable, the catalog's recorded file modification
