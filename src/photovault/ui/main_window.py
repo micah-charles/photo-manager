@@ -562,37 +562,9 @@ if QT_AVAILABLE:
 
                 build_disks_page(self, layout, self._tables)
             elif label == "Backup Sets":
-                create_form = QFormLayout()
-                self.backup_set_name = QLineEdit()
-                self.backup_set_copies = QLineEdit("2")
-                self.backup_set_scope = QLineEdit()
-                create_form.addRow("Name", self.backup_set_name)
-                create_form.addRow("Required verified copies", self.backup_set_copies)
-                create_form.addRow("Scope (optional)", self.backup_set_scope)
-                layout.addLayout(create_form)
-                create_button = QPushButton("Create backup set")
-                create_button.clicked.connect(self._create_backup_set)
-                layout.addWidget(create_button)
-                member_form = QFormLayout()
-                self.member_set_id = QLineEdit()
-                self.member_volume_id = QLineEdit()
-                self.member_role = QLineEdit("BACKUP")
-                self.member_relative_root = QLineEdit()
-                member_form.addRow("Set ID", self.member_set_id)
-                member_form.addRow("Volume ID", self.member_volume_id)
-                member_form.addRow("Role (PRIMARY/BACKUP)", self.member_role)
-                member_form.addRow("Relative root", self.member_relative_root)
-                layout.addLayout(member_form)
-                member_button = QPushButton("Add set member")
-                member_button.clicked.connect(self._add_backup_member)
-                layout.addWidget(member_button)
-                self.backup_set_result = QLabel("Backup sets change catalog policy only.")
-                self.backup_set_result.setWordWrap(True)
-                layout.addWidget(self.backup_set_result)
-                table = QTableWidget()
-                table.setSortingEnabled(True)
-                self._tables[label] = table
-                layout.addWidget(table)
+                from .pages.backup_sets_page import build_backup_sets_page
+
+                build_backup_sets_page(self, layout, self._tables)
             elif label == "Operations":
                 from .pages.activity_page import build_activity_page
 
