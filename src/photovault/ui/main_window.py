@@ -1567,7 +1567,9 @@ if QT_AVAILABLE:
             from photovault.catalog.timeline import list_timeline
 
             source_id = self.timeline_source_filter.currentData() if hasattr(self, "timeline_source_filter") else None
-            rows = list_timeline(self.connection, limit=500, source_id=source_id)
+            page_size = int(self.timeline_page_size.currentData()) if hasattr(self, "timeline_page_size") else 500
+            offset = int(getattr(self, "_timeline_offset", 0))
+            rows = list_timeline(self.connection, limit=page_size, source_id=source_id, offset=offset)
             grouped = []
             for row in rows:
                 day = str(row[5] or row[4] or "Undated")[:10]
@@ -1575,7 +1577,27 @@ if QT_AVAILABLE:
             self._fill_table(self._tables["Timeline"], ["Day", "Asset", "Filename", "Path", "Volume", "Captured", "Display time", "Camera", "Model", "W", "H", "Lat", "Lon", "Source", "Thumbnail"], grouped)
             if hasattr(self, "timeline_summary"):
                 days = len({item[0] for item in grouped})
-                self.timeline_summary.setText(f"{len(rows):,} item(s) across {days:,} day group(s). Display time includes the selected source offset; raw capture time is retained.")
+                start = offset + 1 if rows else 0
+                end = offset + len(rows)
+                self.timeline_summary.setText(f"Showing {start:,}–{end:,} item(s) across {days:,} day group(s). Display time includes the selected source offset; raw capture time is retained.")
+            if hasattr(self, "timeline_previous"):
+                self.timeline_previous.setEnabled(offset > 0)
+            if hasattr(self, "timeline_next"):
+                self.timeline_next.setEnabled(len(rows) == page_size)
+
+        def _reset_timeline_page(self) -> None:
+            self._timeline_offset = 0
+            self._refresh_timeline()
+
+        def _timeline_previous_page(self) -> None:
+            page_size = int(self.timeline_page_size.currentData())
+            self._timeline_offset = max(0, int(getattr(self, "_timeline_offset", 0)) - page_size)
+            self._refresh_timeline()
+
+        def _timeline_next_page(self) -> None:
+            page_size = int(self.timeline_page_size.currentData())
+            self._timeline_offset = int(getattr(self, "_timeline_offset", 0)) + page_size
+            self._refresh_timeline()
 
         def _refresh_dashboard(self) -> None:
             from photovault.catalog.dashboard import dashboard_metrics
