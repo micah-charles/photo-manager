@@ -326,7 +326,9 @@ if QT_AVAILABLE:
                        LEFT JOIN media_metadata mm ON mm.asset_id=a.id
                        LEFT JOIN thumbnails t ON t.asset_id=a.id AND t.version='v1-320'
                        WHERE al.missing_since IS NULL AND t.asset_id IS NULL
-                       ORDER BY COALESCE(mm.capture_datetime, al.capture_date, '') DESC, a.id
+                       ORDER BY (COALESCE(mm.capture_datetime, al.capture_date) IS NULL),
+                                COALESCE(mm.capture_datetime, al.capture_date) DESC,
+                                al.relative_path
                        LIMIT ?""", (self.limit,)
                 ).fetchall()
                 total = len(rows)
