@@ -36,8 +36,9 @@ The grouping is defined in `ui/spec.py`; the old services are not removed.
 - `src/photovault/ui/spec.py`: grouped navigation contract
 - `src/photovault/ui/main_window.py`: grouped sidebar, shared theme, global
   state, and navigation coordination
-- `src/photovault/ui/pages/activity_page.py` and `collections_page.py`:
-  dedicated page builders for Activity and Collections
+- `src/photovault/ui/pages/activity_page.py`, `collections_page.py`, and
+  `library_page.py`: dedicated page builders for Activity, Collections, and
+  the photo-first Library
 - `src/photovault/catalog/collections.py`: catalog-derived browse views
 - `src/photovault/catalog/classification.py`: optional local ONNX category
   indexing with resumable checkpoints
@@ -140,8 +141,8 @@ real-Windows validation item.
 ## 14. Remaining known gaps
 
 1. Replace the remaining flat page construction branches with page and
-   reusable component modules; the first dedicated `pages/activity_page.py`
-   module and shared tile components are now in place.
+   reusable component modules; dedicated Activity, Collections, and Library
+   builders plus shared tile components are now in place.
 2. Finish the photo-first Home and richer connected-device Android Backup
    workflow from the supplied mockup; the device card, status, progress, and
    profile flow are now available, while the final card composition remains.
