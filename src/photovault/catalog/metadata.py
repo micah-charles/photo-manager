@@ -62,13 +62,22 @@ def _image_metadata(path: Path) -> MetadataRecord:
         source = "exif" if capture else None
         latitude = longitude = None
         gps = exif.get(34853)
-        if gps:
+        # Some real-world files contain a malformed GPS pointer/value instead
+        # of the expected nested EXIF mapping. Treat that field as unavailable;
+        # one damaged tag must not abort a whole read-only library scan.
+        if hasattr(gps, "items"):
             gps_values = {ExifTags.GPSTAGS.get(key, key): value for key, value in gps.items()} if ExifTags else {}
             latitude = _coordinate(gps_values.get("GPSLatitude"))
             longitude = _coordinate(gps_values.get("GPSLongitude"))
-            if latitude is not None and gps_values.get("GPSLatitudeRef", "N").upper() == "S":
+            latitude_ref = gps_values.get("GPSLatitudeRef", "N")
+            longitude_ref = gps_values.get("GPSLongitudeRef", "E")
+            if isinstance(latitude_ref, bytes):
+                latitude_ref = latitude_ref.decode("ascii", errors="ignore")
+            if isinstance(longitude_ref, bytes):
+                longitude_ref = longitude_ref.decode("ascii", errors="ignore")
+            if latitude is not None and str(latitude_ref).upper() == "S":
                 latitude = -latitude
-            if longitude is not None and gps_values.get("GPSLongitudeRef", "E").upper() == "W":
+            if longitude is not None and str(longitude_ref).upper() == "W":
                 longitude = -longitude
         keywords = values.get("XPKeywords") or values.get("Keywords") or ()
         if isinstance(keywords, bytes):
@@ -125,7 +134,7 @@ def extract_metadata(path: Path) -> MetadataRecord:
             return _image_metadata(path)
         if path.suffix.lower() in {".mov", ".mp4", ".m4v", ".avi"}:
             return _video_metadata(path)
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, AttributeError):
         pass
     return MetadataRecord()
 

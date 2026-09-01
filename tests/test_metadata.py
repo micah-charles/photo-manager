@@ -3,12 +3,14 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 try:
     from PIL import Image
 except ImportError:  # pragma: no cover
     Image = None
 
+from photovault.catalog.metadata import _image_metadata
 from photovault.catalog.scanner import register_volume, scan_volume
 from photovault.catalog.gallery import write_gallery
 from photovault.catalog.timeline import list_timeline
@@ -22,6 +24,28 @@ class FixedProvider:
 
 
 class MetadataTests(unittest.TestCase):
+    def test_malformed_gps_value_does_not_abort_image_metadata(self) -> None:
+        if Image is None:
+            self.skipTest("Pillow is not installed")
+
+        class FakeImage:
+            width = 32
+            height = 24
+
+            def getexif(self):
+                return {34853: 1, 306: "2024:01:02 03:04:05"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        with patch("photovault.catalog.metadata.Image.open", return_value=FakeImage()):
+            record = _image_metadata(Path("malformed-gps.jpg"))
+        self.assertEqual((record.capture_datetime, record.width, record.height), ("2024-01-02T03:04:05", 32, 24))
+        self.assertEqual((record.latitude, record.longitude), (None, None))
+
     def test_exif_dimensions_thumbnail_and_timeline_are_catalogued(self) -> None:
         if Image is None:
             self.skipTest("Pillow is not installed")
