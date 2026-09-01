@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from photovault.ui.spec import NAVIGATION_ITEMS
+from photovault.ui.spec import NAVIGATION_GROUPS, NAVIGATION_ITEMS
 from photovault.database.connection import connect
 from photovault.catalog.scanner import register_volume
 from photovault.platform.base import VolumeIdentity
@@ -22,6 +22,11 @@ class UIFoundationTests(unittest.TestCase):
                 "Catalog Recovery", "Timeline", "Favourites", "Visual Duplicates", "Places",
             ),
         )
+
+    def test_user_navigation_groups_preserve_every_existing_page(self) -> None:
+        grouped_pages = tuple(page for _group, pages in NAVIGATION_GROUPS for page in pages)
+        self.assertEqual(set(grouped_pages), set(NAVIGATION_ITEMS))
+        self.assertEqual(len(grouped_pages), len(set(grouped_pages)))
 
     def test_gui_module_has_clear_optional_dependency_behavior(self) -> None:
         from photovault.ui import main_window
