@@ -766,6 +766,15 @@ if QT_AVAILABLE:
                 create_button.clicked.connect(self._create_user_collection)
                 create_actions.addWidget(create_button)
                 layout.addLayout(create_actions)
+                layout.addWidget(QLabel("Browse collections"))
+                self.collections_grid = QListWidget()
+                self.collections_grid.setObjectName("CollectionGrid")
+                self.collections_grid.setViewMode(QListWidget.ViewMode.IconMode)
+                self.collections_grid.setResizeMode(QListWidget.ResizeMode.Adjust)
+                self.collections_grid.setIconSize(QSize(150, 100))
+                self.collections_grid.setGridSize(QSize(190, 140))
+                self.collections_grid.itemDoubleClicked.connect(self._open_collection_tile)
+                layout.addWidget(self.collections_grid)
                 self.collections_album_grid = QListWidget()
                 self.collections_album_grid.setObjectName("AlbumGrid")
                 self.collections_album_grid.setViewMode(QListWidget.ViewMode.IconMode)
@@ -1898,6 +1907,16 @@ if QT_AVAILABLE:
                     [(item.id, item.kind, item.title, item.item_count, item.detail) for item in collections],
                 )
                 self.collections_result.setText(f"{len(collections)} collection(s), derived from the catalog without reading or changing originals.")
+                if hasattr(self, "collections_grid"):
+                    self.collections_grid.clear()
+                    smart_collections = [item for item in collections if item.kind != "ALBUM"]
+                    for collection in smart_collections:
+                        tile = QListWidgetItem(f"{collection.title}\n{collection.item_count:,} items")
+                        tile.setToolTip(f"{collection.title}\n{collection.detail}")
+                        tile.setData(Qt.ItemDataRole.UserRole, collection.id)
+                        self.collections_grid.addItem(tile)
+                    if not smart_collections:
+                        self.collections_grid.addItem("No smart collections yet")
                 if hasattr(self, "collections_album_grid"):
                     self.collections_album_grid.clear()
                     albums = [item for item in collections if item.kind == "ALBUM"]
@@ -1933,6 +1952,12 @@ if QT_AVAILABLE:
 
         def _open_album_tile(self, item: QListWidgetItem) -> None:
             self._open_collection_in_library(str(item.data(Qt.ItemDataRole.UserRole)), self.collections_result)
+
+        def _open_collection_tile(self, item: QListWidgetItem) -> None:
+            collection_id = item.data(Qt.ItemDataRole.UserRole)
+            if not collection_id:
+                return
+            self._open_collection_in_library(str(collection_id), self.collections_result)
 
         def _add_selected_to_collection(self) -> None:
             selected = self.library_grid.selectedItems()

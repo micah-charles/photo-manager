@@ -56,8 +56,9 @@ live recent-photo thumbnail strip, Library
   thumbnail browsing, dedicated Photo Viewer/inspector, Collections, People, Places,
 Favourites (with a Library smart-view handoff), Visual Duplicates, Android Devices, Backup Sets, Disks, Operations,
   Timeline, Categories, Backup Profiles, Backup Health, and the advanced storage tools. Collections and
-  categories can be opened by double-clicking a row and route to the normal
-  Library grid. Users can create albums and add selected Library items without
+  collections now also have a visible tile-grid entry point; tiles, album tiles,
+  and table rows all route through the same Library opener. Categories can be
+  opened by double-clicking a row and route to the normal Library grid. Users can create albums and add selected Library items without
   copying or moving originals.
   Settings and Advanced Tools now provide progressive-disclosure landing pages
   for the existing technical workflows.
@@ -137,8 +138,8 @@ real-Windows validation item.
    workflow from the supplied mockup; the basic Viewer/inspector flow is now
    available.
 3. Replace the remaining smart-collection table with richer visual cards;
-   user-created albums now have a live cover mosaic while preserving their
-   catalog-only semantics.
+   the first live tile-grid entry point is now present, and user-created albums
+   have a live cover mosaic while preserving their catalog-only semantics.
 4. Add a readable Activity feed and richer drive cards; Backup Health summary
    is now available from the grouped Storage navigation.
 5. Normalize model labels into PhotoVault categories and move AI indexing into
