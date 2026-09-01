@@ -43,6 +43,7 @@ class UIFoundationTests(unittest.TestCase):
             visible_labels = [window.navigation.item(row).text() for row in window._navigation_page_rows]
             self.assertNotIn("Scan", visible_labels)
             self.assertNotIn("Redundancy Audit", visible_labels)
+            self.assertTrue(all(not window.navigation.item(row).icon().isNull() for row in window._navigation_page_rows))
             window._select_page("Scan")
             self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Scan"))
             window.close()
