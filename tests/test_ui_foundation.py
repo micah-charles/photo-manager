@@ -35,7 +35,7 @@ class UIFoundationTests(unittest.TestCase):
         self.assertEqual(
             NAVIGATION_ITEMS,
             (
-                "Dashboard", "Library", "Review", "Photo Viewer", "Collections", "People", "Disks", "Android Devices", "Backup Profiles", "Backup Sets", "Scan", "Redundancy Audit",
+                "Dashboard", "Library", "Review", "Events", "Tags", "Photo Viewer", "Collections", "People", "Disks", "Android Devices", "Backup Profiles", "Backup Sets", "Scan", "Redundancy Audit",
                 "Reconciliation", "Folder Safety Audit", "Copy Plans", "Quarantine", "Operations",
                 "Catalog Recovery", "Timeline", "Favourites", "Visual Duplicates", "Places", "Categories", "Backup Health", "Advanced Tools", "Settings",
             ),
@@ -191,11 +191,13 @@ class UIFoundationTests(unittest.TestCase):
             connection = connect(Path(temp) / "catalog.db")
             app = QApplication.instance() or QApplication([])
             window = main_window.MainWindow(connection)
-            for page in ("Dashboard", "Library", "Review", "Photo Viewer", "Collections", "People", "Places", "Categories", "Visual Duplicates", "Android Devices", "Backup Profiles", "Backup Health", "Operations", "Settings", "Advanced Tools"):
+            for page in ("Dashboard", "Library", "Review", "Events", "Tags", "Photo Viewer", "Collections", "People", "Places", "Categories", "Visual Duplicates", "Android Devices", "Backup Profiles", "Backup Health", "Operations", "Settings", "Advanced Tools"):
                 window._select_page(page)
                 self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index(page))
             self.assertIn("No photos indexed yet", [window.dashboard_recent_grid.item(i).text() for i in range(window.dashboard_recent_grid.count())])
             self.assertIn("Choose a queue", window.review_result.text())
+            self.assertIn("event(s)", window.events_result.text())
+            self.assertIn("tag(s)", window.tags_result.text())
             self.assertFalse(window._tables["Dashboard"].isVisible())
             self.assertIn("No Android backup profiles yet", window.backup_profiles_result.text())
             self.assertIn("No backup profiles", window.backup_health_result.text())

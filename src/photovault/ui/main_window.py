@@ -473,6 +473,8 @@ if QT_AVAILABLE:
                 "Dashboard": QStyle.StandardPixmap.SP_DirHomeIcon,
                 "Library": QStyle.StandardPixmap.SP_FileDialogDetailedView,
                 "Review": QStyle.StandardPixmap.SP_DialogApplyButton,
+                "Events": QStyle.StandardPixmap.SP_FileDialogListView,
+                "Tags": QStyle.StandardPixmap.SP_FileDialogListView,
                 "Collections": QStyle.StandardPixmap.SP_DirIcon,
                 "Favourites": QStyle.StandardPixmap.SP_DialogYesButton,
                 "People": QStyle.StandardPixmap.SP_ComputerIcon,
@@ -591,6 +593,14 @@ if QT_AVAILABLE:
                 from .pages.review_page import build_review_page
 
                 build_review_page(self, layout)
+            elif label == "Events":
+                from .pages.events_page import build_events_page
+
+                build_events_page(self, layout, self._tables)
+            elif label == "Tags":
+                from .pages.tags_page import build_tags_page
+
+                build_tags_page(self, layout, self._tables)
             elif label == "Collections":
                 from .pages.collections_page import build_collections_page
 
@@ -1731,6 +1741,75 @@ if QT_AVAILABLE:
             self.library_include_rejected.setChecked(False)
             self._refresh_library()
 
+        def _create_event(self) -> None:
+            try:
+                from photovault.catalog.organization import create_event
+
+                create_event(
+                    self.connection,
+                    self.event_name.text(),
+                    start_datetime=self.event_start.text().strip() or None,
+                    end_datetime=self.event_end.text().strip() or None,
+                )
+                self.event_name.clear()
+                self.event_start.clear()
+                self.event_end.clear()
+                self.events_result.setText("Event created. Add media to it from Library selection in a later step.")
+                self.refresh()
+            except Exception as exc:
+                self.events_result.setText(f"Event creation failed: {type(exc).__name__}: {exc}")
+
+        def _refresh_events(self) -> None:
+            from photovault.catalog.organization import list_events
+
+            events = list_events(self.connection)
+            self._fill_table(
+                self._tables["Events"],
+                ["Name", "Start", "End", "Type", "Items", "Suggested"],
+                [(event.name, event.start_datetime or "—", event.end_datetime or "—", event.event_type, event.item_count, "Yes" if event.is_suggested else "No") for event in events],
+            )
+            for row, event in enumerate(events):
+                self._tables["Events"].item(row, 0).setData(Qt.ItemDataRole.UserRole, event.id)
+            self.events_result.setText(f"{len(events)} event(s). Double-click an event to filter Library.")
+
+        def _open_event_row(self, row: int, _column: int) -> None:
+            event_id = self._tables["Events"].item(row, 0).data(Qt.ItemDataRole.UserRole)
+            if event_id:
+                self._select_page("Library")
+                index = self.library_event_filter.findData(event_id)
+                if index >= 0:
+                    self.library_event_filter.setCurrentIndex(index)
+                self._refresh_library()
+
+        def _create_tag(self) -> None:
+            try:
+                from photovault.catalog.organization import create_tag
+
+                create_tag(self.connection, self.tag_name.text())
+                self.tag_name.clear()
+                self.tags_result.setText("Tag created. Select media in Library to assign it.")
+                self.refresh()
+            except Exception as exc:
+                self.tags_result.setText(f"Tag creation failed: {type(exc).__name__}: {exc}")
+
+        def _refresh_tags(self) -> None:
+            from photovault.catalog.organization import list_tags
+
+            tags = list_tags(self.connection)
+            self._fill_table(self._tables["Tags"], ["Tag", "Items"], [(tag.name, tag.item_count) for tag in tags])
+            for row, tag in enumerate(tags):
+                self._tables["Tags"].item(row, 0).setData(Qt.ItemDataRole.UserRole, tag.id)
+            self.tags_result.setText(f"{len(tags)} tag(s). Double-click a tag to filter Library.")
+
+        def _open_tag_row(self, row: int, _column: int) -> None:
+            tag_id = self._tables["Tags"].item(row, 0).data(Qt.ItemDataRole.UserRole)
+            if tag_id:
+                self._select_page("Library")
+                index = self.library_tag_filter.findData(tag_id)
+                if index >= 0:
+                    self.library_tag_filter.setCurrentIndex(index)
+                self._refresh_library()
+
         def _open_review_queue(self, status: str) -> None:
             """Open a review queue in Library without changing any media bytes."""
             self._select_page("Library")
@@ -2500,6 +2579,10 @@ if QT_AVAILABLE:
             if "Backup Sets" in self._tables:
                 rows = self.connection.execute("SELECT id, name, required_copies, scope, updated_at FROM backup_sets ORDER BY name").fetchall()
                 self._fill_table(self._tables["Backup Sets"], ["ID", "Name", "Required copies", "Scope", "Updated"], [tuple(row) for row in rows])
+            if "Events" in self._tables:
+                self._refresh_events()
+            if "Tags" in self._tables:
+                self._refresh_tags()
             if "Operations" in self._tables:
                 rows = self.connection.execute("SELECT id, operation_type, status, dry_run, created_at, completed_at FROM operations ORDER BY created_at DESC").fetchall()
                 labels = {
