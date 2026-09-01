@@ -120,7 +120,10 @@ The PySide6 UI foundation suite and full Python test suite pass in the
 external `.venv`. The optional UI suite runs when PySide6 is present; headless
 CI environments continue to skip those tests cleanly. The current working
 tree intentionally excludes the external model, pip cache, and virtual
-environment from source control.
+environment from source control. A local PyInstaller macOS build was also
+completed successfully with an arm64 `dist/PhotoVault.app`; its bundled
+executable passed the `--help` smoke test. Windows packaging remains a CI or
+real-Windows validation item.
 
 ## 14. Remaining known gaps
 
@@ -137,7 +140,8 @@ environment from source control.
 5. Normalize model labels into PhotoVault categories and move AI indexing into
    a cancellable UI worker.
 6. Add cross-platform Windows volume/Android adapters and packaging checks.
-7. Add final screenshot/regression validation for the redesigned shell.
+7. Add final screenshot/regression validation for the redesigned shell and
+   complete a real Windows packaged-app smoke test.
 
 ## 15. Recommended next sprint
 
