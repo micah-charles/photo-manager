@@ -143,8 +143,9 @@ real-Windows validation item.
 3. Replace the remaining smart-collection table with richer visual cards;
    the first live tile-grid entry point is now present, and user-created albums
    have a live cover mosaic while preserving their catalog-only semantics.
-4. Add a readable Activity feed and richer drive cards; Backup Health summary
-   is now available from the grouped Storage navigation.
+4. Activity now has a readable recent-operation feed alongside the detailed
+   audit table; richer drive cards remain. Backup Health summary is now
+   available from the grouped Storage navigation.
 5. Normalize model labels into PhotoVault categories and move AI indexing into
    a cancellable UI worker.
 6. Add cross-platform Windows volume/Android adapters and packaging checks.

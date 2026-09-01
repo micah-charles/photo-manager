@@ -1033,6 +1033,11 @@ if QT_AVAILABLE:
                 self.undo_result = QLabel("Undo re-hashes the quarantined file and never overwrites a conflicting original.")
                 self.undo_result.setWordWrap(True)
                 layout.addWidget(self.undo_result)
+                layout.addWidget(QLabel("Recent activity"))
+                self.activity_feed = QListWidget()
+                self.activity_feed.setObjectName("ActivityFeed")
+                self.activity_feed.setMaximumHeight(220)
+                layout.addWidget(self.activity_feed)
                 table = QTableWidget()
                 table.setSortingEnabled(True)
                 self._tables[label] = table
@@ -2566,6 +2571,17 @@ if QT_AVAILABLE:
                     ["Activity", "Status", "Started", "Completed", "Details"],
                     [(labels.get(row[1], row[1].title()), row[2].title(), row[4], row[5] or "—", "Dry run" if row[3] else "") for row in rows],
                 )
+                if hasattr(self, "activity_feed"):
+                    self.activity_feed.clear()
+                    for row in rows[:12]:
+                        label = labels.get(row[1], row[1].title())
+                        state = row[2].title()
+                        detail = "Dry run" if row[3] else "Verified catalog operation"
+                        item = QListWidgetItem(f"{label} · {state}\n{row[4]}  {detail}")
+                        item.setToolTip(f"Operation {row[0]}\nStarted: {row[4]}\nCompleted: {row[5] or 'In progress'}")
+                        self.activity_feed.addItem(item)
+                    if not rows:
+                        self.activity_feed.addItem("No activity recorded yet")
                 if hasattr(self, "activity_summary"):
                     self.activity_summary.setText(
                         f"{len(rows):,} recorded operation(s). Completed work remains auditable; technical operation IDs are available in Advanced details."
