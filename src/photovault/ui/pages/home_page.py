@@ -42,6 +42,15 @@ def build_home_page(owner: object, layout: object, tables: dict[str, QTableWidge
         quick_actions.addWidget(action)
     layout.addLayout(quick_actions)
     layout.addWidget(QLabel("Recent photos"))
+    preview_actions = QHBoxLayout()
+    owner.dashboard_thumbnail_button = QPushButton("Build missing previews")
+    owner.dashboard_thumbnail_button.setToolTip("Create rebuildable previews beside the catalog; originals are read-only.")
+    owner.dashboard_thumbnail_button.clicked.connect(owner._start_thumbnail_generation)
+    preview_actions.addWidget(owner.dashboard_thumbnail_button)
+    owner.dashboard_thumbnail_status = QLabel("Preview cache status: use Build missing previews if cards have no images.")
+    owner.dashboard_thumbnail_status.setWordWrap(True)
+    preview_actions.addWidget(owner.dashboard_thumbnail_status, 1)
+    layout.addLayout(preview_actions)
     owner.dashboard_recent_grid = PhotoGrid(
         object_name="RecentPhotoGrid", icon_size=(120, 90), grid_size=(150, 125), multi_select=False,
     )

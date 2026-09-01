@@ -21,8 +21,8 @@ class LibraryQuery:
 
 
 _SORTS = {
-    "captured_desc": "captured IS NULL, captured DESC, al.relative_path",
-    "captured_asc": "captured IS NULL, captured ASC, al.relative_path",
+    "captured_desc": "display_captured IS NULL, display_captured DESC, al.relative_path",
+    "captured_asc": "display_captured IS NULL, display_captured ASC, al.relative_path",
     "name_asc": "lower(al.filename), al.relative_path",
     "size_desc": "al.size_bytes DESC, al.relative_path",
 }
@@ -67,6 +67,8 @@ def list_library_items(connection: sqlite3.Connection, query: LibraryQuery = Lib
                al.volume_id, v.display_name AS volume_name, v.status AS volume_status,
                v.current_mount_path,
                COALESCE(mm.capture_datetime, al.capture_date) AS captured,
+               COALESCE(mm.capture_datetime, al.capture_date,
+                        datetime(al.modified_ns / 1000000000, 'unixepoch')) AS display_captured,
                mm.camera_make, mm.camera_model, mm.width, mm.height,
                gm.latitude, gm.longitude, mm.date_source,
                th.path AS thumbnail_path,

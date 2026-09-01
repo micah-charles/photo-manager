@@ -326,8 +326,10 @@ if QT_AVAILABLE:
                        LEFT JOIN media_metadata mm ON mm.asset_id=a.id
                        LEFT JOIN thumbnails t ON t.asset_id=a.id AND t.version='v1-320'
                        WHERE al.missing_since IS NULL AND t.asset_id IS NULL
-                       ORDER BY (COALESCE(mm.capture_datetime, al.capture_date) IS NULL),
-                                COALESCE(mm.capture_datetime, al.capture_date) DESC,
+                       ORDER BY (COALESCE(mm.capture_datetime, al.capture_date,
+                                          datetime(al.modified_ns / 1000000000, 'unixepoch')) IS NULL),
+                                COALESCE(mm.capture_datetime, al.capture_date,
+                                         datetime(al.modified_ns / 1000000000, 'unixepoch')) DESC,
                                 al.relative_path
                        LIMIT ?""", (self.limit,)
                 ).fetchall()
@@ -856,13 +858,21 @@ if QT_AVAILABLE:
         def _start_thumbnail_generation(self) -> None:
             if self._catalog_path is None:
                 self.library_thumbnail_status.setText("Thumbnail generation requires a file-backed catalog.")
+                if hasattr(self, "dashboard_thumbnail_status"):
+                    self.dashboard_thumbnail_status.setText("Preview generation requires a file-backed catalog.")
                 return
             if self._thumbnail_thread is not None and self._thumbnail_thread.isRunning():
                 self.library_thumbnail_status.setText("Thumbnail generation is already running in the background.")
+                if hasattr(self, "dashboard_thumbnail_status"):
+                    self.dashboard_thumbnail_status.setText("Preview generation is already running in the background.")
                 return
             self.library_thumbnail_button.setEnabled(False)
+            if hasattr(self, "dashboard_thumbnail_button"):
+                self.dashboard_thumbnail_button.setEnabled(False)
             self.library_thumbnail_cancel_button.setEnabled(True)
             self.library_thumbnail_status.setText("Building missing thumbnails in the background; originals remain read-only…")
+            if hasattr(self, "dashboard_thumbnail_status"):
+                self.dashboard_thumbnail_status.setText("Building missing previews in the background; originals remain read-only…")
             self._thumbnail_thread = QThread(self)
             self._thumbnail_worker = ThumbnailWorker(self._catalog_path, limit=200)
             self._thumbnail_worker.moveToThread(self._thumbnail_thread)
@@ -881,6 +891,8 @@ if QT_AVAILABLE:
         def _cancel_thumbnail_generation(self) -> None:
             if self._thumbnail_worker is not None:
                 self.library_thumbnail_status.setText("Stopping thumbnail build safely after the current preview…")
+                if hasattr(self, "dashboard_thumbnail_status"):
+                    self.dashboard_thumbnail_status.setText("Stopping preview build safely after the current preview…")
                 self._thumbnail_worker.request_cancel()
 
         def _thumbnail_progress(self, event: object) -> None:
@@ -888,6 +900,11 @@ if QT_AVAILABLE:
                 f"Building thumbnails… {event['processed']}/{event['total']} processed; "
                 f"{event['generated']} generated, {event['skipped']} skipped."
             )
+            if hasattr(self, "dashboard_thumbnail_status"):
+                self.dashboard_thumbnail_status.setText(
+                    f"Building previews… {event['processed']}/{event['total']} processed; "
+                    f"{event['generated']} generated, {event['skipped']} skipped."
+                )
 
         def _thumbnail_completed(self, result: object) -> None:
             state = "cancelled" if result["cancelled"] else "complete"
@@ -895,14 +912,23 @@ if QT_AVAILABLE:
                 f"Thumbnail build {state}: {result['generated']} generated, {result['skipped']} skipped. "
                 "Previews are rebuildable catalog data; originals were not changed."
             )
+            if hasattr(self, "dashboard_thumbnail_status"):
+                self.dashboard_thumbnail_status.setText(
+                    f"Preview build {state}: {result['generated']} generated, {result['skipped']} skipped. "
+                    "Originals were not changed."
+                )
             self._refresh_library()
             self._refresh_dashboard()
 
         def _thumbnail_failed(self, message: str) -> None:
             self.library_thumbnail_status.setText(f"Thumbnail build failed safely: {message}")
+            if hasattr(self, "dashboard_thumbnail_status"):
+                self.dashboard_thumbnail_status.setText(f"Preview build failed safely: {message}")
 
         def _thumbnail_thread_finished(self) -> None:
             self.library_thumbnail_button.setEnabled(True)
+            if hasattr(self, "dashboard_thumbnail_button"):
+                self.dashboard_thumbnail_button.setEnabled(True)
             self.library_thumbnail_cancel_button.setEnabled(False)
             self._thumbnail_worker = None
             self._thumbnail_thread = None
@@ -1468,7 +1494,8 @@ if QT_AVAILABLE:
                        LEFT JOIN media_metadata mm ON mm.asset_id=al.asset_id
                        LEFT JOIN thumbnails th ON th.asset_id=al.asset_id AND th.version='v1-320'
                        WHERE al.missing_since IS NULL
-                       ORDER BY COALESCE(mm.capture_datetime, al.capture_date, al.modified_ns) DESC
+                       ORDER BY COALESCE(mm.capture_datetime, al.capture_date,
+                                         datetime(al.modified_ns / 1000000000, 'unixepoch')) DESC
                        LIMIT 12"""
                 ).fetchall()
                 for row in recent:

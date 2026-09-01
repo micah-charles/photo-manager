@@ -86,6 +86,9 @@ Favourites (with a Library smart-view handoff), Visual Duplicates, Android Devic
   copying or moving originals.
   Settings and Advanced Tools now provide progressive-disclosure landing pages
   for the existing technical workflows.
+  Collection and album tiles explicitly handle mouse double-click as well as
+  keyboard activation, including on macOS Qt styles that do not consistently
+  emit `itemActivated` for a mouse double-click.
 
 ## 7. Deviations from the mockup
 
@@ -199,6 +202,13 @@ cached previews after the background thumbnail builder generated the first
 6. Add cross-platform Windows volume/Android adapters and packaging checks.
 7. Extend screenshot/regression validation to connected Android and active
    transfer states, then complete a real Windows packaged-app smoke test.
+
+The recent-photo and Library ordering now share a metadata-aware fallback: when
+embedded capture time is unavailable, the catalog's recorded file modification
+time is used for display ordering only. It is not substituted into date filters
+or written back to media metadata. Home also exposes the same rebuildable
+preview action as Library so a catalog with no thumbnail cache has a clear
+recovery path.
 
 ## 16. Cross-platform packaging note
 
