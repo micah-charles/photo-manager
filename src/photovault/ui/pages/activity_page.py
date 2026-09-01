@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFormLayout,
     QLabel,
     QListWidget,
@@ -40,5 +41,9 @@ def build_activity_page(owner: object, layout: object, tables: dict[str, QTableW
 
     table = QTableWidget()
     table.setSortingEnabled(True)
+    table.setVisible(False)
     tables["Operations"] = table
     layout.addWidget(table)
+    owner.activity_technical_toggle = QCheckBox("Show advanced operation journal")
+    owner.activity_technical_toggle.toggled.connect(owner._set_activity_technical_visible)
+    layout.addWidget(owner.activity_technical_toggle)

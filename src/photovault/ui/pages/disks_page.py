@@ -1,7 +1,7 @@
 """Drives page construction."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFormLayout, QLabel, QLineEdit, QListWidget, QPushButton, QTableWidget
+from PySide6.QtWidgets import QCheckBox, QFormLayout, QLabel, QLineEdit, QListWidget, QPushButton, QTableWidget
 
 from ..components import configure_tile_grid
 
@@ -36,5 +36,9 @@ def build_disks_page(owner: object, layout: object, tables: dict[str, QTableWidg
 
     table = QTableWidget()
     table.setSortingEnabled(True)
+    table.setVisible(False)
     tables["Disks"] = table
     layout.addWidget(table)
+    owner.disks_technical_toggle = QCheckBox("Show advanced drive details")
+    owner.disks_technical_toggle.toggled.connect(owner._set_disks_technical_visible)
+    layout.addWidget(owner.disks_technical_toggle)

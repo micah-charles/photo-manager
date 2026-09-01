@@ -1,7 +1,7 @@
 """Backup Health page construction."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QLabel, QPushButton, QTableWidget
+from PySide6.QtWidgets import QCheckBox, QLabel, QPushButton, QTableWidget
 
 
 def build_backup_health_page(owner: object, layout: object, tables: dict[str, QTableWidget]) -> None:
@@ -14,4 +14,8 @@ def build_backup_health_page(owner: object, layout: object, tables: dict[str, QT
     layout.addWidget(button)
     table = QTableWidget()
     tables["Backup Health"] = table
+    table.setVisible(False)
     layout.addWidget(table)
+    owner.backup_health_technical_toggle = QCheckBox("Show detailed backup-set audit")
+    owner.backup_health_technical_toggle.toggled.connect(owner._set_backup_health_technical_visible)
+    layout.addWidget(owner.backup_health_technical_toggle)

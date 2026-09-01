@@ -2011,6 +2011,18 @@ if QT_AVAILABLE:
         def _set_dashboard_technical_visible(self, visible: bool) -> None:
             self._tables["Dashboard"].setVisible(visible)
 
+        def _set_collections_technical_visible(self, visible: bool) -> None:
+            self._tables["Collections"].setVisible(visible)
+
+        def _set_backup_health_technical_visible(self, visible: bool) -> None:
+            self._tables["Backup Health"].setVisible(visible)
+
+        def _set_disks_technical_visible(self, visible: bool) -> None:
+            self._tables["Disks"].setVisible(visible)
+
+        def _set_activity_technical_visible(self, visible: bool) -> None:
+            self._tables["Operations"].setVisible(visible)
+
         def _open_library_item(self, item: QListWidgetItem) -> None:
             """Double-click opens the selected item in the dedicated viewer."""
             details = item.data(Qt.ItemDataRole.UserRole)

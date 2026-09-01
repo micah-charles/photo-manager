@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -60,3 +61,7 @@ def build_collections_page(owner: object, layout: object, tables: dict[str, QTab
     table.cellDoubleClicked.connect(owner._open_collection_row)
     tables["Collections"] = table
     layout.addWidget(table)
+    owner.collections_technical_toggle = QCheckBox("Show advanced collection details")
+    owner.collections_technical_toggle.toggled.connect(owner._set_collections_technical_visible)
+    table.setVisible(False)
+    layout.addWidget(owner.collections_technical_toggle)
