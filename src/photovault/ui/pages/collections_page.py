@@ -39,7 +39,7 @@ def build_collections_page(owner: object, layout: object, tables: dict[str, QTab
     create_actions.addWidget(create_button)
     layout.addLayout(create_actions)
 
-    layout.addWidget(QLabel("Browse collections"))
+    layout.addWidget(QLabel("Browse collections · single-click to select, double-click or press Enter to open"))
     owner.collections_grid = QListWidget()
     configure_tile_grid(owner.collections_grid, "CollectionGrid")
     # Keep the first click as selection. Opening on itemClicked makes a
@@ -51,7 +51,7 @@ def build_collections_page(owner: object, layout: object, tables: dict[str, QTab
     owner.collections_grid.itemActivated.connect(owner._open_collection_tile)
     layout.addWidget(owner.collections_grid)
 
-    layout.addWidget(QLabel("Your albums"))
+    layout.addWidget(QLabel("Your albums · single-click to select, double-click or press Enter to open"))
     owner.collections_album_grid = QListWidget()
     configure_tile_grid(owner.collections_album_grid, "AlbumGrid", icon_size=(150, 110), grid_size=(190, 155))
     owner.collections_album_grid.itemDoubleClicked.connect(owner._open_album_tile)
