@@ -3,6 +3,7 @@ from __future__ import annotations
 NAVIGATION_ITEMS: tuple[str, ...] = (
     "Dashboard",
     "Library",
+    "Collections",
     "Disks",
     "Android Devices",
     "Backup Sets",

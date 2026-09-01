@@ -45,6 +45,13 @@ def parser() -> argparse.ArgumentParser:
     library.add_argument("--sort", choices=["captured_desc", "captured_asc", "name_asc", "size_desc"], default="captured_desc")
     library.add_argument("--limit", type=int, default=200)
     library.add_argument("--offset", type=int, default=0)
+    collections = sub.add_parser("collections", help="list or browse safe catalog-derived collections")
+    collections_sub = collections.add_subparsers(dest="collections_command", required=True)
+    collections_sub.add_parser("list", help="list date, folder, favourites, place and visual collections")
+    collection_items = collections_sub.add_parser("items", help="list a collection through the normal catalog library")
+    collection_items.add_argument("collection_id")
+    collection_items.add_argument("--limit", type=int, default=200)
+    collection_items.add_argument("--offset", type=int, default=0)
     gallery = sub.add_parser("gallery", help="export a local static gallery without copying originals")
     gallery.add_argument("output", type=Path)
     gallery.add_argument("--volume-id")
@@ -413,6 +420,17 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
         print(f"PAGE\t{args.offset}\t{len(rows)}\t{count_library_items(connection, query)}")
         for row in rows:
             print("\t".join("" if value is None else str(value) for value in row))
+    elif args.command == "collections":
+        from photovault.catalog.collections import count_collection_items, list_collection_items, list_collections
+
+        if args.collections_command == "list":
+            for collection in list_collections(connection):
+                print(f"COLLECTION\t{collection.id}\t{collection.kind}\t{collection.title}\t{collection.item_count}\t{collection.detail}")
+        else:
+            rows = list_collection_items(connection, args.collection_id, limit=args.limit, offset=args.offset)
+            print(f"PAGE\t{args.offset}\t{len(rows)}\t{count_collection_items(connection, args.collection_id)}")
+            for row in rows:
+                print("\t".join("" if value is None else str(value) for value in row))
     elif args.command == "gallery":
         from photovault.catalog.gallery import write_gallery
 

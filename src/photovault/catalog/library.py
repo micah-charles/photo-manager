@@ -13,6 +13,8 @@ class LibraryQuery:
     favourite_only: bool = False
     captured_from: str = ""
     captured_to: str = ""
+    captured_month: str = ""
+    asset_ids: tuple[str, ...] = ()
     sort: str = "captured_desc"
     limit: int = 200
     offset: int = 0
@@ -54,6 +56,12 @@ def list_library_items(connection: sqlite3.Connection, query: LibraryQuery = Lib
     if query.captured_to:
         where.append("COALESCE(mm.capture_datetime, al.capture_date) <= ?")
         params.append(query.captured_to)
+    if query.captured_month:
+        where.append("substr(COALESCE(mm.capture_datetime, al.capture_date), 1, 7) = ?")
+        params.append(query.captured_month)
+    if query.asset_ids:
+        where.append("al.asset_id IN (" + ",".join("?" for _ in query.asset_ids) + ")")
+        params.extend(query.asset_ids)
     sql = f"""
         SELECT al.asset_id, a.media_type, al.filename, al.relative_path, al.size_bytes,
                al.volume_id, v.display_name AS volume_name, v.status AS volume_status,
@@ -80,7 +88,8 @@ def count_library_items(connection: sqlite3.Connection, query: LibraryQuery = Li
     unbounded = LibraryQuery(
         search=query.search, folder_prefix=query.folder_prefix, media_type=query.media_type,
         favourite_only=query.favourite_only, captured_from=query.captured_from,
-        captured_to=query.captured_to, sort=query.sort, limit=1, offset=0,
+        captured_to=query.captured_to, captured_month=query.captured_month,
+        asset_ids=query.asset_ids, sort=query.sort, limit=1, offset=0,
     )
     # Querying the filtered IDs via a subquery keeps this count in lockstep with
     # list_library_items without scanning raw folders.
@@ -104,6 +113,12 @@ def count_library_items(connection: sqlite3.Connection, query: LibraryQuery = Li
     if unbounded.captured_to:
         where.append("COALESCE(mm.capture_datetime, al.capture_date) <= ?")
         params.append(unbounded.captured_to)
+    if unbounded.captured_month:
+        where.append("substr(COALESCE(mm.capture_datetime, al.capture_date), 1, 7) = ?")
+        params.append(unbounded.captured_month)
+    if unbounded.asset_ids:
+        where.append("al.asset_id IN (" + ",".join("?" for _ in unbounded.asset_ids) + ")")
+        params.extend(unbounded.asset_ids)
     return int(connection.execute(
         f"""SELECT COUNT(*) FROM asset_locations al JOIN assets a ON a.id=al.asset_id
             LEFT JOIN media_metadata mm ON mm.asset_id=al.asset_id

@@ -17,7 +17,7 @@ class UIFoundationTests(unittest.TestCase):
         self.assertEqual(
             NAVIGATION_ITEMS,
             (
-                "Dashboard", "Library", "Disks", "Android Devices", "Backup Sets", "Scan", "Redundancy Audit",
+                "Dashboard", "Library", "Collections", "Disks", "Android Devices", "Backup Sets", "Scan", "Redundancy Audit",
                 "Reconciliation", "Folder Safety Audit", "Copy Plans", "Quarantine", "Operations",
                 "Catalog Recovery", "Timeline", "Favourites", "Visual Duplicates", "Places",
             ),

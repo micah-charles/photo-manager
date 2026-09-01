@@ -342,6 +342,7 @@ if QT_AVAILABLE:
             self._operation_kind: str | None = None
             self._copy_plan = None
             self._quarantine_plan = None
+            self._library_collection_id: str | None = None
 
             shell = QWidget()
             shell_layout = QHBoxLayout(shell)
@@ -549,9 +550,15 @@ if QT_AVAILABLE:
                 form.addRow("Filter", self.library_favourites_only)
                 form.addRow("Page size", self.library_limit)
                 layout.addLayout(form)
+                self.library_collection_result = QLabel("All catalogued media")
+                self.library_collection_result.setWordWrap(True)
+                layout.addWidget(self.library_collection_result)
                 button = QPushButton("Refresh catalog library")
                 button.clicked.connect(self._refresh_library)
                 layout.addWidget(button)
+                clear_collection_button = QPushButton("Clear collection filter")
+                clear_collection_button.clicked.connect(self._clear_library_collection)
+                layout.addWidget(clear_collection_button)
                 favourite_button = QPushButton("Toggle favourite for selected item(s)")
                 favourite_button.clicked.connect(self._toggle_selected_library_favourites)
                 layout.addWidget(favourite_button)
@@ -580,6 +587,23 @@ if QT_AVAILABLE:
                 layout.addLayout(browser_layout)
                 table = QTableWidget()
                 table.setSortingEnabled(True)
+                self._tables[label] = table
+                layout.addWidget(table)
+            elif label == "Collections":
+                self.collections_result = QLabel(
+                    "Catalog-derived browse views: date, folders, favourites, embedded-GPS places, and advisory visual groups. No media files are changed."
+                )
+                self.collections_result.setWordWrap(True)
+                layout.addWidget(self.collections_result)
+                refresh_button = QPushButton("Refresh collections")
+                refresh_button.clicked.connect(self._refresh_collections)
+                layout.addWidget(refresh_button)
+                open_button = QPushButton("Open selected collection in Library")
+                open_button.clicked.connect(self._open_selected_collection)
+                layout.addWidget(open_button)
+                table = QTableWidget()
+                table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+                table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
                 self._tables[label] = table
                 layout.addWidget(table)
             elif label in {"Timeline", "Visual Duplicates", "Places"}:
@@ -1388,20 +1412,34 @@ if QT_AVAILABLE:
 
         def _refresh_library(self) -> None:
             try:
+                from photovault.catalog.collections import collection_query
                 from photovault.catalog.library import LibraryQuery, count_library_items, list_library_items
 
                 limit = int(self.library_limit.text().strip())
-                query = LibraryQuery(
+                base_query = LibraryQuery(
                     search=self.library_search.text(), folder_prefix=self.library_folder.text(),
                     media_type=self.library_media_type.currentText(),
                     favourite_only=self.library_favourites_only.isChecked(),
                     sort=str(self.library_sort.currentData()), limit=limit,
+                )
+                collection_filter = collection_query(self.connection, self._library_collection_id, limit=limit) if self._library_collection_id else LibraryQuery(limit=limit)
+                query = LibraryQuery(
+                    search=base_query.search,
+                    folder_prefix=collection_filter.folder_prefix or base_query.folder_prefix,
+                    media_type=base_query.media_type,
+                    favourite_only=base_query.favourite_only or collection_filter.favourite_only,
+                    captured_month=collection_filter.captured_month,
+                    asset_ids=collection_filter.asset_ids,
+                    sort=base_query.sort, limit=limit,
                 )
                 rows = list_library_items(self.connection, query)
                 total = count_library_items(self.connection, query)
                 self.library_result.setText(
                     f"Showing {len(rows)} of {total} catalogued location(s). "
                     "OFFLINE rows retain metadata and cached thumbnails; originals are not removed."
+                )
+                self.library_collection_result.setText(
+                    f"Active collection: {self._library_collection_id}" if self._library_collection_id else "All catalogued media"
                 )
                 self._fill_table(
                     self._tables["Library"],
@@ -1416,6 +1454,43 @@ if QT_AVAILABLE:
                 self._populate_library_grid(rows)
             except Exception as exc:
                 self.library_result.setText(f"Library query failed: {type(exc).__name__}: {exc}")
+
+        def _clear_library_collection(self) -> None:
+            self._library_collection_id = None
+            self._refresh_library()
+
+        def _refresh_collections(self) -> None:
+            try:
+                from photovault.catalog.collections import list_collections
+
+                collections = list_collections(self.connection)
+                self._fill_table(
+                    self._tables["Collections"], ["Collection ID", "Kind", "Title", "Items", "Evidence / note"],
+                    [(item.id, item.kind, item.title, item.item_count, item.detail) for item in collections],
+                )
+                self.collections_result.setText(f"{len(collections)} collection(s), derived from the catalog without reading or changing originals.")
+            except Exception as exc:
+                self.collections_result.setText(f"Collection query failed: {type(exc).__name__}: {exc}")
+
+        def _open_selected_collection(self) -> None:
+            table = self._tables["Collections"]
+            selected = table.selectedItems()
+            if not selected:
+                self.collections_result.setText("Select one collection row first.")
+                return
+            collection_id = table.item(selected[0].row(), 0).text()
+            try:
+                from photovault.catalog.collections import collection_query
+
+                selected_filter = collection_query(self.connection, collection_id, limit=int(self.library_limit.text().strip()))
+                self._library_collection_id = collection_id
+                if selected_filter.folder_prefix:
+                    self.library_folder.setText(selected_filter.folder_prefix)
+                self.library_favourites_only.setChecked(selected_filter.favourite_only)
+                self._refresh_library()
+                self.navigation.setCurrentRow(NAVIGATION_ITEMS.index("Library"))
+            except Exception as exc:
+                self.collections_result.setText(f"Could not open collection: {type(exc).__name__}: {exc}")
 
         def _populate_library_grid(self, rows: list[sqlite3.Row]) -> None:
             self.library_grid.clear()
