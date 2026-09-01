@@ -31,7 +31,10 @@ def build_home_page(owner: object, layout: object, tables: dict[str, QTableWidge
     layout.addLayout(cards)
 
     quick_actions = QHBoxLayout()
-    for action_name, target in (("Browse Library", "Library"), ("View People", "People"), ("View Places", "Places")):
+    for action_name, target in (
+        ("Backup now", "Android Devices"), ("Browse Library", "Library"),
+        ("View People", "People"), ("View Places", "Places"),
+    ):
         action = QPushButton(action_name)
         action.clicked.connect(lambda _checked=False, page=target: owner._select_page(page))
         quick_actions.addWidget(action)
