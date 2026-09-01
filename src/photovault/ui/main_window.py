@@ -1529,11 +1529,16 @@ if QT_AVAILABLE:
                 self.collections_result.setText(f"Could not create album: {type(exc).__name__}: {exc}")
 
         def _open_album_tile(self, item: QListWidgetItem) -> None:
-            self._open_collection_in_library(str(item.data(Qt.ItemDataRole.UserRole)), self.collections_result)
+            collection_id = item.data(Qt.ItemDataRole.UserRole)
+            if not collection_id:
+                self.collections_result.setText("This album card is not actionable yet. Create an album and refresh collections first.")
+                return
+            self._open_collection_in_library(str(collection_id), self.collections_result)
 
         def _open_collection_tile(self, item: QListWidgetItem) -> None:
             collection_id = item.data(Qt.ItemDataRole.UserRole)
             if not collection_id:
+                self.collections_result.setText("There are no smart collections to open yet. Index media or create an album first.")
                 return
             self._open_collection_in_library(str(collection_id), self.collections_result)
 

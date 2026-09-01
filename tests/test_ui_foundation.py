@@ -99,6 +99,44 @@ class UIFoundationTests(unittest.TestCase):
             window.close()
             connection.close()
 
+    def test_collections_album_tile_activation_opens_library(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window.new_collection_title.setText("Tile album")
+            window._create_user_collection()
+            self.assertEqual(window.collections_album_grid.count(), 1)
+            tile = window.collections_album_grid.item(0)
+            self.assertTrue(tile.data(main_window.Qt.ItemDataRole.UserRole))
+            window._open_album_tile(tile)
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Library"))
+            self.assertIn("empty", window.library_result.text().lower())
+            window.close()
+            connection.close()
+
+    def test_collections_empty_state_explains_no_action(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._open_collection_tile(window.collections_grid.item(0))
+            self.assertIn("no smart collections", window.collections_result.text().lower())
+            window.close()
+            connection.close()
+
     def test_scan_uses_a_worker_thread_for_file_backed_catalog(self) -> None:
         from photovault.ui import main_window
 
