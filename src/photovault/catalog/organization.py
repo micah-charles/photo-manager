@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 
 
@@ -175,6 +175,42 @@ def list_events(connection: sqlite3.Connection) -> list[Event]:
            FROM events e LEFT JOIN event_assets ea ON ea.event_id=e.id
            GROUP BY e.id ORDER BY COALESCE(e.start_datetime, e.created_at) DESC, e.name"""
     )]
+
+
+def suggest_events_from_dates(connection: sqlite3.Connection, *, max_gap_days: int = 1, minimum_items: int = 2) -> int:
+    """Create repeatable, low-confidence Event suggestions from capture dates."""
+    if max_gap_days < 0 or minimum_items < 1:
+        raise ValueError("invalid event suggestion settings")
+    rows = list(connection.execute(
+        """SELECT al.asset_id, substr(COALESCE(mm.capture_datetime, al.capture_date), 1, 10)
+           FROM asset_locations al LEFT JOIN media_metadata mm ON mm.asset_id=al.asset_id
+           WHERE al.missing_since IS NULL AND COALESCE(mm.capture_datetime, al.capture_date) IS NOT NULL
+           ORDER BY 2, al.asset_id"""
+    ))
+    groups: list[list[tuple[str, str]]] = []
+    for asset_id, date_text in rows:
+        current_date = datetime.fromisoformat(str(date_text)).date()
+        if not groups:
+            groups.append([(str(asset_id), str(date_text))])
+            continue
+        previous_date = datetime.fromisoformat(groups[-1][-1][1]).date()
+        if current_date - previous_date <= timedelta(days=max_gap_days + 1):
+            groups[-1].append((str(asset_id), str(date_text)))
+        else:
+            groups.append([(str(asset_id), str(date_text))])
+    created = 0
+    for group in groups:
+        if len(group) < minimum_items:
+            continue
+        start, end = group[0][1], group[-1][1]
+        name = f"Suggested · {start}" if start == end else f"Suggested · {start} – {end}"
+        existing = connection.execute("SELECT id FROM events WHERE name=?", (name,)).fetchone()
+        event_id = str(existing[0]) if existing else create_event(
+            connection, name, start_datetime=start, end_datetime=end,
+            event_type="other", is_suggested=True,
+        )
+        created += add_assets_to_event(connection, event_id, [asset_id for asset_id, _date in group], membership_source="suggested")
+    return created
 
 
 def create_tag(connection: sqlite3.Connection, name: str) -> str:

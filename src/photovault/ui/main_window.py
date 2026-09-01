@@ -1818,6 +1818,16 @@ if QT_AVAILABLE:
                 self._tables["Events"].item(row, 0).setData(Qt.ItemDataRole.UserRole, event.id)
             self.events_result.setText(f"{len(events)} event(s). Double-click an event to filter Library.")
 
+        def _suggest_events(self) -> None:
+            try:
+                from photovault.catalog.organization import suggest_events_from_dates
+
+                added = suggest_events_from_dates(self.connection)
+                self.events_result.setText(f"Added {added} suggested event membership item(s). Manual events were preserved; originals were not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.events_result.setText(f"Event suggestion failed: {type(exc).__name__}: {exc}")
+
         def _open_event_row(self, row: int, _column: int) -> None:
             event_id = self._tables["Events"].item(row, 0).data(Qt.ItemDataRole.UserRole)
             if event_id:

@@ -19,6 +19,7 @@ from photovault.catalog.organization import (
     remove_tags,
     set_asset_source,
     set_review,
+    suggest_events_from_dates,
 )
 from photovault.catalog.scanner import register_volume, scan_volume
 from photovault.database.connection import connect
@@ -89,4 +90,20 @@ class OrganisationTests(unittest.TestCase):
                 set_review(db, [asset_id], status="DELETE")
             with self.assertRaises(ValueError):
                 set_review(db, [asset_id], rating=6)
+            db.close()
+
+    def test_date_event_suggestions_are_repeatable_and_marked(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            db = self._catalog(temp)
+            assets = [row[0] for row in db.execute("SELECT id FROM assets ORDER BY id")]
+            for asset_id, captured in zip(assets, ("2026-08-23T10:00:00", "2026-08-23T11:00:00")):
+                db.execute(
+                    "UPDATE media_metadata SET capture_datetime=?, date_source=? WHERE asset_id=?",
+                    (captured, "test", asset_id),
+                )
+            db.commit()
+            self.assertEqual(suggest_events_from_dates(db), 2)
+            self.assertEqual(suggest_events_from_dates(db), 0)
+            row = db.execute("SELECT is_suggested, COUNT(*) FROM events e JOIN event_assets ea ON ea.event_id=e.id GROUP BY e.id").fetchone()
+            self.assertEqual(tuple(row), (1, 2))
             db.close()
