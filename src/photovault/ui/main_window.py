@@ -1628,6 +1628,13 @@ if QT_AVAILABLE:
                     search=self.library_search.text(), folder_prefix=self.library_folder.text(),
                     media_type=self.library_media_type.currentText(),
                     favourite_only=self.library_favourites_only.isChecked(),
+                    source_id=str(self.library_source_filter.currentData() or ""),
+                    event_id=str(self.library_event_filter.currentData() or ""),
+                    tag_id=str(self.library_tag_filter.currentData() or ""),
+                    place_id=str(self.library_place_filter.currentData() or ""),
+                    review_status=str(self.library_review_filter.currentData() or ""),
+                    min_rating=self.library_rating_filter.currentData(),
+                    include_rejected=self.library_include_rejected.isChecked(),
                     sort=str(self.library_sort.currentData()), limit=limit,
                 )
                 collection_filter = collection_query(self.connection, self._library_collection_id, limit=limit) if self._library_collection_id else LibraryQuery(limit=limit)
@@ -1638,6 +1645,14 @@ if QT_AVAILABLE:
                     favourite_only=base_query.favourite_only or collection_filter.favourite_only,
                     captured_month=collection_filter.captured_month,
                     asset_ids=collection_filter.asset_ids,
+                    source_id=base_query.source_id,
+                    event_id=base_query.event_id,
+                    tag_id=base_query.tag_id,
+                    place_id=base_query.place_id,
+                    category=base_query.category,
+                    review_status=base_query.review_status,
+                    min_rating=base_query.min_rating,
+                    include_rejected=base_query.include_rejected,
                     sort=base_query.sort, limit=limit,
                 )
                 rows = list_library_items(self.connection, query)
@@ -1665,6 +1680,49 @@ if QT_AVAILABLE:
 
         def _clear_library_collection(self) -> None:
             self._library_collection_id = None
+            self._refresh_library()
+
+        @staticmethod
+        def _replace_library_filter(combo: QComboBox, placeholder: str, rows: object, label: object) -> None:
+            """Rebuild a catalog filter while preserving its selected ID."""
+            previous = combo.currentData()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem(placeholder, None)
+            for row in rows:
+                combo.addItem(str(label(row)), str(row.id))
+            index = combo.findData(previous)
+            combo.setCurrentIndex(index if index >= 0 else 0)
+            combo.blockSignals(False)
+
+        def _refresh_library_organisation_filters(self) -> None:
+            """Populate human-readable organisation filters from catalog metadata."""
+            from photovault.catalog.organization import list_events, list_places, list_sources, list_tags
+
+            sources = list_sources(self.connection)
+            events = list_events(self.connection)
+            tags = list_tags(self.connection)
+            places = list_places(self.connection)
+            source_previous = self.library_source_filter.currentData()
+            self.library_source_filter.blockSignals(True)
+            self.library_source_filter.clear()
+            self.library_source_filter.addItem("Any source", None)
+            for row in sources:
+                detail = f"{row['display_name']} ({row['item_count']:,})"
+                self.library_source_filter.addItem(detail, row["source_id"])
+            self.library_source_filter.setCurrentIndex(max(0, self.library_source_filter.findData(source_previous)))
+            self.library_source_filter.blockSignals(False)
+            self._replace_library_filter(self.library_event_filter, "Any event", events, lambda row: f"{row.name} ({row.item_count:,})")
+            self._replace_library_filter(self.library_tag_filter, "Any tag", tags, lambda row: f"{row.name} ({row.item_count:,})")
+            self._replace_library_filter(self.library_place_filter, "Any place", places, lambda row: f"{row.name} ({row.item_count:,})")
+
+        def _clear_library_organisation_filters(self) -> None:
+            for combo in (self.library_source_filter, self.library_event_filter, self.library_tag_filter, self.library_place_filter,
+                          self.library_review_filter, self.library_rating_filter):
+                combo.blockSignals(True)
+                combo.setCurrentIndex(0)
+                combo.blockSignals(False)
+            self.library_include_rejected.setChecked(False)
             self._refresh_library()
 
         def _refresh_collections(self) -> None:
