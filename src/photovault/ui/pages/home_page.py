@@ -19,14 +19,14 @@ def build_home_page(owner: object, layout: object, tables: dict[str, QTableWidge
         ("activity", "Recent activity"),
     ):
         card = QWidget()
-        card.setStyleSheet("QWidget { background: white; border: 1px solid #dfe3eb; border-radius: 10px; padding: 10px; }")
+        card.setObjectName("DashboardCard")
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(12, 10, 12, 10)
         heading = QLabel(card_title)
-        heading.setStyleSheet("font-weight: 600; color: #647084; background: transparent; border: 0;")
+        heading.setObjectName("DashboardCardHeading")
         value = QLabel("Loading…")
         value.setWordWrap(True)
-        value.setStyleSheet("font-size: 15px; font-weight: 700; background: transparent; border: 0;")
+        value.setObjectName("DashboardCardValue")
         card_layout.addWidget(heading)
         card_layout.addWidget(value)
         owner.dashboard_cards[card_name] = value
