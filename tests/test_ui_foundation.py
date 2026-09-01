@@ -119,6 +119,7 @@ class UIFoundationTests(unittest.TestCase):
             self.assertIn("No backup profiles", window.backup_health_result.text())
             self.assertIn("No people groups yet", [window.people_grid.item(i).text() for i in range(window.people_grid.count())])
             self.assertIn("No embedded GPS clusters yet", [window.places_grid.item(i).text() for i in range(window.places_grid.count())])
+            self.assertIn("No categories indexed yet", [window.category_grid.item(i).text() for i in range(window.category_grid.count())])
             self.assertIn("No smart collections yet", [window.collections_grid.item(i).text() for i in range(window.collections_grid.count())])
             self.assertIn("No registered drives yet", [window.disks_grid.item(i).text() for i in range(window.disks_grid.count())])
             self.assertIn("No activity recorded yet", [window.activity_feed.item(i).text() for i in range(window.activity_feed.count())])

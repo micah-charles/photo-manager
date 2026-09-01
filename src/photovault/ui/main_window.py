@@ -1726,6 +1726,21 @@ if QT_AVAILABLE:
                         table.setItem(row_index, column_index, QTableWidgetItem(str(value)))
                     table.item(row_index, 0).setData(Qt.ItemDataRole.UserRole, f"category:{model}:{category}")
                 table.resizeColumnsToContents()
+                self.category_grid.clear()
+                for (model, category), asset_ids in sorted(grouped.items(), key=lambda pair: (-len(pair[1]), pair[0])):
+                    category_id = f"category:{model}:{category}"
+                    tile = QListWidgetItem(f"{category}\n{len(asset_ids):,} photos")
+                    thumbnail = self.connection.execute(
+                        """SELECT t.path FROM thumbnails t
+                           WHERE t.asset_id=? AND t.version='v1-320' LIMIT 1""", (next(iter(asset_ids)),)
+                    ).fetchone()
+                    if thumbnail and Path(str(thumbnail[0])).is_file():
+                        tile.setIcon(QIcon(str(thumbnail[0])))
+                    tile.setToolTip(f"{category}\n{model}; {len(asset_ids):,} catalogued photo(s)")
+                    tile.setData(Qt.ItemDataRole.UserRole, category_id)
+                    self.category_grid.addItem(tile)
+                if not grouped:
+                    self.category_grid.show_empty_state("No categories indexed yet")
                 self.categories_result.setText(
                     f"{len(grouped)} normalised local category view(s). Select one to browse its real photos; "
                     "categories remain rebuildable metadata, separate from backup protection."
@@ -1874,6 +1889,11 @@ if QT_AVAILABLE:
             table = self._tables["Categories"]
             table.selectRow(row)
             self._open_selected_category()
+
+        def _open_category_tile(self, item: QListWidgetItem) -> None:
+            category_id = item.data(Qt.ItemDataRole.UserRole)
+            if category_id:
+                self._open_collection_in_library(str(category_id), self.categories_result)
 
         def _open_person_tile(self, item: QListWidgetItem) -> None:
             person_id = item.data(Qt.ItemDataRole.UserRole)

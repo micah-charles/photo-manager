@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QAbstractItemView, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QProgressBar, QTableWidget
 
+from ..components import PhotoGrid
+
 
 def build_categories_page(owner: object, layout: object, tables: dict[str, QTableWidget]) -> None:
     owner.categories_result = QLabel(
@@ -44,6 +46,13 @@ def build_categories_page(owner: object, layout: object, tables: dict[str, QTabl
     open_button.clicked.connect(owner._open_selected_category)
     actions.addWidget(open_button)
     layout.addLayout(actions)
+    layout.addWidget(QLabel("Browse categories"))
+    owner.category_grid = PhotoGrid(
+        object_name="CategoryGrid", icon_size=(150, 100), grid_size=(190, 140), multi_select=False,
+    )
+    owner.category_grid.itemActivated.connect(owner._open_category_tile)
+    owner.category_grid.show_empty_state("No categories indexed yet")
+    layout.addWidget(owner.category_grid)
     table = QTableWidget()
     table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
     table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)

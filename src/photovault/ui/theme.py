@@ -34,9 +34,9 @@ def stylesheet() -> str:
     QLabel#SettingsCard {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 8px; padding: 12px; }}
     QListWidget#ReviewList {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 8px; padding: 8px; }}
     QListWidget#RecentPhotoGrid {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 8px; padding: 8px; min-height: 130px; }}
-    QListWidget#CollectionGrid, QListWidget#AlbumGrid, QListWidget#PeopleGrid, QListWidget#PlacesGrid, QListWidget#DisksGrid {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 8px; padding: 10px; min-height: 120px; }}
-    QListWidget#CollectionGrid::item, QListWidget#AlbumGrid::item, QListWidget#PeopleGrid::item, QListWidget#PlacesGrid::item, QListWidget#DisksGrid::item {{ border: 1px solid transparent; border-radius: 8px; padding: 6px; margin: 4px; }}
-    QListWidget#CollectionGrid::item:hover, QListWidget#AlbumGrid::item:hover, QListWidget#PeopleGrid::item:hover, QListWidget#PlacesGrid::item:hover, QListWidget#DisksGrid::item:hover {{ background: {t['selection']}; border-color: #c9dbff; }}
-    QListWidget#CollectionGrid::item:selected, QListWidget#AlbumGrid::item:selected, QListWidget#PeopleGrid::item:selected, QListWidget#PlacesGrid::item:selected, QListWidget#DisksGrid::item:selected {{ background: {t['selection']}; border-color: {t['primary']}; }}
+    QListWidget#CollectionGrid, QListWidget#AlbumGrid, QListWidget#PeopleGrid, QListWidget#PlacesGrid, QListWidget#DisksGrid, QListWidget#CategoryGrid {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 8px; padding: 10px; min-height: 120px; }}
+    QListWidget#CollectionGrid::item, QListWidget#AlbumGrid::item, QListWidget#PeopleGrid::item, QListWidget#PlacesGrid::item, QListWidget#DisksGrid::item, QListWidget#CategoryGrid::item {{ border: 1px solid transparent; border-radius: 8px; padding: 6px; margin: 4px; }}
+    QListWidget#CollectionGrid::item:hover, QListWidget#AlbumGrid::item:hover, QListWidget#PeopleGrid::item:hover, QListWidget#PlacesGrid::item:hover, QListWidget#DisksGrid::item:hover, QListWidget#CategoryGrid::item:hover {{ background: {t['selection']}; border-color: #c9dbff; }}
+    QListWidget#CollectionGrid::item:selected, QListWidget#AlbumGrid::item:selected, QListWidget#PeopleGrid::item:selected, QListWidget#PlacesGrid::item:selected, QListWidget#DisksGrid::item:selected, QListWidget#CategoryGrid::item:selected {{ background: {t['selection']}; border-color: {t['primary']}; }}
     QTableWidget {{ gridline-color: {t['border']}; selection-background-color: {t['selection']}; selection-color: {t['text']}; }}
     """
