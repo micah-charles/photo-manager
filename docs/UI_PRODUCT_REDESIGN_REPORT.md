@@ -104,6 +104,9 @@ Favourites (with a Library smart-view handoff), Visual Duplicates, Android Devic
   live folder picker with item counts and sizes; its selection synchronizes to
   the existing safe import planner. The text folder field remains available as
   a compatibility fallback.
+  Dashboard Backup status no longer labels a catalog “All good” merely because
+  a drive is mounted; it now distinguishes configured backup sets from a
+  not-yet-configured protection state.
 
 ## 7. Deviations from the mockup
 
