@@ -577,6 +577,12 @@ if QT_AVAILABLE:
                 self.library_result = QLabel("Catalog-backed results remain visible when an original volume is offline.")
                 self.library_result.setWordWrap(True)
                 layout.addWidget(self.library_result)
+                self.library_selection_count = QLabel("0 selected")
+                layout.addWidget(self.library_selection_count)
+                self.library_technical_toggle = QCheckBox("Show advanced catalog details")
+                self.library_technical_toggle.setChecked(False)
+                self.library_technical_toggle.toggled.connect(self._set_library_technical_visible)
+                layout.addWidget(self.library_technical_toggle)
                 browser_layout = QHBoxLayout()
                 self.library_grid = QListWidget()
                 self.library_grid.setViewMode(QListWidget.ViewMode.IconMode)
@@ -585,6 +591,7 @@ if QT_AVAILABLE:
                 self.library_grid.setGridSize(QSize(190, 170))
                 self.library_grid.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
                 self.library_grid.itemSelectionChanged.connect(self._library_selection_changed)
+                self.library_grid.itemDoubleClicked.connect(self._open_library_item)
                 browser_layout.addWidget(self.library_grid, 3)
                 preview_layout = QVBoxLayout()
                 self.library_preview = QLabel("Select a catalogued item to preview its cached thumbnail.")
@@ -599,6 +606,7 @@ if QT_AVAILABLE:
                 layout.addLayout(browser_layout)
                 table = QTableWidget()
                 table.setSortingEnabled(True)
+                table.setVisible(False)
                 self._tables[label] = table
                 layout.addWidget(table)
             elif label == "Collections":
@@ -1569,8 +1577,17 @@ if QT_AVAILABLE:
                 })
                 self.library_grid.addItem(item)
 
+        def _set_library_technical_visible(self, visible: bool) -> None:
+            self._tables["Library"].setVisible(visible)
+
+        def _open_library_item(self, _item: QListWidgetItem) -> None:
+            """Double-click opens the selected item's cached preview/inspector."""
+            self._library_selection_changed()
+            self.library_result.setText("Photo opened in the inspector. Use the Library filters to continue browsing.")
+
         def _library_selection_changed(self) -> None:
             selected = self.library_grid.selectedItems()
+            self.library_selection_count.setText(f"{len(selected)} selected")
             if not selected:
                 return
             if len(selected) > 1:
