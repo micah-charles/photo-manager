@@ -604,6 +604,7 @@ if QT_AVAILABLE:
                 table = QTableWidget()
                 table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
                 table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+                table.cellDoubleClicked.connect(self._open_collection_row)
                 self._tables[label] = table
                 layout.addWidget(table)
             elif label == "People":
@@ -1509,6 +1510,12 @@ if QT_AVAILABLE:
                 self.navigation.setCurrentRow(NAVIGATION_ITEMS.index("Library"))
             except Exception as exc:
                 self.collections_result.setText(f"Could not open collection: {type(exc).__name__}: {exc}")
+
+        def _open_collection_row(self, row: int, _column: int) -> None:
+            """Open a collection from the photo-first double-click interaction."""
+            table = self._tables["Collections"]
+            table.selectRow(row)
+            self._open_selected_collection()
 
         def _import_people_features(self) -> None:
             try:
