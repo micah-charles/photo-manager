@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
 
-from .spec import NAVIGATION_ITEMS
+from .spec import NAVIGATION_GROUPS, NAVIGATION_ITEMS
+from .theme import stylesheet
 
 try:
     from PySide6.QtCore import QObject, QThread, QSize, Qt, Signal, Slot
@@ -346,10 +347,21 @@ if QT_AVAILABLE:
 
             shell = QWidget()
             shell_layout = QHBoxLayout(shell)
+            shell_layout.setContentsMargins(0, 0, 0, 0)
             self.navigation = QListWidget()
-            self.navigation.addItems(list(NAVIGATION_ITEMS))
+            self.navigation.setObjectName("PhotoVaultNavigation")
+            self._navigation_page_rows: dict[int, int] = {}
+            for group_name, page_names in NAVIGATION_GROUPS:
+                heading = QListWidgetItem(group_name.upper())
+                heading.setFlags(Qt.ItemFlag.NoItemFlags)
+                self.navigation.addItem(heading)
+                for page_name in page_names:
+                    item = QListWidgetItem("Home" if page_name == "Dashboard" else page_name)
+                    row = self.navigation.count()
+                    self._navigation_page_rows[row] = NAVIGATION_ITEMS.index(page_name)
+                    self.navigation.addItem(item)
             self.navigation.setFixedWidth(220)
-            self.navigation.currentRowChanged.connect(self._show_page)
+            self.navigation.currentRowChanged.connect(self._show_navigation_row)
             shell_layout.addWidget(self.navigation)
 
             self.pages = QStackedWidget()
@@ -357,14 +369,14 @@ if QT_AVAILABLE:
                 self.pages.addWidget(self._build_page(label))
             shell_layout.addWidget(self.pages, 1)
             self.setCentralWidget(shell)
-            self.navigation.setCurrentRow(0)
+            self.navigation.setCurrentRow(next(iter(self._navigation_page_rows)))
             self.refresh()
 
         def _build_page(self, label: str) -> QWidget:
             page = QWidget()
             layout = QVBoxLayout(page)
             title = QLabel(label)
-            title.setStyleSheet("font-size: 24px; font-weight: 600; padding: 8px 0;")
+            title.setObjectName("PageTitle")
             layout.addWidget(title)
             if label == "Dashboard":
                 self.dashboard_result = QLabel("Loading catalog health…")
@@ -785,6 +797,11 @@ if QT_AVAILABLE:
 
         def _show_page(self, row: int) -> None:
             self.pages.setCurrentIndex(max(row, 0))
+
+        def _show_navigation_row(self, row: int) -> None:
+            page_index = self._navigation_page_rows.get(row)
+            if page_index is not None:
+                self._show_page(page_index)
 
         def _register_disk(self) -> None:
             try:
@@ -1716,6 +1733,7 @@ if QT_AVAILABLE:
 def run_gui(connection: sqlite3.Connection) -> int:
     _require_qt()
     app = QApplication.instance() or QApplication([])
+    app.setStyleSheet(stylesheet())
     window = MainWindow(connection)
     window.show()
     return app.exec()
