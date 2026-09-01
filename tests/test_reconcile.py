@@ -34,6 +34,7 @@ class ReconciliationTests(unittest.TestCase):
             (backup / name).parent.mkdir(parents=True, exist_ok=True)
             (backup / name).write_bytes(content)
         db = connect(Path(temp.name) / "catalog.db")
+        self.addCleanup(db.close)
         main_id = register_volume(db, main, FixedProvider("main"))
         backup_id = register_volume(db, backup, FixedProvider("backup"))
         scan_volume(db, main_id, main)
@@ -49,6 +50,7 @@ class ReconciliationTests(unittest.TestCase):
             {"same.jpg": b"same", "backup-only.jpg": b"backup", "renamed-copy.jpg": b"rename"},
         )
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         report = reconcile_backup_set(db, set_id)
         self.assertEqual(report.counts["VERIFIED"], 2)
         self.assertEqual(report.counts["MAIN_ONLY"], 1)
@@ -57,12 +59,14 @@ class ReconciliationTests(unittest.TestCase):
     def test_conflict_is_reported_for_same_path_different_hash(self) -> None:
         temp, db, set_id, _ = self.build({"same.jpg": b"main"}, {"same.jpg": b"backup"})
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         report = reconcile_backup_set(db, set_id)
         self.assertEqual(report.counts["CONFLICT"], 1)
 
     def test_offline_pair_is_unknown_and_csv_is_exported(self) -> None:
         temp, db, set_id, backup_id = self.build({"same.jpg": b"same"}, {"same.jpg": b"same"})
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         db.execute("UPDATE volumes SET status='OFFLINE' WHERE id=?", (backup_id,))
         db.commit()
         report = reconcile_backup_set(db, set_id)

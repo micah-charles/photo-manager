@@ -33,6 +33,7 @@ class BackupAuditTests(unittest.TestCase):
             (backup / name).parent.mkdir(parents=True, exist_ok=True)
             (backup / name).write_bytes(content)
         db = connect(Path(temp.name) / "catalog.db")
+        self.addCleanup(db.close)
         main_id = register_volume(db, main, FixedProvider("main"))
         backup_id = register_volume(db, backup, FixedProvider("backup"))
         scan_volume(db, main_id, main)
@@ -45,6 +46,7 @@ class BackupAuditTests(unittest.TestCase):
     def test_protected_and_missing_backup(self) -> None:
         temp, db, set_id = self.setup_catalog({"kept.jpg": b"kept", "missing.jpg": b"missing"}, {"kept.jpg": b"kept"})
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         report = audit_backup_set(db, set_id)
         self.assertEqual(report.counts["VERIFIED_REDUNDANT"], 1)
         self.assertEqual(report.counts["MISSING_BACKUP"], 1)
@@ -53,18 +55,21 @@ class BackupAuditTests(unittest.TestCase):
     def test_backup_only(self) -> None:
         temp, db, set_id = self.setup_catalog({"main.jpg": b"main"}, {"main.jpg": b"main", "old.jpg": b"old"})
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         report = audit_backup_set(db, set_id)
         self.assertEqual(report.counts["BACKUP_ONLY"], 1)
 
     def test_same_path_different_content_is_conflict(self) -> None:
         temp, db, set_id = self.setup_catalog({"same.jpg": b"main"}, {"same.jpg": b"backup"})
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         report = audit_backup_set(db, set_id)
         self.assertEqual(report.counts["CONFLICT"], 2)
 
     def test_offline_required_volume_is_unknown(self) -> None:
         temp, db, set_id = self.setup_catalog({"same.jpg": b"same"}, {"same.jpg": b"same"})
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         db.execute("UPDATE volumes SET status='OFFLINE' WHERE display_name='backup'")
         db.commit()
         report = audit_backup_set(db, set_id)
@@ -77,6 +82,7 @@ class BackupAuditTests(unittest.TestCase):
         root.mkdir()
         (root / "only.jpg").write_bytes(b"only")
         db = connect(Path(temp.name) / "catalog.db")
+        self.addCleanup(db.close)
         volume_id = register_volume(db, root, FixedProvider("main"))
         scan_volume(db, volume_id, root)
         set_id = create_backup_set(db, "Unprotected", required_copies=2)

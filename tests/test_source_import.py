@@ -88,6 +88,7 @@ class SourceImportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             connection = connect(root / "catalog.db")
+            self.addCleanup(connection.close)
             register_source(connection, SourceIdentity("android_test", "Google", "Pixel 8 Pro", "Pixel 8 Pro", "test"))
             connection.execute(
                 "INSERT INTO volumes(id, display_name, identity_kind, identity_value, first_seen, last_seen, status) VALUES ('vol_dest', 'Destination', 'test', 'dest', datetime('now'), datetime('now'), 'CONNECTED')"
@@ -115,6 +116,7 @@ class SourceImportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             connection = connect(root / "catalog.db")
+            self.addCleanup(connection.close)
             connection.execute(
                 "INSERT INTO volumes(id, display_name, identity_kind, identity_value, first_seen, last_seen, status) VALUES ('vol_dest', 'Destination', 'test', 'dest', datetime('now'), datetime('now'), 'CONNECTED')"
             )
@@ -150,6 +152,7 @@ class SourceImportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             connection = connect(root / "catalog.db")
+            self.addCleanup(connection.close)
             connection.execute("INSERT INTO volumes(id, display_name, identity_kind, identity_value, first_seen, last_seen, status) VALUES ('vol_dest', 'Destination', 'test', 'dest', datetime('now'), datetime('now'), 'CONNECTED')")
             connection.commit()
             import_source_item(connection, FakeSource(payload), SourceImportItem("1", "DCIM/Camera/a.jpg", len(payload), modified_at=modified), root, "vol_dest")
@@ -157,6 +160,7 @@ class SourceImportTests(unittest.TestCase):
             restored = restore_import_modified_times(connection, root, "vol_dest")
             self.assertEqual(restored["restored"], 1)
             self.assertEqual(destination.stat().st_mtime_ns // 1_000_000_000, int(modified.timestamp()))
+            connection.close()
 
     def test_mismatch_removes_partial_and_never_publishes_final(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

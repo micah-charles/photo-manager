@@ -64,6 +64,7 @@ class MetadataTests(unittest.TestCase):
             exif[274] = 1
             Image.new("RGB", (640, 480), "red").save(source, exif=exif)
             db = connect(Path(temp) / "catalog.db")
+            self.addCleanup(db.close)
             volume_id = register_volume(db, root, FixedProvider())
             thumbnail_root = Path(temp) / "thumbnails"
             scan_volume(db, volume_id, root, thumbnail_root)
@@ -82,6 +83,7 @@ class MetadataTests(unittest.TestCase):
             gallery_html = gallery.read_text(encoding="utf-8")
             self.assertIn("photo.jpg", gallery_html)
             self.assertIn("PhotoVault Gallery", gallery_html)
+            db.close()
 
     def test_video_catalogues_without_thumbnail_requirement(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -89,11 +91,13 @@ class MetadataTests(unittest.TestCase):
             root.mkdir()
             (root / "clip.mp4").write_bytes(b"not-a-real-video")
             db = connect(Path(temp) / "catalog.db")
+            self.addCleanup(db.close)
             volume_id = register_volume(db, root, FixedProvider())
             result = scan_volume(db, volume_id, root, Path(temp) / "thumbs")
             self.assertEqual(result["files_catalogued"], 1)
             self.assertEqual(db.execute("SELECT media_type FROM assets").fetchone()[0], "VIDEO")
             self.assertEqual(db.execute("SELECT COUNT(*) FROM thumbnails").fetchone()[0], 0)
+            db.close()
 
     def test_gif_is_catalogued_as_image_with_a_cached_thumbnail(self) -> None:
         if Image is None:
@@ -104,12 +108,14 @@ class MetadataTests(unittest.TestCase):
             source = root / "animated.gif"
             Image.new("RGB", (48, 36), "green").save(source, format="GIF")
             db = connect(Path(temp) / "catalog.db")
+            self.addCleanup(db.close)
             volume_id = register_volume(db, root, FixedProvider())
             result = scan_volume(db, volume_id, root, Path(temp) / "thumbs")
             self.assertEqual(result["files_catalogued"], 1)
             self.assertEqual(db.execute("SELECT media_type FROM assets").fetchone()[0], "IMAGE")
             thumbnail = db.execute("SELECT path FROM thumbnails").fetchone()[0]
             self.assertTrue(Path(thumbnail).is_file())
+            db.close()
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ class PlacesTests(unittest.TestCase):
         self.assertLess(distance_meters(51.5000, -0.1200, 51.5005, -0.1200), 100)
         with tempfile.TemporaryDirectory() as temp:
             db = connect(Path(temp) / "catalog.db")
+            self.addCleanup(db.close)
             db.execute("INSERT INTO assets(id, media_type, created_at, updated_at) VALUES ('a', 'IMAGE', 'now', 'now')")
             db.execute("INSERT INTO assets(id, media_type, created_at, updated_at) VALUES ('b', 'IMAGE', 'now', 'now')")
             db.execute("INSERT INTO assets(id, media_type, created_at, updated_at) VALUES ('c', 'IMAGE', 'now', 'now')")
@@ -23,6 +24,7 @@ class PlacesTests(unittest.TestCase):
             self.assertEqual(sorted(len(cluster.asset_ids) for cluster in clusters), [1, 2])
             self.assertEqual(db.execute("SELECT COUNT(*) FROM place_cluster_members").fetchone()[0], 3)
             self.assertIsNone(db.execute("SELECT label FROM place_clusters ORDER BY id LIMIT 1").fetchone()[0])
+            db.close()
 
 
 if __name__ == "__main__":

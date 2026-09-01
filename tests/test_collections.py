@@ -22,6 +22,7 @@ class CollectionTests(unittest.TestCase):
             root = Path(directory) / "media"; (root / "DCIM/Camera").mkdir(parents=True); (root / "Download").mkdir()
             (root / "DCIM/Camera/cat.jpg").write_bytes(b"cat"); (root / "Download/dog.jpg").write_bytes(b"dog")
             connection = connect(Path(directory) / "catalog.db")
+            self.addCleanup(connection.close)
             volume_id = register_volume(connection, root, FixedProvider()); scan_volume(connection, volume_id, root)
             cat_asset = connection.execute("SELECT asset_id FROM asset_locations WHERE filename='cat.jpg'").fetchone()[0]
             set_favourite(connection, cat_asset)
@@ -33,6 +34,7 @@ class CollectionTests(unittest.TestCase):
             self.assertTrue(collection_query(connection, "favourites").favourite_only)
             with self.assertRaises(ValueError):
                 collection_query(connection, "semantic:invented")
+            connection.close()
 
     def test_user_album_membership_is_catalog_only_and_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

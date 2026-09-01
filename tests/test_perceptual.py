@@ -45,6 +45,7 @@ class PerceptualTests(unittest.TestCase):
             image.save(root / "second.jpg", quality=55)
             before = {path.name: path.read_bytes() for path in root.glob("*.jpg")}
             db = connect(Path(temp) / "catalog.db")
+            self.addCleanup(db.close)
             volume_id = register_volume(db, root, FixedProvider())
             scan_volume(db, volume_id, root)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM assets").fetchone()[0], 2)
@@ -58,6 +59,7 @@ class PerceptualTests(unittest.TestCase):
             self.assertEqual(len(groups[0]["members"]), 2)
             self.assertEqual(before, {path.name: path.read_bytes() for path in root.glob("*.jpg")})
             self.assertEqual(db.execute("SELECT COUNT(*) FROM operations").fetchone()[0], 0)
+            db.close()
 
     def test_index_limit(self) -> None:
         if Image is None:
@@ -68,11 +70,13 @@ class PerceptualTests(unittest.TestCase):
             for name, colour in (("a.jpg", "red"), ("b.jpg", "blue")):
                 Image.new("RGB", (32, 32), colour).save(root / name)
             db = connect(Path(temp) / "catalog.db")
+            self.addCleanup(db.close)
             volume_id = register_volume(db, root, FixedProvider())
             scan_volume(db, volume_id, root)
             result = index_perceptual_hashes(db, volume_id, ("dhash64",), limit=1)
             self.assertEqual(result["assets"], 1)
             self.assertEqual(result["dhash64"], 1)
+            db.close()
 
 
 if __name__ == "__main__":
