@@ -684,6 +684,27 @@ if QT_AVAILABLE:
                 table.setSortingEnabled(True)
                 self._tables[label] = table
                 layout.addWidget(table)
+            elif label == "Categories":
+                self.categories_result = QLabel(
+                    "Categories are derived from local analysis and open the same photo-first Library view. "
+                    "They are advisory metadata and never change original files."
+                )
+                self.categories_result.setWordWrap(True)
+                layout.addWidget(self.categories_result)
+                actions = QHBoxLayout()
+                refresh_button = QPushButton("Refresh categories")
+                refresh_button.clicked.connect(self._refresh_categories)
+                actions.addWidget(refresh_button)
+                open_button = QPushButton("Open selected category")
+                open_button.clicked.connect(self._open_selected_category)
+                actions.addWidget(open_button)
+                layout.addLayout(actions)
+                table = QTableWidget()
+                table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+                table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+                table.cellDoubleClicked.connect(self._open_category_row)
+                self._tables[label] = table
+                layout.addWidget(table)
             elif label in {"Timeline", "Visual Duplicates", "Places"}:
                 if label == "Timeline":
                     button = QPushButton("Refresh timeline")
@@ -1605,6 +1626,42 @@ if QT_AVAILABLE:
             except Exception as exc:
                 self.collections_result.setText(f"Collection query failed: {type(exc).__name__}: {exc}")
 
+        def _refresh_categories(self) -> None:
+            try:
+                from photovault.catalog.collections import list_collections
+
+                categories = [item for item in list_collections(self.connection) if item.kind == "CATEGORY"]
+                table = self._tables["Categories"]
+                table.setColumnCount(4)
+                table.setHorizontalHeaderLabels(["Category", "Items", "Model", "Evidence / note"])
+                table.setRowCount(len(categories))
+                for row_index, item in enumerate(categories):
+                    values = (item.title, item.item_count, item.detail.split(";", 1)[0], item.detail)
+                    for column_index, value in enumerate(values):
+                        table.setItem(row_index, column_index, QTableWidgetItem(str(value)))
+                    table.item(row_index, 0).setData(Qt.ItemDataRole.UserRole, item.id)
+                table.resizeColumnsToContents()
+                self.categories_result.setText(
+                    f"{len(categories)} local category view(s). Select one to browse its real photos; "
+                    "categories remain rebuildable metadata, separate from backup protection."
+                )
+            except Exception as exc:
+                self.categories_result.setText(f"Category query failed: {type(exc).__name__}: {exc}")
+
+        def _open_selected_category(self) -> None:
+            table = self._tables["Categories"]
+            selected = table.selectedItems()
+            if not selected:
+                self.categories_result.setText("Select one category first.")
+                return
+            category_id = table.item(selected[0].row(), 0).data(Qt.ItemDataRole.UserRole)
+            self._open_collection_in_library(str(category_id), self.categories_result)
+
+        def _open_category_row(self, row: int, _column: int) -> None:
+            table = self._tables["Categories"]
+            table.selectRow(row)
+            self._open_selected_category()
+
         def _open_selected_collection(self) -> None:
             table = self._tables["Collections"]
             selected = table.selectedItems()
@@ -1612,6 +1669,9 @@ if QT_AVAILABLE:
                 self.collections_result.setText("Select one collection row first.")
                 return
             collection_id = table.item(selected[0].row(), 0).text()
+            self._open_collection_in_library(collection_id, self.collections_result)
+
+        def _open_collection_in_library(self, collection_id: str, result_label: QLabel) -> None:
             try:
                 from photovault.catalog.collections import collection_query
 
@@ -1623,7 +1683,7 @@ if QT_AVAILABLE:
                 self._refresh_library()
                 self.navigation.setCurrentRow(NAVIGATION_ITEMS.index("Library"))
             except Exception as exc:
-                self.collections_result.setText(f"Could not open collection: {type(exc).__name__}: {exc}")
+                result_label.setText(f"Could not open collection: {type(exc).__name__}: {exc}")
 
         def _open_collection_row(self, row: int, _column: int) -> None:
             """Open a collection from the photo-first double-click interaction."""
@@ -1834,6 +1894,8 @@ if QT_AVAILABLE:
                 self._refresh_library()
             if "Collections" in self._tables:
                 self._refresh_collections()
+            if "Categories" in self._tables:
+                self._refresh_categories()
             if "People" in self._tables:
                 rows = self.connection.execute(
                     """SELECT p.id, p.display_name, p.engine, COUNT(m.asset_id), p.updated_at

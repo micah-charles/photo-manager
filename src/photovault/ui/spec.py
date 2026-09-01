@@ -20,13 +20,14 @@ NAVIGATION_ITEMS: tuple[str, ...] = (
     "Favourites",
     "Visual Duplicates",
     "Places",
+    "Categories",
 )
 
 # User-facing groups for the sidebar. Page names remain stable so existing
 # backend pages and deep links continue to work during migration.
 NAVIGATION_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Photos", ("Dashboard", "Library", "Collections", "Favourites")),
-    ("Explore", ("People", "Places", "Visual Duplicates")),
+    ("Explore", ("People", "Places", "Categories", "Visual Duplicates")),
     ("Backup", ("Android Devices", "Backup Sets")),
     ("Storage", ("Disks", "Redundancy Audit", "Reconciliation", "Folder Safety Audit")),
     ("Activity", ("Operations", "Timeline")),

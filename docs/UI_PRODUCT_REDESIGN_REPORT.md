@@ -21,7 +21,7 @@ The sidebar now presents user-oriented groups while retaining stable page
 names and page indexes for the existing services:
 
 - Photos: Home, Library, Collections, Favourites
-- Explore: People, Places, Visual Duplicates
+- Explore: People, Places, Categories, Visual Duplicates
 - Backup: Android Devices, Backup Sets
 - Storage: Disks, audits, and reconciliation
 - Activity: Operations and Timeline
@@ -34,7 +34,7 @@ The grouping is defined in `ui/spec.py`; the old services are not removed.
 - `src/photovault/ui/theme.py`: centralized light-theme tokens and stylesheet
 - `src/photovault/ui/spec.py`: grouped navigation contract
 - `src/photovault/ui/main_window.py`: grouped sidebar, shared theme, and
-  collection double-click interaction
+  collection and category double-click interactions
 - `src/photovault/catalog/collections.py`: catalog-derived browse views
 - `src/photovault/catalog/classification.py`: optional local ONNX category
   indexing with resumable checkpoints
@@ -53,8 +53,9 @@ outside the catalog and are never changed by browsing or enrichment.
 The current implementation has working pages for Home/Dashboard, Library
 thumbnail browsing and inspector preview, Collections, People, Places,
 Favourites, Visual Duplicates, Android Devices, Backup Sets, Disks, Operations,
-Timeline, and the advanced storage tools. Collections can be opened by
-double-clicking a row and now route to the normal Library grid.
+  Timeline, Categories, and the advanced storage tools. Collections and
+  categories can be opened by double-clicking a row and route to the normal
+  Library grid.
 
 ## 7. Deviations from the mockup
 
@@ -62,14 +63,17 @@ The UI is still an incremental PySide6 migration rather than the final card
 based redesign. The current catalog data is shown live; no mockup values or
 fake people, drives, locations, or backup statistics are inserted. Categories
 are currently model candidates from local ImageNet inference and are not yet
-normalized into the final PhotoVault taxonomy.
+normalized into the final PhotoVault taxonomy. The Android page now has a
+stateful status summary for connection, inventory, copy, completion, failure,
+and cancellation while retaining advanced connection controls.
 
 ## 8. Android workflow status
 
 The proven read-only and Wi-Fi Companion paths remain in the shared source
-architecture. The UI exposes Android connection and transfer controls, but the
-state-driven connected-device card and polished backup progress/completion
-flow remain P1 work.
+architecture. The UI exposes Android connection and transfer controls and now
+shows state-driven status, inventory totals, average speed, ETA, completion,
+failure, and safe cancellation/resume messaging. A richer connected-device
+card with last-backup/new-item summaries remains P1 work.
 
 ## 9. Library and viewer status
 
