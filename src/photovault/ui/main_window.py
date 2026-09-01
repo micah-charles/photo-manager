@@ -706,43 +706,13 @@ if QT_AVAILABLE:
                 layout.addWidget(self.catalog_recovery_result)
             elif label in {"Settings", "Advanced Tools"}:
                 if label == "Settings":
-                    intro = QLabel(
-                        "PhotoVault keeps backup truth separate from photo enrichment. "
-                        "Use the links below to reach catalog, backup, and intelligence controls."
-                    )
-                    intro.setObjectName("StatusSummary")
-                    intro.setWordWrap(True)
-                    layout.addWidget(intro)
-                    sections = (
-                        ("Library and privacy", "Photos remain local; thumbnails and enrichment are rebuildable catalog data."),
-                        ("Backup defaults", "Verified copies, atomic destination writes, and stable drive identity remain the safety defaults."),
-                        ("AI & Intelligence", "Category, people, place, and duplicate analysis are optional and never modify originals."),
-                    )
-                    for heading, description in sections:
-                        card = QLabel(f"{heading}\n{description}")
-                        card.setWordWrap(True)
-                        card.setObjectName("SettingsCard")
-                        layout.addWidget(card)
-                    for button_text, target in (("Open Advanced Tools", "Advanced Tools"), ("Open Catalog Recovery", "Catalog Recovery")):
-                        button = QPushButton(button_text)
-                        button.clicked.connect(lambda _checked=False, page=target: self._select_page(page))
-                        layout.addWidget(button)
+                    from .pages.settings_page import build_settings_page
+
+                    build_settings_page(self, layout)
                 else:
-                    intro = QLabel(
-                        "Power tools remain available for inspection and recovery. These actions use the existing safety services; "
-                        "nothing runs until you explicitly choose a tool."
-                    )
-                    intro.setObjectName("StatusSummary")
-                    intro.setWordWrap(True)
-                    layout.addWidget(intro)
-                    for button_text, target in (
-                        ("Scan a library folder", "Scan"), ("Build a copy plan", "Copy Plans"),
-                        ("Review Backup Health", "Backup Health"), ("Open Catalog Recovery", "Catalog Recovery"),
-                        ("Open Quarantine", "Quarantine"),
-                    ):
-                        button = QPushButton(button_text)
-                        button.clicked.connect(lambda _checked=False, page=target: self._select_page(page))
-                        layout.addWidget(button)
+                    from .pages.advanced_tools_page import build_advanced_tools_page
+
+                    build_advanced_tools_page(self, layout)
             else:
                 hint = QLabel(self._page_hint(label))
                 hint.setWordWrap(True)
