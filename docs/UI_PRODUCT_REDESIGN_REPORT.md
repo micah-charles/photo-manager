@@ -98,6 +98,8 @@ Favourites (with a Library smart-view handoff), Visual Duplicates, Android Devic
   Dashboard, Collections, Drives, Backup Health, and Activity now keep their
   raw tables behind explicit advanced-details toggles, preserving auditability
   without making empty or technical tables the default experience.
+  Android URL/token fields are likewise inside Advanced connection settings;
+  normal backup users see the connection action and state summary first.
 
 ## 7. Deviations from the mockup
 
