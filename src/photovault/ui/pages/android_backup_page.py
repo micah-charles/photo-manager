@@ -45,14 +45,10 @@ def build_android_backup_page(owner: object, layout: object, tables: dict[str, Q
 
     from photovault.cli.main import _default_android_helper
 
-    form = QFormLayout()
     owner.android_companion_url = QLineEdit("http://")
     owner.android_companion_token = QLineEdit()
     owner.android_companion_token.setEchoMode(QLineEdit.EchoMode.Password)
     owner.android_companion_token.setPlaceholderText("Token shown by PhotoVault Companion")
-    form.addRow("Companion URL", owner.android_companion_url)
-    form.addRow("Companion token", owner.android_companion_token)
-    layout.addLayout(form)
     companion_button = QPushButton("Connect Companion (Wi-Fi)")
     companion_button.clicked.connect(owner._discover_android_companion)
     owner.android_companion_discover_button = companion_button
@@ -65,6 +61,8 @@ def build_android_backup_page(owner: object, layout: object, tables: dict[str, Q
     advanced_body = QWidget()
     advanced_body.setVisible(False)
     advanced_form = QFormLayout(advanced_body)
+    advanced_form.addRow("Companion URL", owner.android_companion_url)
+    advanced_form.addRow("Companion token", owner.android_companion_token)
     owner.android_helper = QLineEdit(str(_default_android_helper()))
     advanced_form.addRow("Native helper", owner.android_helper)
     usb_button = QPushButton("Discover USB MTP (experimental macOS fallback)")
