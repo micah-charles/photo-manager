@@ -1567,7 +1567,7 @@ if QT_AVAILABLE:
             from photovault.catalog.timeline import list_timeline
 
             rows = list_timeline(self.connection, limit=500)
-            self._fill_table(self._tables["Timeline"], ["Asset", "Filename", "Path", "Volume", "Captured", "Camera", "Model", "W", "H", "Lat", "Lon", "Thumbnail"], rows)
+            self._fill_table(self._tables["Timeline"], ["Asset", "Filename", "Path", "Volume", "Captured", "Display time", "Camera", "Model", "W", "H", "Lat", "Lon", "Source", "Thumbnail"], rows)
 
         def _refresh_dashboard(self) -> None:
             from photovault.catalog.dashboard import dashboard_metrics

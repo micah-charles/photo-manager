@@ -15,7 +15,13 @@ def write_gallery(connection, output: Path, volume_id: str | None = None, limit:
     }
     cards: list[str] = []
     for row in rows:
-        asset_id, filename, relative, row_volume_id, captured, make, model, width, height, latitude, longitude, thumbnail = row
+        # Timeline rows also carry display-time and source provenance. Keep the
+        # static gallery interested only in the fields it renders so adding
+        # organisation metadata remains backwards-compatible for this export.
+        asset_id = row[0]
+        filename, relative, row_volume_id = row[1], row[2], row[3]
+        captured, make, model = row[4], row[6], row[7]
+        thumbnail = row[12]
         original = volume_roots[row_volume_id] / relative
         image_uri = Path(thumbnail).expanduser().resolve().as_uri() if thumbnail else original.as_uri()
         full_uri = original.as_uri()
