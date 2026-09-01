@@ -130,7 +130,7 @@ def _video_metadata(path: Path) -> MetadataRecord:
 
 def extract_metadata(path: Path) -> MetadataRecord:
     try:
-        if path.suffix.lower() in {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tif", ".tiff", ".webp", ".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf", ".orf", ".rw2"}:
+        if path.suffix.lower() in {".jpg", ".jpeg", ".png", ".gif", ".heic", ".heif", ".tif", ".tiff", ".webp", ".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf", ".orf", ".rw2"}:
             return _image_metadata(path)
         if path.suffix.lower() in {".mov", ".mp4", ".m4v", ".avi"}:
             return _video_metadata(path)

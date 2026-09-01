@@ -91,6 +91,22 @@ class MetadataTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT media_type FROM assets").fetchone()[0], "VIDEO")
             self.assertEqual(db.execute("SELECT COUNT(*) FROM thumbnails").fetchone()[0], 0)
 
+    def test_gif_is_catalogued_as_image_with_a_cached_thumbnail(self) -> None:
+        if Image is None:
+            self.skipTest("Pillow is not installed")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "media"
+            root.mkdir()
+            source = root / "animated.gif"
+            Image.new("RGB", (48, 36), "green").save(source, format="GIF")
+            db = connect(Path(temp) / "catalog.db")
+            volume_id = register_volume(db, root, FixedProvider())
+            result = scan_volume(db, volume_id, root, Path(temp) / "thumbs")
+            self.assertEqual(result["files_catalogued"], 1)
+            self.assertEqual(db.execute("SELECT media_type FROM assets").fetchone()[0], "IMAGE")
+            thumbnail = db.execute("SELECT path FROM thumbnails").fetchone()[0]
+            self.assertTrue(Path(thumbnail).is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,7 +18,7 @@ from photovault.platform.provider import default_volume_provider
 
 
 MEDIA_EXTENSIONS = {
-    ".jpg": "IMAGE", ".jpeg": "IMAGE", ".png": "IMAGE", ".heic": "IMAGE",
+    ".jpg": "IMAGE", ".jpeg": "IMAGE", ".png": "IMAGE", ".gif": "IMAGE", ".heic": "IMAGE",
     ".heif": "IMAGE", ".tif": "IMAGE", ".tiff": "IMAGE", ".webp": "IMAGE",
     ".cr2": "IMAGE", ".cr3": "IMAGE", ".nef": "IMAGE", ".arw": "IMAGE",
     ".dng": "IMAGE", ".raf": "IMAGE", ".orf": "IMAGE", ".rw2": "IMAGE",
