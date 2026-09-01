@@ -137,7 +137,8 @@ delta calculation and a richer connected-device card remain P1 work.
 
 Library supports real catalog queries, media filters, search/folder filters,
 sorting, favourites, pagination, thumbnail grid selection, multi-select,
-double-click/open, and single-item cached-thumbnail preview. The dedicated
+double-click/open, context actions for viewer/favourites/details, and
+single-item cached-thumbnail preview. The dedicated
 Photo Viewer now provides previous/next navigation, Back to Library, real
 metadata, location provenance, and verified-copy protection status. The grid
 is the primary view; the raw asset table is hidden by default behind an
