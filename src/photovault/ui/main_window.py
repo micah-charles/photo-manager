@@ -1200,6 +1200,9 @@ if QT_AVAILABLE:
             self.android_device_card.setText(f"{identity.display_name}\nConnected via experimental USB MTP")
             self.android_backup_summary.setText(f"{identity.display_name} is available through the experimental USB MTP path.")
             self.android_transfer_group.setEnabled(True)
+            self.android_transfer_group.setVisible(True)
+            self.android_profile_history_label.setVisible(True)
+            self._tables["Android Devices"].setVisible(True)
             self._fill_table(
                 self._tables["Android Devices"],
                 ["Storage ID", "Name", "Capacity", "Free"],
@@ -1217,6 +1220,9 @@ if QT_AVAILABLE:
             )
             self.android_backup_status.setText("Phone connected")
             self.android_transfer_group.setEnabled(True)
+            self.android_transfer_group.setVisible(True)
+            self.android_profile_history_label.setVisible(True)
+            self._tables["Android Devices"].setVisible(True)
             self.android_device_card.setText(f"{identity.display_name}\nConnected via Wi-Fi Companion")
             latest_backup = self.connection.execute(
                 """SELECT s.completed_at, s.imported_items, s.failed_items

@@ -77,6 +77,7 @@ def build_android_backup_page(owner: object, layout: object, tables: dict[str, Q
 
     transfer_group = QGroupBox("Backup setup")
     transfer_group.setEnabled(False)
+    transfer_group.setVisible(False)
     owner.android_transfer_group = transfer_group
     transfer_layout = QVBoxLayout(transfer_group)
     transfer_form = QFormLayout()
@@ -125,9 +126,12 @@ def build_android_backup_page(owner: object, layout: object, tables: dict[str, Q
     transfer_layout.addWidget(owner.android_transfer_result)
     layout.addWidget(transfer_group)
     owner.android_profile_history = QTableWidget()
-    layout.addWidget(QLabel("Saved profiles and recent runs"))
+    owner.android_profile_history_label = QLabel("Saved profiles and recent runs")
+    owner.android_profile_history_label.setVisible(False)
+    layout.addWidget(owner.android_profile_history_label)
     layout.addWidget(owner.android_profile_history)
 
     table = QTableWidget()
+    table.setVisible(False)
     tables["Android Devices"] = table
     layout.addWidget(table)
