@@ -23,6 +23,7 @@ def build_people_page(owner: object, layout: object, tables: dict[str, QTableWid
     layout.addWidget(QLabel("Browse people groups"))
     owner.people_grid = QListWidget()
     configure_tile_grid(owner.people_grid, "PeopleGrid", icon_size=(120, 100), grid_size=(170, 145))
+    owner.people_grid.itemClicked.connect(owner._open_person_tile)
     owner.people_grid.itemDoubleClicked.connect(owner._open_person_tile)
     layout.addWidget(owner.people_grid)
     table = QTableWidget()

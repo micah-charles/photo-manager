@@ -50,6 +50,8 @@ def build_categories_page(owner: object, layout: object, tables: dict[str, QTabl
     owner.category_grid = PhotoGrid(
         object_name="CategoryGrid", icon_size=(150, 100), grid_size=(190, 140), multi_select=False,
     )
+    owner.category_grid.itemClicked.connect(owner._open_category_tile)
+    owner.category_grid.itemDoubleClicked.connect(owner._open_category_tile)
     owner.category_grid.itemActivated.connect(owner._open_category_tile)
     owner.category_grid.show_empty_state("No categories indexed yet")
     layout.addWidget(owner.category_grid)

@@ -21,6 +21,7 @@ def build_places_page(owner: object, layout: object) -> None:
     layout.addWidget(QLabel("Browse place clusters"))
     owner.places_grid = QListWidget()
     configure_tile_grid(owner.places_grid, "PlacesGrid")
+    owner.places_grid.itemClicked.connect(owner._open_place_tile)
     owner.places_grid.itemDoubleClicked.connect(owner._open_place_tile)
     owner.places_grid.addItem("No embedded GPS clusters yet")
     layout.addWidget(owner.places_grid)
