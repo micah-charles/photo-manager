@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton
 
 
 def build_photo_viewer_page(owner: object, layout: object) -> None:
@@ -17,8 +17,30 @@ def build_photo_viewer_page(owner: object, layout: object) -> None:
     owner.viewer_next = QPushButton("Next")
     owner.viewer_next.clicked.connect(lambda: owner._show_viewer_item(owner._viewer_index + 1))
     toolbar.addWidget(owner.viewer_next)
+    toolbar.addWidget(QLabel("Review:"))
+    owner.viewer_review_action = QComboBox()
+    owner.viewer_review_action.addItem("Pick", "PICKED")
+    owner.viewer_review_action.addItem("Reject", "REJECTED")
+    owner.viewer_review_action.addItem("Hide", "HIDDEN")
+    owner.viewer_review_action.addItem("Unreviewed", "UNREVIEWED")
+    toolbar.addWidget(owner.viewer_review_action)
+    review_button = QPushButton("Apply")
+    review_button.clicked.connect(owner._apply_viewer_review)
+    toolbar.addWidget(review_button)
+    owner.viewer_rating_action = QComboBox()
+    owner.viewer_rating_action.addItem("Rating", None)
+    for rating in range(1, 6):
+        owner.viewer_rating_action.addItem(f"{rating}★", rating)
+    toolbar.addWidget(owner.viewer_rating_action)
+    rate_button = QPushButton("Rate")
+    rate_button.clicked.connect(owner._apply_viewer_rating)
+    toolbar.addWidget(rate_button)
     toolbar.addStretch(1)
     layout.addLayout(toolbar)
+
+    shortcuts = QLabel("Keyboard: ←/→ navigate · P pick · R reject · H hide")
+    shortcuts.setObjectName("StatusSummary")
+    layout.addWidget(shortcuts)
 
     viewer_body = QHBoxLayout()
     owner.viewer_image = QLabel("Open a photo from Library to view it here.")

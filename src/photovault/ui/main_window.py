@@ -2483,6 +2483,56 @@ if QT_AVAILABLE:
             self.viewer_previous.setEnabled(self._viewer_index > 0)
             self.viewer_next.setEnabled(self._viewer_index < len(self._viewer_items) - 1)
 
+        def _apply_viewer_review(self) -> None:
+            if not self._viewer_items or self._viewer_index < 0:
+                return
+            try:
+                from photovault.catalog.organization import set_review
+
+                asset_id = str(self._viewer_items[self._viewer_index]["asset_id"])
+                status = str(self.viewer_review_action.currentData())
+                set_review(self.connection, [asset_id], status=status)
+                self._viewer_items[self._viewer_index]["review_status"] = status
+                self.viewer_details.setText(self._format_library_details(self._viewer_items[self._viewer_index]))
+                self.library_result.setText(f"Marked {self._viewer_items[self._viewer_index]['filename']} as {status.title()}. Originals were not changed.")
+            except Exception as exc:
+                self.viewer_details.setText(f"Review update failed: {type(exc).__name__}: {exc}")
+
+        def _apply_viewer_rating(self) -> None:
+            if not self._viewer_items or self._viewer_index < 0:
+                return
+            rating = self.viewer_rating_action.currentData()
+            if rating is None:
+                return
+            try:
+                from photovault.catalog.organization import set_review
+
+                details = self._viewer_items[self._viewer_index]
+                set_review(self.connection, [str(details["asset_id"])], rating=int(rating))
+                details["rating"] = int(rating)
+                self.viewer_details.setText(self._format_library_details(details))
+            except Exception as exc:
+                self.viewer_details.setText(f"Rating update failed: {type(exc).__name__}: {exc}")
+
+        def keyPressEvent(self, event: object) -> None:
+            """Provide lightweight keyboard review controls in the viewer."""
+            if self.pages.currentIndex() == NAVIGATION_ITEMS.index("Photo Viewer"):
+                key = event.key()
+                if key == Qt.Key.Key_Left:
+                    self._show_viewer_item(self._viewer_index - 1)
+                    return
+                if key == Qt.Key.Key_Right:
+                    self._show_viewer_item(self._viewer_index + 1)
+                    return
+                status = {Qt.Key.Key_P: "PICKED", Qt.Key.Key_R: "REJECTED", Qt.Key.Key_H: "HIDDEN"}.get(key)
+                if status:
+                    index = self.viewer_review_action.findData(status)
+                    if index >= 0:
+                        self.viewer_review_action.setCurrentIndex(index)
+                    self._apply_viewer_review()
+                    return
+            super().keyPressEvent(event)
+
         def _format_library_details(self, details: dict[str, object]) -> str:
             size = self._human_bytes(int(details["size_bytes"] or 0))
             dimensions = f"{details['width']} × {details['height']}" if details["width"] and details["height"] else "Dimensions unavailable"
