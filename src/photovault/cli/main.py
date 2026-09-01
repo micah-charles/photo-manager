@@ -52,6 +52,10 @@ def parser() -> argparse.ArgumentParser:
     collection_items.add_argument("collection_id")
     collection_items.add_argument("--limit", type=int, default=200)
     collection_items.add_argument("--offset", type=int, default=0)
+    people = sub.add_parser("people", help="import or inspect optional face-group analysis")
+    people_sub = people.add_subparsers(dest="people_command", required=True)
+    people_import = people_sub.add_parser("import-macos-vision", help="import read-only JSON made by the legacy macOS Vision extractor")
+    people_import.add_argument("features_json", type=Path)
     gallery = sub.add_parser("gallery", help="export a local static gallery without copying originals")
     gallery.add_argument("output", type=Path)
     gallery.add_argument("--volume-id")
@@ -431,6 +435,11 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
             print(f"PAGE\t{args.offset}\t{len(rows)}\t{count_collection_items(connection, args.collection_id)}")
             for row in rows:
                 print("\t".join("" if value is None else str(value) for value in row))
+    elif args.command == "people":
+        from photovault.catalog.people_import import import_macos_vision_features_file
+
+        report = import_macos_vision_features_file(connection, args.features_json)
+        print(f"PEOPLE_IMPORT\tpeople={report.people}\tmatched_assets={report.matched_assets}\tunmatched_paths={report.unmatched_paths}")
     elif args.command == "gallery":
         from photovault.catalog.gallery import write_gallery
 

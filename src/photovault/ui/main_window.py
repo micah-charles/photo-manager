@@ -606,6 +606,24 @@ if QT_AVAILABLE:
                 table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
                 self._tables[label] = table
                 layout.addWidget(table)
+            elif label == "People":
+                form = QFormLayout()
+                self.people_features_json = QLineEdit()
+                self.people_features_json.setPlaceholderText("Read-only macOS Vision features JSON")
+                form.addRow("Vision features JSON", self.people_features_json)
+                layout.addLayout(form)
+                import_button = QPushButton("Import macOS Vision people groups")
+                import_button.clicked.connect(self._import_people_features)
+                layout.addWidget(import_button)
+                self.people_result = QLabel(
+                    "This imports only derived face-group memberships. It never modifies originals; rerunning replaces the prior macOS Vision grouping."
+                )
+                self.people_result.setWordWrap(True)
+                layout.addWidget(self.people_result)
+                table = QTableWidget()
+                table.setSortingEnabled(True)
+                self._tables[label] = table
+                layout.addWidget(table)
             elif label in {"Timeline", "Visual Duplicates", "Places"}:
                 if label == "Timeline":
                     button = QPushButton("Refresh timeline")
@@ -1492,6 +1510,19 @@ if QT_AVAILABLE:
             except Exception as exc:
                 self.collections_result.setText(f"Could not open collection: {type(exc).__name__}: {exc}")
 
+        def _import_people_features(self) -> None:
+            try:
+                from photovault.catalog.people_import import import_macos_vision_features_file
+
+                report = import_macos_vision_features_file(self.connection, Path(self.people_features_json.text().strip()))
+                self.people_result.setText(
+                    f"Imported {report.people} person group(s), matching {report.matched_assets} asset(s); "
+                    f"{report.unmatched_paths} path(s) were not in the connected catalog."
+                )
+                self.refresh()
+            except Exception as exc:
+                self.people_result.setText(f"People import failed: {type(exc).__name__}: {exc}")
+
         def _populate_library_grid(self, rows: list[sqlite3.Row]) -> None:
             self.library_grid.clear()
             self.library_preview.setPixmap(QPixmap())
@@ -1653,6 +1684,15 @@ if QT_AVAILABLE:
                 self._refresh_timeline()
             if "Library" in self._tables:
                 self._refresh_library()
+            if "Collections" in self._tables:
+                self._refresh_collections()
+            if "People" in self._tables:
+                rows = self.connection.execute(
+                    """SELECT p.id, p.display_name, p.engine, COUNT(m.asset_id), p.updated_at
+                       FROM people p LEFT JOIN person_members m ON m.person_id=p.id
+                       GROUP BY p.id ORDER BY COUNT(m.asset_id) DESC, p.id"""
+                ).fetchall()
+                self._fill_table(self._tables["People"], ["Person", "Name", "Engine", "Assets", "Updated"], [tuple(row) for row in rows])
             if hasattr(self, "android_saved_profile"):
                 self._refresh_android_backup_profiles()
             if "Favourites" in self._tables:

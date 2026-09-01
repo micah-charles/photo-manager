@@ -60,6 +60,12 @@ def list_collections(connection: sqlite3.Connection) -> list[CatalogCollection]:
            GROUP BY g.id ORDER BY COUNT(m.asset_id) DESC, g.id"""
     ):
         result.append(CatalogCollection(f"duplicate:{row[0]}", "VISUAL", f"{row[1].replace('_', ' ').title()} #{row[0][-6:]}", int(row[3]), f"{row[2]}; advisory only"))
+    for row in connection.execute(
+        """SELECT p.id, p.display_name, p.engine, COUNT(m.asset_id)
+           FROM people p JOIN person_members m ON m.person_id=p.id
+           GROUP BY p.id ORDER BY COUNT(m.asset_id) DESC, p.id"""
+    ):
+        result.append(CatalogCollection(f"person:{row[0]}", "PERSON", row[1] or f"Person {row[0][-6:]}", int(row[3]), f"{row[2]}; derived face group"))
     return result
 
 
@@ -78,6 +84,8 @@ def collection_query(connection: sqlite3.Connection, collection_id: str, *, limi
         rows = connection.execute("SELECT asset_id FROM place_cluster_members WHERE cluster_id=? ORDER BY asset_id", (collection_id[6:],)).fetchall()
     elif collection_id.startswith("duplicate:"):
         rows = connection.execute("SELECT asset_id FROM duplicate_group_members WHERE group_id=? ORDER BY asset_id", (collection_id[10:],)).fetchall()
+    elif collection_id.startswith("person:"):
+        rows = connection.execute("SELECT asset_id FROM person_members WHERE person_id=? ORDER BY asset_id", (collection_id[7:],)).fetchall()
     else:
         raise ValueError("unknown collection")
     if not rows:

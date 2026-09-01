@@ -4,6 +4,7 @@ NAVIGATION_ITEMS: tuple[str, ...] = (
     "Dashboard",
     "Library",
     "Collections",
+    "People",
     "Disks",
     "Android Devices",
     "Backup Sets",

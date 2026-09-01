@@ -379,6 +379,27 @@ MIGRATIONS: list[tuple[int, str]] = [
         ALTER TABLE gps_metadata ADD COLUMN location_source TEXT NOT NULL DEFAULT 'embedded_exif';
         """,
     ),
+    (
+        15,
+        """
+        CREATE TABLE people (
+            id TEXT PRIMARY KEY,
+            engine TEXT NOT NULL,
+            external_key TEXT NOT NULL,
+            display_name TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(engine, external_key)
+        );
+        CREATE TABLE person_members (
+            person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            face_count INTEGER NOT NULL DEFAULT 1 CHECK(face_count >= 1),
+            PRIMARY KEY(person_id, asset_id)
+        );
+        CREATE INDEX idx_person_members_asset ON person_members(asset_id);
+        """,
+    ),
 ]
 
 
