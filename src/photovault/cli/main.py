@@ -85,6 +85,14 @@ def parser() -> argparse.ArgumentParser:
     embedding_search.add_argument("model")
     embedding_search.add_argument("--vector", required=True, help="comma-separated query vector")
     embedding_search.add_argument("--limit", type=int, default=20)
+    classify = sub.add_parser("classify-images", help="classify images locally with a supplied ONNX model and labels")
+    classify.add_argument("--model", type=Path, required=True)
+    classify.add_argument("--labels", type=Path, required=True)
+    classify.add_argument("--model-name")
+    classify.add_argument("--image-size", type=int, default=224)
+    classify.add_argument("--volume-id")
+    classify.add_argument("--limit", type=int, default=0)
+    classify.add_argument("--top-k", type=int, default=5)
     create_set = sub.add_parser("backup-set-create", help="create a backup set")
     create_set.add_argument("name")
     create_set.add_argument("--required-copies", type=int, default=2)
@@ -496,6 +504,11 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
         vector = [float(value.strip()) for value in args.vector.split(",") if value.strip()]
         for asset_id, score in search_embeddings(connection, args.model, vector, args.limit):
             print(f"{asset_id}\t{score:.6f}")
+    elif args.command == "classify-images":
+        from photovault.catalog.classification import OnnxImageNetClassifier, index_image_categories
+
+        classifier = OnnxImageNetClassifier(args.model, args.labels, args.model_name, args.image_size)
+        print(index_image_categories(connection, classifier, args.volume_id, args.limit, args.top_k))
     elif args.command == "backup-set-create":
         print(create_backup_set(connection, args.name, args.required_copies, args.scope))
     elif args.command == "backup-set-add":

@@ -400,6 +400,21 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX idx_person_members_asset ON person_members(asset_id);
         """,
     ),
+    (
+        16,
+        """
+        CREATE TABLE image_categories (
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            model TEXT NOT NULL,
+            label TEXT NOT NULL,
+            score REAL NOT NULL CHECK(score >= 0 AND score <= 1),
+            source_sha256 TEXT NOT NULL,
+            computed_at TEXT NOT NULL,
+            PRIMARY KEY(asset_id, model, label)
+        );
+        CREATE INDEX idx_image_categories_label ON image_categories(model, label, score DESC);
+        """,
+    ),
 ]
 
 

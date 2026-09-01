@@ -66,6 +66,12 @@ def list_collections(connection: sqlite3.Connection) -> list[CatalogCollection]:
            GROUP BY p.id ORDER BY COUNT(m.asset_id) DESC, p.id"""
     ):
         result.append(CatalogCollection(f"person:{row[0]}", "PERSON", row[1] or f"Person {row[0][-6:]}", int(row[3]), f"{row[2]}; derived face group"))
+    for row in connection.execute(
+        """SELECT model, label, COUNT(DISTINCT asset_id) FROM image_categories
+           GROUP BY model, label HAVING COUNT(DISTINCT asset_id) >= 2
+           ORDER BY COUNT(DISTINCT asset_id) DESC, model, label"""
+    ):
+        result.append(CatalogCollection(f"category:{row[0]}:{row[1]}", "CATEGORY", row[1], int(row[2]), f"{row[0]}; local model candidate"))
     return result
 
 
@@ -86,6 +92,12 @@ def collection_query(connection: sqlite3.Connection, collection_id: str, *, limi
         rows = connection.execute("SELECT asset_id FROM duplicate_group_members WHERE group_id=? ORDER BY asset_id", (collection_id[10:],)).fetchall()
     elif collection_id.startswith("person:"):
         rows = connection.execute("SELECT asset_id FROM person_members WHERE person_id=? ORDER BY asset_id", (collection_id[7:],)).fetchall()
+    elif collection_id.startswith("category:"):
+        try:
+            _, model, label = collection_id.split(":", 2)
+        except ValueError as exc:
+            raise ValueError("invalid category collection") from exc
+        rows = connection.execute("SELECT asset_id FROM image_categories WHERE model=? AND label=? ORDER BY score DESC, asset_id", (model, label)).fetchall()
     else:
         raise ValueError("unknown collection")
     if not rows:

@@ -22,7 +22,7 @@ class CatalogPhase1Tests(unittest.TestCase):
     def test_in_memory_catalog_does_not_create_a_filesystem_artifact(self) -> None:
         db = connect(":memory:")
         self.addCleanup(db.close)
-        self.assertEqual(db.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 15)
+        self.assertEqual(db.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 16)
 
     def test_register_scan_and_rescan_are_read_only_and_incremental(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
