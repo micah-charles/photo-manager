@@ -554,33 +554,9 @@ if QT_AVAILABLE:
 
                 build_places_page(self, layout)
             elif label == "Favourites":
-                form = QFormLayout()
-                self.favourite_asset_id = QLineEdit()
-                self.favourite_note = QLineEdit()
-                self.favourite_legacy_manifest = QLineEdit()
-                form.addRow("Catalog asset ID", self.favourite_asset_id)
-                form.addRow("Note (optional)", self.favourite_note)
-                form.addRow("Legacy favorites.json (optional)", self.favourite_legacy_manifest)
-                layout.addLayout(form)
-                favourite_button = QPushButton("Add / update favourite")
-                favourite_button.clicked.connect(self._set_favourite)
-                layout.addWidget(favourite_button)
-                remove_button = QPushButton("Remove selected asset ID from favourites")
-                remove_button.clicked.connect(self._remove_favourite)
-                layout.addWidget(remove_button)
-                import_button = QPushButton("Import legacy gallery favourites JSON")
-                import_button.clicked.connect(self._import_legacy_favourites)
-                layout.addWidget(import_button)
-                browse_button = QPushButton("Browse favourites in Library")
-                browse_button.clicked.connect(self._browse_favourites)
-                layout.addWidget(browse_button)
-                self.favourite_result = QLabel("Favourites are catalog annotations only; originals and backup verification are unchanged.")
-                self.favourite_result.setWordWrap(True)
-                layout.addWidget(self.favourite_result)
-                table = QTableWidget()
-                table.setSortingEnabled(True)
-                self._tables[label] = table
-                layout.addWidget(table)
+                from .pages.favourites_page import build_favourites_page
+
+                build_favourites_page(self, layout, self._tables)
             elif label == "Disks":
                 self.disks_summary = QLabel("Your registered storage locations and current connection state.")
                 self.disks_summary.setObjectName("StatusSummary")
