@@ -121,6 +121,8 @@ class UIFoundationTests(unittest.TestCase):
                 "device": {"media_count": 12},
                 "folders": [folder],
             })
+            self.assertIn("12 media items", window.android_device_card.text())
+            self.assertIn("1 shared folders", window.android_device_card.text())
             self.assertEqual(window.android_folder_selector.count(), 1)
             picker_item = window.android_folder_selector.item(0)
             picker_item.setCheckState(main_window.Qt.CheckState.Checked)

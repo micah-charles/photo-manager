@@ -1212,6 +1212,8 @@ if QT_AVAILABLE:
             identity = result["identity"]
             device = result["device"]
             folders = result["folders"]
+            total_folder_bytes = sum(int(folder.size_bytes) for folder in folders)
+            total_folder_items = sum(int(folder.count) for folder in folders)
             self.android_result.setText(
                 f"Connected to {identity.display_name} via Wi-Fi. Device ID: {identity.source_id}. "
                 f"Media: {device.get('media_count', 'unknown')}. "
@@ -1222,7 +1224,16 @@ if QT_AVAILABLE:
             self.android_transfer_group.setVisible(True)
             self.android_profile_history_label.setVisible(True)
             self._tables["Android Devices"].setVisible(True)
-            self.android_device_card.setText(f"{identity.display_name}\nConnected via Wi-Fi Companion")
+            manifest_count = device.get("media_count")
+            inventory_text = (
+                f"{int(manifest_count):,} media items" if isinstance(manifest_count, (int, float))
+                else f"{total_folder_items:,} media items"
+            )
+            self.android_device_card.setText(
+                f"{identity.display_name}\n"
+                f"● Connected via Wi-Fi Companion\n"
+                f"{inventory_text} · {len(folders):,} shared folders · {self._human_bytes(total_folder_bytes)}"
+            )
             latest_backup = self.connection.execute(
                 """SELECT s.completed_at, s.imported_items, s.failed_items
                    FROM android_backup_snapshots s JOIN android_backup_profiles p ON p.id=s.profile_id

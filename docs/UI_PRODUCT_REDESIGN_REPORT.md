@@ -107,6 +107,8 @@ Favourites (with a Library smart-view handoff), Visual Duplicates, Android Devic
   Verified Android imports now extract metadata from the atomically published
   destination after size/SHA verification, so camera date, dimensions, and
   embedded GPS are indexed immediately without modifying the phone originals.
+  The connected Android card now presents live media count, shared-folder
+  count, inventory size, and Wi-Fi connection state from the Companion manifest.
   Dashboard Backup status no longer labels a catalog “All good” merely because
   a drive is mounted; it now distinguishes configured backup sets from a
   not-yet-configured protection state.
