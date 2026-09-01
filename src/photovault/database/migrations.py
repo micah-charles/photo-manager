@@ -434,6 +434,87 @@ MIGRATIONS: list[tuple[int, str]] = [
             ON user_collection_members(asset_id);
         """,
     ),
+    (
+        18,
+        """
+        ALTER TABLE source_profiles ADD COLUMN source_type TEXT NOT NULL DEFAULT 'unknown';
+        ALTER TABLE source_profiles ADD COLUMN persistent_device_id TEXT;
+        ALTER TABLE source_profiles ADD COLUMN time_offset_seconds INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE source_profiles ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}';
+        ALTER TABLE asset_locations ADD COLUMN source_id TEXT REFERENCES source_profiles(source_id) ON DELETE SET NULL;
+
+        CREATE TABLE events (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            start_datetime TEXT,
+            end_datetime TEXT,
+            event_type TEXT NOT NULL DEFAULT 'other',
+            description TEXT NOT NULL DEFAULT '',
+            default_place_id TEXT,
+            cover_asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+            is_suggested INTEGER NOT NULL DEFAULT 0 CHECK(is_suggested IN (0, 1)),
+            suggestion_confidence REAL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE event_assets (
+            event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            membership_source TEXT NOT NULL DEFAULT 'manual',
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(event_id, asset_id)
+        );
+        CREATE INDEX idx_events_dates ON events(start_datetime, end_datetime);
+        CREATE INDEX idx_event_assets_asset ON event_assets(asset_id);
+
+        CREATE TABLE tags (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            normalized_name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE asset_tags (
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+            source TEXT NOT NULL DEFAULT 'user',
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(asset_id, tag_id)
+        );
+        CREATE INDEX idx_asset_tags_tag ON asset_tags(tag_id);
+
+        CREATE TABLE places (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            country TEXT,
+            region TEXT,
+            city TEXT,
+            latitude REAL,
+            longitude REAL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE asset_places (
+            asset_id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+            place_id TEXT NOT NULL REFERENCES places(id) ON DELETE CASCADE,
+            source TEXT NOT NULL DEFAULT 'user_assigned',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_asset_places_place ON asset_places(place_id);
+
+        CREATE TABLE asset_reviews (
+            asset_id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+            review_status TEXT NOT NULL DEFAULT 'UNREVIEWED'
+                CHECK(review_status IN ('UNREVIEWED', 'PICKED', 'REJECTED', 'HIDDEN')),
+            rating INTEGER CHECK(rating IS NULL OR (rating BETWEEN 0 AND 5)),
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_asset_reviews_status ON asset_reviews(review_status);
+        CREATE INDEX idx_asset_reviews_rating ON asset_reviews(rating);
+        CREATE INDEX idx_asset_locations_source ON asset_locations(source_id);
+        """,
+    ),
 ]
 
 
