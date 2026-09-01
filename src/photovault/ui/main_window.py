@@ -29,6 +29,7 @@ try:
         QMessageBox,
         QPlainTextEdit,
         QProgressBar,
+        QStyle,
         QPushButton,
         QStackedWidget,
         QTableWidget,
@@ -467,12 +468,32 @@ if QT_AVAILABLE:
             self.navigation = QListWidget()
             self.navigation.setObjectName("PhotoVaultNavigation")
             self._navigation_page_rows: dict[int, int] = {}
+            navigation_icons = {
+                "Dashboard": QStyle.StandardPixmap.SP_DirHomeIcon,
+                "Library": QStyle.StandardPixmap.SP_FileDialogDetailedView,
+                "Collections": QStyle.StandardPixmap.SP_DirIcon,
+                "Favourites": QStyle.StandardPixmap.SP_DialogYesButton,
+                "People": QStyle.StandardPixmap.SP_ComputerIcon,
+                "Places": QStyle.StandardPixmap.SP_DialogOpenButton,
+                "Categories": QStyle.StandardPixmap.SP_FileDialogListView,
+                "Visual Duplicates": QStyle.StandardPixmap.SP_FileDialogContentsView,
+                "Android Devices": QStyle.StandardPixmap.SP_ComputerIcon,
+                "Backup Profiles": QStyle.StandardPixmap.SP_FileIcon,
+                "Disks": QStyle.StandardPixmap.SP_DriveHDIcon,
+                "Backup Health": QStyle.StandardPixmap.SP_DialogApplyButton,
+                "Advanced Tools": QStyle.StandardPixmap.SP_ToolBarHorizontalExtensionButton,
+                "Operations": QStyle.StandardPixmap.SP_BrowserReload,
+                "Settings": QStyle.StandardPixmap.SP_FileDialogDetailedView,
+            }
             for group_name, page_names in NAVIGATION_GROUPS:
                 heading = QListWidgetItem(group_name.upper())
                 heading.setFlags(Qt.ItemFlag.NoItemFlags)
                 self.navigation.addItem(heading)
                 for page_name in page_names:
                     item = QListWidgetItem("Home" if page_name == "Dashboard" else page_name)
+                    icon_kind = navigation_icons.get(page_name)
+                    if icon_kind is not None:
+                        item.setIcon(self.style().standardIcon(icon_kind))
                     row = self.navigation.count()
                     self._navigation_page_rows[row] = NAVIGATION_ITEMS.index(page_name)
                     self.navigation.addItem(item)
