@@ -753,41 +753,9 @@ if QT_AVAILABLE:
                 self._tables[label] = table
                 layout.addWidget(table)
             elif label == "Collections":
-                self.collections_result = QLabel(
-                    "Catalog-derived browse views: date, folders, favourites, embedded-GPS places, and advisory visual groups. No media files are changed."
-                )
-                self.collections_result.setWordWrap(True)
-                layout.addWidget(self.collections_result)
-                refresh_button = QPushButton("Refresh collections")
-                refresh_button.clicked.connect(self._refresh_collections)
-                layout.addWidget(refresh_button)
-                open_button = QPushButton("Open selected collection in Library")
-                open_button.clicked.connect(self._open_selected_collection)
-                layout.addWidget(open_button)
-                create_actions = QHBoxLayout()
-                self.new_collection_title = QLineEdit()
-                self.new_collection_title.setPlaceholderText("New album name")
-                create_actions.addWidget(self.new_collection_title, 1)
-                create_button = QPushButton("Create album")
-                create_button.clicked.connect(self._create_user_collection)
-                create_actions.addWidget(create_button)
-                layout.addLayout(create_actions)
-                layout.addWidget(QLabel("Browse collections"))
-                self.collections_grid = QListWidget()
-                configure_tile_grid(self.collections_grid, "CollectionGrid")
-                self.collections_grid.itemDoubleClicked.connect(self._open_collection_tile)
-                layout.addWidget(self.collections_grid)
-                self.collections_album_grid = QListWidget()
-                configure_tile_grid(self.collections_album_grid, "AlbumGrid", icon_size=(150, 110), grid_size=(190, 155))
-                self.collections_album_grid.itemDoubleClicked.connect(self._open_album_tile)
-                layout.addWidget(QLabel("Your albums"))
-                layout.addWidget(self.collections_album_grid)
-                table = QTableWidget()
-                table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-                table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-                table.cellDoubleClicked.connect(self._open_collection_row)
-                self._tables[label] = table
-                layout.addWidget(table)
+                from .pages.collections_page import build_collections_page
+
+                build_collections_page(self, layout, self._tables)
             elif label == "Photo Viewer":
                 toolbar = QHBoxLayout()
                 back_button = QPushButton("Back to Library")

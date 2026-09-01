@@ -34,9 +34,10 @@ The grouping is defined in `ui/spec.py`; the old services are not removed.
 
 - `src/photovault/ui/theme.py`: centralized light-theme tokens and stylesheet
 - `src/photovault/ui/spec.py`: grouped navigation contract
-- `src/photovault/ui/main_window.py`: grouped sidebar, shared theme, and
-  collection/category double-click interactions, catalog-only user albums,
-  and the dedicated Photo Viewer navigation flow
+- `src/photovault/ui/main_window.py`: grouped sidebar, shared theme, global
+  state, and navigation coordination
+- `src/photovault/ui/pages/activity_page.py` and `collections_page.py`:
+  dedicated page builders for Activity and Collections
 - `src/photovault/catalog/collections.py`: catalog-derived browse views
 - `src/photovault/catalog/classification.py`: optional local ONNX category
   indexing with resumable checkpoints
