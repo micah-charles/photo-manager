@@ -87,7 +87,8 @@ with provenance and backup-protection sections.
 ## 10. Storage and Backup Health
 
 The underlying storage safety tools remain available and use live catalog
-data. Backup Health now aggregates the existing `audit_backup_set` reports
+data. Drives now show a user-facing connected/offline summary while retaining
+the table for registered drive details. Backup Health now aggregates the existing `audit_backup_set` reports
 into a live protected/total/needs-attention summary and per-backup-set table;
 the detailed audit pages remain available for technical review.
 

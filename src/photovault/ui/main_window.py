@@ -776,6 +776,10 @@ if QT_AVAILABLE:
                 self._tables[label] = table
                 layout.addWidget(table)
             elif label == "Disks":
+                self.disks_summary = QLabel("Your registered storage locations and current connection state.")
+                self.disks_summary.setObjectName("StatusSummary")
+                self.disks_summary.setWordWrap(True)
+                layout.addWidget(self.disks_summary)
                 form = QFormLayout()
                 self.disk_root = QLineEdit()
                 form.addRow("Mounted folder / disk root", self.disk_root)
@@ -823,6 +827,10 @@ if QT_AVAILABLE:
                 self._tables[label] = table
                 layout.addWidget(table)
             elif label == "Operations":
+                self.activity_summary = QLabel("Recent library, backup, verification, and storage activity.")
+                self.activity_summary.setObjectName("StatusSummary")
+                self.activity_summary.setWordWrap(True)
+                layout.addWidget(self.activity_summary)
                 form = QFormLayout()
                 self.undo_operation_id = QLineEdit()
                 form.addRow("Quarantine operation ID", self.undo_operation_id)
@@ -1932,7 +1940,13 @@ if QT_AVAILABLE:
 
                 refresh_volume_statuses(self.connection)
                 rows = self.connection.execute("SELECT id, display_name, status, current_mount_path, last_seen FROM volumes ORDER BY display_name").fetchall()
-                self._fill_table(self._tables["Disks"], ["ID", "Name", "Status", "Mount path", "Last seen"], [tuple(row) for row in rows])
+                self._fill_table(self._tables["Disks"], ["Drive", "Status", "Location", "Last seen"], [(row[1], row[2], row[3], row[4]) for row in rows])
+                if hasattr(self, "disks_summary"):
+                    connected = sum(row[2] == "CONNECTED" for row in rows)
+                    self.disks_summary.setText(
+                        f"{connected}/{len(rows)} drive(s) connected. Offline drives remain visible and are never treated as deleted."
+                        if rows else "No drives registered yet. Register a mounted destination drive to start a verified backup."
+                    )
             if "Backup Health" in self._tables:
                 self._refresh_backup_health()
             if "Backup Sets" in self._tables:
@@ -1940,7 +1954,20 @@ if QT_AVAILABLE:
                 self._fill_table(self._tables["Backup Sets"], ["ID", "Name", "Required copies", "Scope", "Updated"], [tuple(row) for row in rows])
             if "Operations" in self._tables:
                 rows = self.connection.execute("SELECT id, operation_type, status, dry_run, created_at, completed_at FROM operations ORDER BY created_at DESC").fetchall()
-                self._fill_table(self._tables["Operations"], ["ID", "Type", "Status", "Dry run", "Created", "Completed"], [tuple(row) for row in rows])
+                labels = {
+                    "IMPORT": "Backup import", "COPY": "Verified copy", "QUARANTINE": "Quarantine",
+                    "UNDO_QUARANTINE": "Restore from quarantine", "SCAN": "Library scan",
+                }
+                self._fill_table(
+                    self._tables["Operations"],
+                    ["Activity", "Status", "Started", "Completed", "Details"],
+                    [(labels.get(row[1], row[1].title()), row[2].title(), row[4], row[5] or "—", "Dry run" if row[3] else "") for row in rows],
+                )
+                if hasattr(self, "activity_summary"):
+                    self.activity_summary.setText(
+                        f"{len(rows):,} recorded operation(s). Completed work remains auditable; technical operation IDs are available in Advanced details."
+                        if rows else "No activity recorded yet. Completed scans and backups will appear here."
+                    )
             if "Timeline" in self._tables:
                 self._refresh_timeline()
             if "Library" in self._tables:
