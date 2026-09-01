@@ -70,10 +70,19 @@ class OnnxImageNetClassifier:
         return [ImageCategory(self._labels[int(index)], float(probabilities[int(index)])) for index in indices]
 
 
-def index_image_categories(connection: sqlite3.Connection, classifier: ImageClassifier, volume_id: str | None = None, limit: int = 0, top_k: int = 5) -> dict[str, int]:
+def index_image_categories(
+    connection: sqlite3.Connection,
+    classifier: ImageClassifier,
+    volume_id: str | None = None,
+    limit: int = 0,
+    top_k: int = 5,
+    commit_every: int = 25,
+) -> dict[str, int]:
     """Classify connected images only; originals remain untouched and hash-invalidated."""
     if top_k < 1:
         raise ValueError("top_k must be positive")
+    if commit_every < 1:
+        raise ValueError("commit_every must be positive")
     sql = """SELECT al.asset_id, v.current_mount_path, al.relative_path, eh.sha256
              FROM asset_locations al JOIN assets a ON a.id=al.asset_id JOIN volumes v ON v.id=al.volume_id
              JOIN exact_hashes eh ON eh.asset_id=al.asset_id
@@ -87,6 +96,7 @@ def index_image_categories(connection: sqlite3.Connection, classifier: ImageClas
     if limit > 0:
         representatives = dict(list(representatives.items())[:limit])
     indexed = skipped = errors = 0; now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    processed_since_commit = 0
     for asset_id, (path, sha256) in representatives.items():
         current = connection.execute("SELECT COUNT(*), MIN(source_sha256), MAX(source_sha256) FROM image_categories WHERE asset_id=? AND model=?", (asset_id, classifier.model_name)).fetchone()
         if current[0] and current[1] == sha256 and current[2] == sha256:
@@ -101,7 +111,13 @@ def index_image_categories(connection: sqlite3.Connection, classifier: ImageClas
                 ((asset_id, classifier.model_name, item.label, item.score, sha256, now) for item in categories),
             )
             indexed += 1
-        except (OSError, RuntimeError, ValueError):
+        except Exception:
+            # A damaged or unsupported image must not abandon a long-running
+            # derived-data pass.  The source bytes are never changed.
             errors += 1
+        processed_since_commit += 1
+        if processed_since_commit >= commit_every:
+            connection.commit()
+            processed_since_commit = 0
     connection.commit()
     return {"indexed": indexed, "skipped": skipped, "errors": errors, "assets": len(representatives)}
