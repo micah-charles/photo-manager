@@ -323,9 +323,11 @@ if QT_AVAILABLE:
                     """SELECT a.id, a.media_type, al.relative_path, v.current_mount_path
                        FROM assets a JOIN asset_locations al ON al.asset_id=a.id
                        JOIN volumes v ON v.id=al.volume_id
+                       LEFT JOIN media_metadata mm ON mm.asset_id=a.id
                        LEFT JOIN thumbnails t ON t.asset_id=a.id AND t.version='v1-320'
                        WHERE al.missing_since IS NULL AND t.asset_id IS NULL
-                       ORDER BY a.id LIMIT ?""", (self.limit,)
+                       ORDER BY COALESCE(mm.capture_datetime, al.capture_date, '') DESC, a.id
+                       LIMIT ?""", (self.limit,)
                 ).fetchall()
                 total = len(rows)
                 for index, row in enumerate(rows, 1):
