@@ -68,12 +68,14 @@ def list_library_items(connection: sqlite3.Connection, query: LibraryQuery = Lib
                v.current_mount_path,
                COALESCE(mm.capture_datetime, al.capture_date) AS captured,
                mm.camera_make, mm.camera_model, mm.width, mm.height,
+               gm.latitude, gm.longitude, mm.date_source,
                th.path AS thumbnail_path,
                EXISTS (SELECT 1 FROM asset_favourites f WHERE f.asset_id=al.asset_id) AS is_favourite
         FROM asset_locations al
         JOIN assets a ON a.id=al.asset_id
         JOIN volumes v ON v.id=al.volume_id
         LEFT JOIN media_metadata mm ON mm.asset_id=al.asset_id
+        LEFT JOIN gps_metadata gm ON gm.asset_id=al.asset_id
         LEFT JOIN thumbnails th ON th.asset_id=al.asset_id AND th.version='v1-320'
         WHERE {' AND '.join(where)}
         ORDER BY {_SORTS[query.sort]}

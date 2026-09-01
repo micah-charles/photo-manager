@@ -1574,6 +1574,11 @@ if QT_AVAILABLE:
                     "relative_path": row["relative_path"], "volume_name": row["volume_name"],
                     "volume_status": row["volume_status"], "thumbnail_path": thumbnail,
                     "is_favourite": bool(row["is_favourite"]), "media_type": row["media_type"],
+                    "size_bytes": row["size_bytes"], "captured": row["captured"],
+                    "camera_make": row["camera_make"], "camera_model": row["camera_model"],
+                    "width": row["width"], "height": row["height"],
+                    "latitude": row["latitude"], "longitude": row["longitude"],
+                    "date_source": row["date_source"],
                 })
                 self.library_grid.addItem(item)
 
@@ -1608,8 +1613,21 @@ if QT_AVAILABLE:
                 label = "Video (no poster cached)" if details["media_type"] == "VIDEO" else "No cached thumbnail"
                 self.library_preview.setText(label)
             availability = "Original is currently available" if details["volume_status"] == "CONNECTED" else "Original volume is offline; catalog/thumbnail remains available"
+            size = self._human_bytes(int(details["size_bytes"]))
+            dimensions = f"{details['width']} × {details['height']}" if details["width"] and details["height"] else "Dimensions unavailable"
+            camera = " ".join(filter(None, (details["camera_make"], details["camera_model"]))) or "Camera unavailable"
+            location = (
+                f"{float(details['latitude']):.6f}, {float(details['longitude']):.6f} ({details['date_source'] or 'embedded metadata'})"
+                if details["latitude"] is not None and details["longitude"] is not None else "No embedded location"
+            )
+            verified = self.connection.execute(
+                "SELECT COUNT(DISTINCT path) FROM verification_history WHERE asset_id=? AND result='VERIFIED'",
+                (details["asset_id"],),
+            ).fetchone()[0]
+            protection = f"Protected — {verified} verified copy" + ("ies" if verified != 1 else "") if verified else "Not yet verified elsewhere"
             self.library_preview_details.setText(
-                f"{details['filename']}\n{details['relative_path']}\n{details['volume_name']}: {availability}"
+                f"{details['filename']}\n{details['captured'] or 'Date unavailable'}\n{camera}\n{dimensions} · {size}\n"
+                f"Location: {location}\nFile: {details['relative_path']}\n{details['volume_name']}: {availability}\n{protection}"
             )
 
         def _toggle_selected_library_favourites(self) -> None:
