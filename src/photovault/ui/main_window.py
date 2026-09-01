@@ -676,6 +676,10 @@ if QT_AVAILABLE:
                 if index == page_index:
                     self.navigation.setCurrentRow(row)
                     return
+            # Technical pages are intentionally hidden from the primary
+            # sidebar. Advanced Tools opens them directly while the sidebar
+            # remains available for returning to a normal user-facing page.
+            self.pages.setCurrentIndex(page_index)
 
         def _register_disk(self) -> None:
             try:

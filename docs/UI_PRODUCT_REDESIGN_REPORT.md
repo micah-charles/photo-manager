@@ -23,10 +23,16 @@ names and page indexes for the existing services:
 
 - Photos: Home, Library, Collections, Favourites
 - Explore: People, Places, Categories, Visual Duplicates
-- Backup: Android Devices, Backup Profiles, Backup Sets
-- Storage: Disks, Backup Health, audits, and reconciliation
-- Activity: Operations and Timeline
-- Settings: Settings, Advanced Tools, Catalog Recovery and advanced catalog tools
+- Backup: Android Devices, Backup Profiles
+- Storage: Drives, Backup Health, Advanced Tools
+- Activity: Activity (the existing Operations history page)
+- Settings: Settings
+
+Photo Viewer remains a deep-linked photo workflow rather than a permanent
+sidebar destination. Backup Sets, Scan, Redundancy Audit, Reconciliation,
+Folder Safety Audit, Copy Plans, Quarantine, Catalog Recovery, and Timeline
+remain real stacked pages but are reached through Advanced Tools. This keeps
+the normal sidebar compact without removing developer/safety capabilities.
 
 The grouping is defined in `ui/spec.py`; the old services are not removed.
 
@@ -34,8 +40,9 @@ The grouping is defined in `ui/spec.py`; the old services are not removed.
 
 - `src/photovault/ui/theme.py`: centralized light-theme tokens and stylesheet
 - `src/photovault/ui/spec.py`: grouped navigation contract
-- `src/photovault/ui/main_window.py`: grouped sidebar, shared theme, global
-  state, and navigation coordination
+- `src/photovault/ui/main_window.py`: compact grouped sidebar, shared theme,
+  global state, and navigation coordination; hidden technical pages retain
+  stable deep-link routing
 - `src/photovault/ui/pages/activity_page.py`, `collections_page.py`,
   `library_page.py`, `photo_viewer_page.py`, `android_backup_page.py`,
   `people_page.py`, `places_page.py`, `categories_page.py`,

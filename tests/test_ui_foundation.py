@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from photovault.ui.spec import NAVIGATION_GROUPS, NAVIGATION_ITEMS
+from photovault.ui.spec import ADVANCED_PAGE_ITEMS, NAVIGATION_GROUPS, NAVIGATION_ITEMS
 from photovault.database.connection import connect
 from photovault.catalog.scanner import register_volume
 from photovault.platform.base import VolumeIdentity
@@ -25,8 +25,27 @@ class UIFoundationTests(unittest.TestCase):
 
     def test_user_navigation_groups_preserve_every_existing_page(self) -> None:
         grouped_pages = tuple(page for _group, pages in NAVIGATION_GROUPS for page in pages)
-        self.assertEqual(set(grouped_pages), set(NAVIGATION_ITEMS))
+        self.assertEqual(set(NAVIGATION_ITEMS) - set(grouped_pages), {"Photo Viewer", *ADVANCED_PAGE_ITEMS})
         self.assertEqual(len(grouped_pages), len(set(grouped_pages)))
+
+    def test_technical_pages_are_reachable_without_primary_sidebar_clutter(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            visible_labels = [window.navigation.item(row).text() for row in window._navigation_page_rows]
+            self.assertNotIn("Scan", visible_labels)
+            self.assertNotIn("Redundancy Audit", visible_labels)
+            window._select_page("Scan")
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Scan"))
+            window.close()
+            connection.close()
 
     def test_gui_module_has_clear_optional_dependency_behavior(self) -> None:
         from photovault.ui import main_window

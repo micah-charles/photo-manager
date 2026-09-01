@@ -28,13 +28,19 @@ NAVIGATION_ITEMS: tuple[str, ...] = (
     "Settings",
 )
 
-# User-facing groups for the sidebar. Page names remain stable so existing
-# backend pages and deep links continue to work during migration.
+# User-facing groups for the sidebar. Technical pages remain real stacked
+# pages, but are reached through Advanced Tools rather than crowding the main
+# navigation.
 NAVIGATION_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Photos", ("Dashboard", "Library", "Photo Viewer", "Collections", "Favourites")),
+    ("Photos", ("Dashboard", "Library", "Collections", "Favourites")),
     ("Explore", ("People", "Places", "Categories", "Visual Duplicates")),
-    ("Backup", ("Android Devices", "Backup Profiles", "Backup Sets")),
-    ("Storage", ("Disks", "Backup Health", "Redundancy Audit", "Reconciliation", "Folder Safety Audit")),
-    ("Activity", ("Operations", "Timeline")),
-    ("Settings", ("Settings", "Advanced Tools", "Catalog Recovery", "Scan", "Copy Plans", "Quarantine")),
+    ("Backup", ("Android Devices", "Backup Profiles")),
+    ("Storage", ("Disks", "Backup Health", "Advanced Tools")),
+    ("Activity", ("Operations",)),
+    ("Settings", ("Settings",)),
+)
+
+ADVANCED_PAGE_ITEMS: tuple[str, ...] = (
+    "Scan", "Redundancy Audit", "Reconciliation", "Folder Safety Audit",
+    "Copy Plans", "Quarantine", "Catalog Recovery", "Backup Sets", "Timeline",
 )

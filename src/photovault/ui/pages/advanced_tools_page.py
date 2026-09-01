@@ -12,9 +12,15 @@ def build_advanced_tools_page(owner: object, layout: object) -> None:
     intro.setWordWrap(True)
     layout.addWidget(intro)
     for button_text, target in (
-        ("Scan a library folder", "Scan"), ("Build a copy plan", "Copy Plans"),
-        ("Review Backup Health", "Backup Health"), ("Open Catalog Recovery", "Catalog Recovery"),
+        ("Scan a library folder", "Scan"),
+        ("Run Redundancy Audit", "Redundancy Audit"),
+        ("Run Reconciliation", "Reconciliation"),
+        ("Audit folder safety", "Folder Safety Audit"),
+        ("Build a copy plan", "Copy Plans"),
         ("Open Quarantine", "Quarantine"),
+        ("Open Catalog Recovery", "Catalog Recovery"),
+        ("Open Backup Sets", "Backup Sets"),
+        ("Open Timeline details", "Timeline"),
     ):
         button = QPushButton(button_text)
         button.clicked.connect(lambda _checked=False, page=target: owner._select_page(page))
