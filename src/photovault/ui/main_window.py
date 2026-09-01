@@ -1238,6 +1238,7 @@ if QT_AVAILABLE:
                 f"{identity.display_name} · {device.get('media_count', 'unknown')} media items · "
                 f"{len(folders)} shared folder(s) discovered · {backup_text}."
             )
+            self._populate_android_folder_selector(folders)
             self._fill_table(
                 self._tables["Android Devices"],
                 ["Folder", "Items", "Bytes", "Images", "Videos"],
@@ -1246,6 +1247,36 @@ if QT_AVAILABLE:
                     for folder in folders
                 ],
             )
+
+        def _populate_android_folder_selector(self, folders: object) -> None:
+            """Render the live Companion folder manifest as a checkable source picker."""
+            if not hasattr(self, "android_folder_selector"):
+                return
+            selected = {
+                line.strip().strip("/") for line in self.android_transfer_folders.toPlainText().splitlines()
+                if line.strip()
+            }
+            if not selected:
+                selected = {"DCIM/Camera"}
+            self.android_folder_selector.blockSignals(True)
+            self.android_folder_selector.clear()
+            for folder in folders:
+                path = str(folder.relative_path).strip("/")
+                item = QListWidgetItem(f"{path}\n{int(folder.count):,} items · {self._human_bytes(int(folder.size_bytes))}")
+                item.setData(Qt.ItemDataRole.UserRole, path)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(Qt.CheckState.Checked if path in selected else Qt.CheckState.Unchecked)
+                self.android_folder_selector.addItem(item)
+            self.android_folder_selector.blockSignals(False)
+
+        def _android_folder_selection_changed(self, _item: QListWidgetItem) -> None:
+            selected = []
+            for index in range(self.android_folder_selector.count()):
+                item = self.android_folder_selector.item(index)
+                if item.checkState() == Qt.CheckState.Checked:
+                    selected.append(str(item.data(Qt.ItemDataRole.UserRole)))
+            if selected:
+                self.android_transfer_folders.setPlainText("\n".join(selected))
 
         def _android_failed(self, message: str) -> None:
             self.android_backup_status.setText("USB connection failed")

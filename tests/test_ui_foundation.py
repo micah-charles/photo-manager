@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 import time
 import tempfile
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -97,6 +98,33 @@ class UIFoundationTests(unittest.TestCase):
             self.assertIn("cancelled safely", window.android_backup_completion.text())
             window._android_transfer_failed("destination unavailable")
             self.assertIn("completed with issues", window.android_backup_completion.text())
+            window.close()
+            connection.close()
+
+    def test_android_manifest_populates_checkable_folder_picker(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            folder = SimpleNamespace(
+                relative_path="Pictures", count=12, size_bytes=2048,
+                image_count=10, video_count=2,
+            )
+            window._android_companion_completed({
+                "identity": SimpleNamespace(display_name="Pixel 8 Pro", source_id="pixel-test"),
+                "device": {"media_count": 12},
+                "folders": [folder],
+            })
+            self.assertEqual(window.android_folder_selector.count(), 1)
+            picker_item = window.android_folder_selector.item(0)
+            picker_item.setCheckState(main_window.Qt.CheckState.Checked)
+            self.assertEqual(window.android_transfer_folders.toPlainText(), "Pictures")
             window.close()
             connection.close()
 

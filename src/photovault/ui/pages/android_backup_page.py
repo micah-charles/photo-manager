@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QCheckBox,
     QFormLayout,
@@ -9,6 +10,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -88,6 +91,13 @@ def build_android_backup_page(owner: object, layout: object, tables: dict[str, Q
     owner.android_transfer_media_filter.addItem("Videos only", "VIDEO")
     owner.android_transfer_destination = QLineEdit()
     owner.android_transfer_workers = QLineEdit("5")
+    transfer_layout.addWidget(QLabel("Phone folders"))
+    owner.android_folder_selector = QListWidget()
+    owner.android_folder_selector.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+    owner.android_folder_selector.setMaximumHeight(170)
+    owner.android_folder_selector.setToolTip("Select one or more shared phone folders for this backup.")
+    owner.android_folder_selector.itemChanged.connect(owner._android_folder_selection_changed)
+    transfer_layout.addWidget(owner.android_folder_selector)
     transfer_form.addRow("Backup folders", owner.android_transfer_folders)
     transfer_form.addRow("Profile name", owner.android_transfer_profile_name)
     transfer_form.addRow("Media", owner.android_transfer_media_filter)
