@@ -26,6 +26,7 @@ try:
         QMainWindow,
         QMessageBox,
         QPlainTextEdit,
+        QProgressBar,
         QPushButton,
         QStackedWidget,
         QTableWidget,
@@ -429,6 +430,12 @@ if QT_AVAILABLE:
                 self.android_backup_summary.setObjectName("StatusSummary")
                 self.android_backup_summary.setWordWrap(True)
                 layout.addWidget(self.android_backup_summary)
+                self.android_backup_progress = QProgressBar()
+                self.android_backup_progress.setRange(0, 100)
+                self.android_backup_progress.setValue(0)
+                self.android_backup_progress.setTextVisible(True)
+                self.android_backup_progress.setFormat("Ready")
+                layout.addWidget(self.android_backup_progress)
                 form = QFormLayout()
                 from photovault.cli.main import _default_android_helper
 
@@ -1107,6 +1114,8 @@ if QT_AVAILABLE:
             self.android_transfer_cancel_button.setEnabled(True)
             self.android_backup_status.setText("Backup in progress")
             self.android_backup_summary.setText("Building the phone inventory, then copying and verifying files in the background…")
+            self.android_backup_progress.setValue(0)
+            self.android_backup_progress.setFormat("Preparing…")
             self.android_transfer_result.setText("Building a read-only source inventory in background…")
             self._android_transfer_thread = QThread(self)
             self._android_transfer_worker = AndroidCompanionTransferWorker(
@@ -1270,6 +1279,8 @@ if QT_AVAILABLE:
                 self.android_backup_status.setText("Reading phone inventory")
                 self.android_backup_summary.setText("Listing the selected Android folders. No phone files are changed.")
                 self.android_transfer_result.setText("Reading Android folder inventory…")
+                self.android_backup_progress.setValue(0)
+                self.android_backup_progress.setFormat("Reading inventory…")
             elif stage == "planned":
                 self._android_transfer_total = int(event["items"])
                 bytes_total = int(event["bytes_total"])
@@ -1280,6 +1291,8 @@ if QT_AVAILABLE:
                     f"{self._android_transfer_total:,} files selected · {self._human_bytes(bytes_total)} · "
                     f"{event['new']} new, {event['unchanged']} already verified"
                 )
+                self.android_backup_progress.setValue(0)
+                self.android_backup_progress.setFormat(f"0/{self._android_transfer_total:,} files")
                 self.android_transfer_result.setText(
                     f"Plan: {self._android_transfer_total} files, {bytes_total:,} bytes, "
                     f"new={event['new']}, unchanged={event['unchanged']}, missing from source={event['missing']} (no deletions), "
@@ -1303,6 +1316,11 @@ if QT_AVAILABLE:
                     f"{self._android_transfer_completed:,}/{self._android_transfer_total:,} files · "
                     f"{self._human_bytes(self._android_transfer_bytes)} copied · "
                     f"{self._human_bytes(average)}/s average"
+                )
+                progress = int((self._android_transfer_bytes / self._android_transfer_total_bytes) * 100) if self._android_transfer_total_bytes else 0
+                self.android_backup_progress.setValue(max(0, min(progress, 100)))
+                self.android_backup_progress.setFormat(
+                    f"{self._android_transfer_completed:,}/{self._android_transfer_total:,} files · {progress}%"
                 )
                 self._android_transfer_checkpoint = now
                 self._android_transfer_checkpoint_bytes = self._android_transfer_bytes
@@ -1332,18 +1350,22 @@ if QT_AVAILABLE:
             self.android_backup_summary.setText(
                 f"Imported {result['imported']:,} new files; {result['already_imported']:,} were already verified."
             )
+            self.android_backup_progress.setValue(100)
+            self.android_backup_progress.setFormat("Complete")
             self._refresh_android_backup_profiles()
             self.refresh()
 
         def _android_transfer_cancelled(self, message: str) -> None:
             self.android_backup_status.setText("Backup cancelled")
             self.android_backup_summary.setText("Partial files are retained safely and can be resumed later.")
+            self.android_backup_progress.setFormat("Cancelled — safe to resume")
             self.android_transfer_result.setText(f"Backup cancelled safely: {message}. Retained partial files can resume.")
             self._refresh_android_backup_profiles()
 
         def _android_transfer_failed(self, message: str) -> None:
             self.android_backup_status.setText("Backup failed")
             self.android_backup_summary.setText("The destination and source were not modified beyond verified completed files.")
+            self.android_backup_progress.setFormat("Failed — review details")
             self.android_transfer_result.setText(f"Android backup failed: {message}")
             self._refresh_android_backup_profiles()
 
