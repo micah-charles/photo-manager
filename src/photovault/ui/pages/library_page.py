@@ -92,6 +92,8 @@ def build_library_page(owner: object, layout: object, tables: dict[str, QTableWi
     owner.library_grid = PhotoGrid(object_name="PhotoGrid")
     owner.library_grid.itemSelectionChanged.connect(owner._library_selection_changed)
     owner.library_grid.itemDoubleClicked.connect(owner._open_library_item)
+    owner.library_grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    owner.library_grid.customContextMenuRequested.connect(owner._library_context_menu)
     owner.library_grid.show_empty_state("No photos indexed yet")
     browser_layout.addWidget(owner.library_grid, 3)
 

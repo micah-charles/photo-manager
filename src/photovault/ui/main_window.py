@@ -25,6 +25,7 @@ try:
         QListWidget,
         QListWidgetItem,
         QMainWindow,
+        QMenu,
         QMessageBox,
         QPlainTextEdit,
         QProgressBar,
@@ -2085,6 +2086,27 @@ if QT_AVAILABLE:
             self._show_viewer_item(self._viewer_index)
             self._select_page("Photo Viewer")
             self.library_result.setText("Photo opened in Viewer. Use Back to Library to continue browsing.")
+
+        def _library_context_menu(self, position: object) -> None:
+            """Expose common library actions without exposing database internals."""
+            item = self.library_grid.itemAt(position)
+            if item is not None and item not in self.library_grid.selectedItems():
+                self.library_grid.setCurrentItem(item)
+            selected = self.library_grid.selectedItems()
+            if not selected:
+                return
+            menu = QMenu(self)
+            if len(selected) == 1:
+                open_action = menu.addAction("Open in Viewer")
+                open_action.triggered.connect(lambda: self._open_library_item(selected[0]))
+            favourite_action = menu.addAction(
+                "Remove favourite" if all(bool(i.data(Qt.ItemDataRole.UserRole)["is_favourite"]) for i in selected)
+                else "Add favourite"
+            )
+            favourite_action.triggered.connect(self._toggle_selected_library_favourites)
+            details_action = menu.addAction("Show file details")
+            details_action.triggered.connect(self._library_selection_changed)
+            menu.exec(self.library_grid.viewport().mapToGlobal(position))
 
         def _show_viewer_item(self, index: int) -> None:
             if not self._viewer_items:
