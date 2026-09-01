@@ -686,29 +686,9 @@ if QT_AVAILABLE:
 
                 build_collections_page(self, layout, self._tables)
             elif label == "Photo Viewer":
-                toolbar = QHBoxLayout()
-                back_button = QPushButton("Back to Library")
-                back_button.clicked.connect(lambda: self._select_page("Library"))
-                toolbar.addWidget(back_button)
-                self.viewer_previous = QPushButton("Previous")
-                self.viewer_previous.clicked.connect(lambda: self._show_viewer_item(self._viewer_index - 1))
-                toolbar.addWidget(self.viewer_previous)
-                self.viewer_next = QPushButton("Next")
-                self.viewer_next.clicked.connect(lambda: self._show_viewer_item(self._viewer_index + 1))
-                toolbar.addWidget(self.viewer_next)
-                toolbar.addStretch(1)
-                layout.addLayout(toolbar)
-                viewer_body = QHBoxLayout()
-                self.viewer_image = QLabel("Open a photo from Library to view it here.")
-                self.viewer_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.viewer_image.setMinimumSize(640, 480)
-                self.viewer_image.setWordWrap(True)
-                viewer_body.addWidget(self.viewer_image, 3)
-                self.viewer_details = QLabel("Photo details appear here.")
-                self.viewer_details.setWordWrap(True)
-                self.viewer_details.setMinimumWidth(280)
-                viewer_body.addWidget(self.viewer_details, 1)
-                layout.addLayout(viewer_body)
+                from .pages.photo_viewer_page import build_photo_viewer_page
+
+                build_photo_viewer_page(self, layout)
             elif label == "People":
                 form = QFormLayout()
                 self.people_features_json = QLineEdit()
