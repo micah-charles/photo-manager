@@ -96,8 +96,9 @@ deliberately separate from the cached preview path.
 ## 10. Storage and Backup Health
 
 The underlying storage safety tools remain available and use live catalog
-data. Drives now show a user-facing connected/offline summary while retaining
-the table for registered drive details. Backup Health now aggregates the existing `audit_backup_set` reports
+data. Drives now show a user-facing connected/offline summary and live
+storage-location cards while retaining the table for registered drive details.
+Backup Health now aggregates the existing `audit_backup_set` reports
 into a live protected/total/needs-attention summary and per-backup-set table;
 the detailed audit pages remain available for technical review.
 
@@ -144,7 +145,7 @@ real-Windows validation item.
    the first live tile-grid entry point is now present, and user-created albums
    have a live cover mosaic while preserving their catalog-only semantics.
 4. Activity now has a readable recent-operation feed alongside the detailed
-   audit table; richer drive cards remain. Backup Health summary is now
+   audit table; Drives now have live location cards. Backup Health summary is now
    available from the grouped Storage navigation.
 5. Normalize model labels into PhotoVault categories and move AI indexing into
    a cancellable UI worker.

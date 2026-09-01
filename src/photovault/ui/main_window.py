@@ -982,6 +982,13 @@ if QT_AVAILABLE:
                 self.disk_result = QLabel("No files are changed by registration.")
                 self.disk_result.setWordWrap(True)
                 layout.addWidget(self.disk_result)
+                layout.addWidget(QLabel("Storage locations"))
+                self.disks_grid = QListWidget()
+                self.disks_grid.setObjectName("DisksGrid")
+                self.disks_grid.setViewMode(QListWidget.ViewMode.IconMode)
+                self.disks_grid.setResizeMode(QListWidget.ResizeMode.Adjust)
+                self.disks_grid.setGridSize(QSize(220, 125))
+                layout.addWidget(self.disks_grid)
                 table = QTableWidget()
                 table.setSortingEnabled(True)
                 self._tables[label] = table
@@ -2549,6 +2556,14 @@ if QT_AVAILABLE:
                 refresh_volume_statuses(self.connection)
                 rows = self.connection.execute("SELECT id, display_name, status, current_mount_path, last_seen FROM volumes ORDER BY display_name").fetchall()
                 self._fill_table(self._tables["Disks"], ["Drive", "Status", "Location", "Last seen"], [(row[1], row[2], row[3], row[4]) for row in rows])
+                if hasattr(self, "disks_grid"):
+                    self.disks_grid.clear()
+                    for volume_id, name, status, mount_path, last_seen in rows:
+                        item = QListWidgetItem(f"{name}\n{status.title()}\n{mount_path or 'Not mounted'}")
+                        item.setToolTip(f"Volume {volume_id}\nLast seen: {last_seen or 'Never'}")
+                        self.disks_grid.addItem(item)
+                    if not rows:
+                        self.disks_grid.addItem("No registered drives yet")
                 if hasattr(self, "disks_summary"):
                     connected = sum(row[2] == "CONNECTED" for row in rows)
                     self.disks_summary.setText(
