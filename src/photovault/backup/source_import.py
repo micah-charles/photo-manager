@@ -237,6 +237,8 @@ def _record_successful_import(
     result: dict[str, int | float | str],
 ) -> dict[str, int | float | str]:
     """Persist a completed atomic file import on the caller's SQLite thread."""
+    from photovault.catalog.metadata import extract_metadata, store_metadata
+
     identity = source.identity()
     register_source(connection, identity)
     operation_id = "op_" + uuid.uuid4().hex
@@ -258,6 +260,11 @@ def _record_successful_import(
         now = utc_now()
         connection.execute("INSERT INTO assets(id, media_type, created_at, updated_at) VALUES (?, ?, ?, ?)", (asset_id, item.media_type, now, now))
         connection.execute("INSERT INTO exact_hashes(asset_id, sha256, byte_count, hashed_at) VALUES (?, ?, ?, ?)", (asset_id, actual_hash, result["bytes_written"], now))
+    # Metadata is read only after the verified bytes have been atomically
+    # published. This keeps the transfer safety boundary intact while making
+    # EXIF/XMP-derived camera, date, dimensions, and GPS data available to the
+    # catalog immediately instead of requiring a second manual scan.
+    store_metadata(connection, asset_id, extract_metadata(destination))
     stat = destination.stat()
     connection.execute("INSERT INTO asset_locations(asset_id, volume_id, relative_path, filename, size_bytes, modified_ns) VALUES (?, ?, ?, ?, ?, ?)", (asset_id, destination_volume_id, item.relative_path, destination.name, stat.st_size, stat.st_mtime_ns))
     connection.execute("UPDATE operation_items SET asset_id=?, expected_sha256=?, result='COPIED', verification_result='VERIFIED' WHERE id=?", (asset_id, actual_hash, operation_item_id))

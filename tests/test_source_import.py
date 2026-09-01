@@ -101,6 +101,36 @@ class SourceImportTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM asset_locations WHERE volume_id='vol_dest'").fetchone()[0], 1)
             connection.close()
 
+    def test_import_indexes_metadata_after_verified_publish(self) -> None:
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Pillow is not installed")
+        from io import BytesIO
+
+        image = Image.new("RGB", (17, 11), (20, 40, 60))
+        payload_buffer = BytesIO()
+        image.save(payload_buffer, format="JPEG")
+        payload = payload_buffer.getvalue()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            connection = connect(root / "catalog.db")
+            connection.execute(
+                "INSERT INTO volumes(id, display_name, identity_kind, identity_value, first_seen, last_seen, status) VALUES ('vol_dest', 'Destination', 'test', 'dest', datetime('now'), datetime('now'), 'CONNECTED')"
+            )
+            connection.commit()
+            result = import_source_item(
+                connection, FakeSource(payload),
+                SourceImportItem("675", "DCIM/Camera/photo.jpg", len(payload), media_type="IMAGE"),
+                root / "destination", "vol_dest",
+            )
+            asset_id = result["asset_id"]
+            metadata = connection.execute(
+                "SELECT width, height FROM media_metadata WHERE asset_id=?", (asset_id,)
+            ).fetchone()
+            self.assertEqual(tuple(metadata), (17, 11))
+            connection.close()
+
 
     def test_import_preserves_source_modified_time_when_supported(self) -> None:
         payload = b"metadata is in the original bytes"
