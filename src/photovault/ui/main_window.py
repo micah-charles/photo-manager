@@ -478,6 +478,10 @@ if QT_AVAILABLE:
                 self.android_backup_status.setObjectName("StatusBadge")
                 self.android_backup_status.setWordWrap(True)
                 layout.addWidget(self.android_backup_status)
+                self.android_device_card = QLabel("No Android device connected\nConnect the read-only Companion over Wi-Fi to begin.")
+                self.android_device_card.setObjectName("SettingsCard")
+                self.android_device_card.setWordWrap(True)
+                layout.addWidget(self.android_device_card)
                 self.android_backup_summary = QLabel(
                     "Connect the read-only PhotoVault Companion over Wi-Fi, then choose a folder and destination."
                 )
@@ -1298,6 +1302,7 @@ if QT_AVAILABLE:
             self.android_transfer_button.setEnabled(False)
             self.android_transfer_cancel_button.setEnabled(True)
             self.android_backup_status.setText("Backup in progress")
+            self.android_device_card.setText("Android Companion\nConnected · backup is running in the background")
             self.android_backup_summary.setText("Building the phone inventory, then copying and verifying files in the background…")
             self.android_backup_progress.setValue(0)
             self.android_backup_progress.setFormat("Preparing…")
@@ -1532,6 +1537,7 @@ if QT_AVAILABLE:
                 f"resumed {self._human_bytes(resumed)}. Destination volume: {result['destination_volume']}."
             )
             self.android_backup_status.setText("Backup complete")
+            self.android_device_card.setText("Android Companion\nConnected · latest backup completed successfully")
             self.android_backup_summary.setText(
                 f"Imported {result['imported']:,} new files; {result['already_imported']:,} were already verified."
             )
@@ -1542,6 +1548,7 @@ if QT_AVAILABLE:
 
         def _android_transfer_cancelled(self, message: str) -> None:
             self.android_backup_status.setText("Backup cancelled")
+            self.android_device_card.setText("Android Companion\nConnected · backup paused safely; resume is available")
             self.android_backup_summary.setText("Partial files are retained safely and can be resumed later.")
             self.android_backup_progress.setFormat("Cancelled — safe to resume")
             self.android_transfer_result.setText(f"Backup cancelled safely: {message}. Retained partial files can resume.")
@@ -1549,6 +1556,7 @@ if QT_AVAILABLE:
 
         def _android_transfer_failed(self, message: str) -> None:
             self.android_backup_status.setText("Backup failed")
+            self.android_device_card.setText("Android Companion\nConnected · backup needs attention")
             self.android_backup_summary.setText("The destination and source were not modified beyond verified completed files.")
             self.android_backup_progress.setFormat("Failed — review details")
             self.android_transfer_result.setText(f"Android backup failed: {message}")
@@ -1562,6 +1570,7 @@ if QT_AVAILABLE:
                 f"{len(storages)} storage(s) discovered."
             )
             self.android_backup_status.setText("USB device connected")
+            self.android_device_card.setText(f"{identity.display_name}\nConnected via experimental USB MTP")
             self.android_backup_summary.setText(f"{identity.display_name} is available through the experimental USB MTP path.")
             self._fill_table(
                 self._tables["Android Devices"],
@@ -1579,6 +1588,7 @@ if QT_AVAILABLE:
                 f"Companion version: {device.get('app_version', 'unknown')}."
             )
             self.android_backup_status.setText("Phone connected")
+            self.android_device_card.setText(f"{identity.display_name}\nConnected via Wi-Fi Companion")
             latest_backup = self.connection.execute(
                 """SELECT s.completed_at, s.imported_items, s.failed_items
                    FROM android_backup_snapshots s JOIN android_backup_profiles p ON p.id=s.profile_id
@@ -1605,11 +1615,13 @@ if QT_AVAILABLE:
 
         def _android_failed(self, message: str) -> None:
             self.android_backup_status.setText("USB connection failed")
+            self.android_device_card.setText("Android device\nUSB connection failed · Wi-Fi Companion is recommended")
             self.android_backup_summary.setText("Check the cable, USB mode, or use the Companion Wi-Fi connection.")
             self.android_result.setText(f"Android discovery failed: {message}")
 
         def _android_companion_failed(self, message: str) -> None:
             self.android_backup_status.setText("Phone connection failed")
+            self.android_device_card.setText("Android device\nConnection failed · check sharing, network, and token")
             self.android_backup_summary.setText("Check that sharing is active, the Mac and phone are on the same Wi-Fi, and the token is current.")
             self.android_result.setText(f"Android Companion connection failed: {message}")
 

@@ -70,8 +70,9 @@ based redesign. The current catalog data is shown live; no mockup values or
 fake people, drives, locations, or backup statistics are inserted. Categories
 are currently model candidates from local ImageNet inference and are not yet
 normalized into the final PhotoVault taxonomy. The Android page now has a
-stateful status summary for connection, inventory, copy, completion, failure,
-and cancellation while retaining advanced connection controls.
+stateful status summary and dedicated connected-device card for connection,
+inventory, copy, completion, failure, and cancellation while retaining
+advanced connection controls.
 
 ## 8. Android workflow status
 
@@ -139,8 +140,8 @@ real-Windows validation item.
 1. Replace the remaining flat page construction branches with page and
    reusable component modules.
 2. Finish the photo-first Home and richer connected-device Android Backup
-   workflow from the supplied mockup; the basic Viewer/inspector flow is now
-   available.
+   workflow from the supplied mockup; the device card, status, progress, and
+   profile flow are now available, while the final card composition remains.
 3. Replace the remaining smart-collection table with richer visual cards;
    the first live tile-grid entry point is now present, and user-created albums
    have a live cover mosaic while preserving their catalog-only semantics.
