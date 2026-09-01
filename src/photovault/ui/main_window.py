@@ -2375,6 +2375,9 @@ if QT_AVAILABLE:
                     "width": row["width"], "height": row["height"],
                     "latitude": row["latitude"], "longitude": row["longitude"],
                     "date_source": row["date_source"],
+                    "source_name": row["source_name"], "review_status": row["review_status"],
+                    "rating": row["rating"], "event_names": row["event_names"],
+                    "tag_names": row["tag_names"], "place_names": row["place_names"],
                 }
                 item.setData(Qt.ItemDataRole.UserRole, details)
                 self.library_grid.addItem(item)
@@ -2468,9 +2471,15 @@ if QT_AVAILABLE:
                 (details["asset_id"],),
             ).fetchone()[0]
             protection = f"Protected — {verified} verified copie{'s' if verified != 1 else ''}" if verified else "Not yet verified elsewhere"
+            rating = f" · {details['rating']}★" if details.get("rating") is not None else ""
             return (
                 f"{details['filename']}\n{details['captured'] or 'Date unavailable'}\n\n"
                 f"Camera\n{camera}\n{dimensions} · {size}\n\nLocation\n{location}\n\n"
+                f"Organisation\nSource: {details.get('source_name') or 'Unknown'}\n"
+                f"Review: {details.get('review_status', 'UNREVIEWED').title()}{rating}\n"
+                f"Event: {details.get('event_names') or '—'}\n"
+                f"Tags: {details.get('tag_names') or '—'}\n"
+                f"Place: {details.get('place_names') or '—'}\n\n"
                 f"File\n{details['relative_path']}\n{details['volume_name']} — {details['volume_status']}\n\n"
                 f"Backup protection\n{protection}"
             )

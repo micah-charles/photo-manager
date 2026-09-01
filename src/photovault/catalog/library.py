@@ -123,7 +123,13 @@ def list_library_items(connection: sqlite3.Connection, query: LibraryQuery = Lib
                EXISTS (SELECT 1 FROM asset_favourites f WHERE f.asset_id=al.asset_id) AS is_favourite,
                al.source_id, sp.display_name AS source_name,
                COALESCE(ar.review_status, 'UNREVIEWED') AS review_status,
-               COALESCE(ar.rating, mm.rating) AS rating
+               COALESCE(ar.rating, mm.rating) AS rating,
+               (SELECT group_concat(e.name, ', ') FROM event_assets ea
+                JOIN events e ON e.id=ea.event_id WHERE ea.asset_id=al.asset_id) AS event_names,
+               (SELECT group_concat(t.name, ', ') FROM asset_tags at
+                JOIN tags t ON t.id=at.tag_id WHERE at.asset_id=al.asset_id) AS tag_names,
+               (SELECT group_concat(p.name, ', ') FROM asset_places ap
+                JOIN places p ON p.id=ap.place_id WHERE ap.asset_id=al.asset_id) AS place_names
         FROM asset_locations al
         JOIN assets a ON a.id=al.asset_id
         JOIN volumes v ON v.id=al.volume_id
