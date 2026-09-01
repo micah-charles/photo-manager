@@ -382,6 +382,34 @@ if QT_AVAILABLE:
                 self.dashboard_result = QLabel("Loading catalog health…")
                 self.dashboard_result.setWordWrap(True)
                 layout.addWidget(self.dashboard_result)
+                self.dashboard_cards = {}
+                cards = QHBoxLayout()
+                for card_name, card_title in (
+                    ("safety", "Backup status"),
+                    ("library", "Your library"),
+                    ("storage", "Storage"),
+                    ("activity", "Recent activity"),
+                ):
+                    card = QWidget()
+                    card.setStyleSheet("QWidget { background: white; border: 1px solid #dfe3eb; border-radius: 10px; padding: 10px; }")
+                    card_layout = QVBoxLayout(card)
+                    card_layout.setContentsMargins(12, 10, 12, 10)
+                    heading = QLabel(card_title)
+                    heading.setStyleSheet("font-weight: 600; color: #647084; background: transparent; border: 0;")
+                    value = QLabel("Loading…")
+                    value.setWordWrap(True)
+                    value.setStyleSheet("font-size: 15px; font-weight: 700; background: transparent; border: 0;")
+                    card_layout.addWidget(heading)
+                    card_layout.addWidget(value)
+                    self.dashboard_cards[card_name] = value
+                    cards.addWidget(card)
+                layout.addLayout(cards)
+                quick_actions = QHBoxLayout()
+                for action_name, target in (("Browse Library", "Library"), ("View People", "People"), ("View Places", "Places")):
+                    action = QPushButton(action_name)
+                    action.clicked.connect(lambda _checked=False, page=target: self._select_page(page))
+                    quick_actions.addWidget(action)
+                layout.addLayout(quick_actions)
                 dashboard_table = QTableWidget()
                 self._tables[label] = dashboard_table
                 layout.addWidget(dashboard_table)
@@ -810,6 +838,13 @@ if QT_AVAILABLE:
             page_index = self._navigation_page_rows.get(row)
             if page_index is not None:
                 self._show_page(page_index)
+
+        def _select_page(self, page_name: str) -> None:
+            page_index = NAVIGATION_ITEMS.index(page_name)
+            for row, index in self._navigation_page_rows.items():
+                if index == page_index:
+                    self.navigation.setCurrentRow(row)
+                    return
 
         def _register_disk(self) -> None:
             try:
@@ -1436,6 +1471,15 @@ if QT_AVAILABLE:
             from photovault.catalog.dashboard import dashboard_metrics
 
             metrics = dashboard_metrics(self.connection)
+            if hasattr(self, "dashboard_cards"):
+                self.dashboard_cards["safety"].setText(
+                    "All good" if metrics.connected_volumes == metrics.volumes and metrics.volumes else "Needs attention"
+                )
+                self.dashboard_cards["library"].setText(f"{metrics.images:,} photos · {metrics.videos:,} videos")
+                self.dashboard_cards["storage"].setText(f"{metrics.connected_volumes}/{metrics.volumes} drives connected")
+                self.dashboard_cards["activity"].setText(
+                    f"{metrics.active_operations} active operation(s)" if metrics.active_operations else "No active operations"
+                )
             self.dashboard_result.setText(
                 f"Library: {metrics.assets} assets ({metrics.images} images, {metrics.videos} videos). "
                 f"Volumes: {metrics.connected_volumes}/{metrics.volumes} connected. "
