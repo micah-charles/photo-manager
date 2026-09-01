@@ -480,21 +480,9 @@ if QT_AVAILABLE:
 
                 build_android_backup_page(self, layout, self._tables)
             elif label == "Backup Profiles":
-                self.backup_profiles_result = QLabel(
-                    "Reusable Android backup recipes. A profile records the phone, selected folders, media filter, destination, and worker setting."
-                )
-                self.backup_profiles_result.setObjectName("StatusSummary")
-                self.backup_profiles_result.setWordWrap(True)
-                layout.addWidget(self.backup_profiles_result)
-                open_button = QPushButton("Open selected profile in Android Backup")
-                open_button.clicked.connect(self._open_selected_backup_profile)
-                layout.addWidget(open_button)
-                table = QTableWidget()
-                table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-                table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-                table.cellDoubleClicked.connect(self._open_backup_profile_row)
-                self._tables[label] = table
-                layout.addWidget(table)
+                from .pages.backup_profiles_page import build_backup_profiles_page
+
+                build_backup_profiles_page(self, layout, self._tables)
             elif label == "Scan":
                 form = QFormLayout()
                 self.scan_volume_id = QLineEdit()

@@ -38,10 +38,11 @@ The grouping is defined in `ui/spec.py`; the old services are not removed.
   state, and navigation coordination
 - `src/photovault/ui/pages/activity_page.py`, `collections_page.py`,
   `library_page.py`, `photo_viewer_page.py`, `android_backup_page.py`,
-  `people_page.py`, `places_page.py`, `categories_page.py`, and
-  `duplicates_page.py`: dedicated page builders for Activity, Collections,
-  Library, Photo Viewer/Inspector, Android Backup, People, Places, Categories,
-  and Visual Duplicates
+  `people_page.py`, `places_page.py`, `categories_page.py`,
+  `duplicates_page.py`, and `backup_profiles_page.py`: dedicated page
+  builders for Activity, Collections, Library, Photo Viewer/Inspector,
+  Android Backup, People, Places, Categories, Visual Duplicates, and Backup
+  Profiles
 - `src/photovault/catalog/collections.py`: catalog-derived browse views
 - `src/photovault/catalog/classification.py`: optional local ONNX category
   indexing with resumable checkpoints
@@ -145,8 +146,9 @@ real-Windows validation item.
 
 1. Replace the remaining flat page construction branches with page and
    reusable component modules; dedicated Activity, Collections, Library,
-   Photo Viewer, Android Backup, People, Places, Categories, and Visual
-   Duplicates builders plus shared tile components are now in place.
+   Photo Viewer, Android Backup, People, Places, Categories, Visual
+   Duplicates, and Backup Profiles builders plus shared tile components are
+   now in place.
 2. Finish the photo-first Home and richer connected-device Android Backup
    workflow from the supplied mockup; the device card, status, progress, and
    profile flow are now available, while the final card composition remains.
