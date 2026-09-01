@@ -558,28 +558,9 @@ if QT_AVAILABLE:
 
                 build_favourites_page(self, layout, self._tables)
             elif label == "Disks":
-                self.disks_summary = QLabel("Your registered storage locations and current connection state.")
-                self.disks_summary.setObjectName("StatusSummary")
-                self.disks_summary.setWordWrap(True)
-                layout.addWidget(self.disks_summary)
-                form = QFormLayout()
-                self.disk_root = QLineEdit()
-                form.addRow("Mounted folder / disk root", self.disk_root)
-                layout.addLayout(form)
-                button = QPushButton("Register disk (catalog only)")
-                button.clicked.connect(self._register_disk)
-                layout.addWidget(button)
-                self.disk_result = QLabel("No files are changed by registration.")
-                self.disk_result.setWordWrap(True)
-                layout.addWidget(self.disk_result)
-                layout.addWidget(QLabel("Storage locations"))
-                self.disks_grid = QListWidget()
-                configure_tile_grid(self.disks_grid, "DisksGrid", icon_size=(64, 64), grid_size=(220, 125))
-                layout.addWidget(self.disks_grid)
-                table = QTableWidget()
-                table.setSortingEnabled(True)
-                self._tables[label] = table
-                layout.addWidget(table)
+                from .pages.disks_page import build_disks_page
+
+                build_disks_page(self, layout, self._tables)
             elif label == "Backup Sets":
                 create_form = QFormLayout()
                 self.backup_set_name = QLineEdit()
