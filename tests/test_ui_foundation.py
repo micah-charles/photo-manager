@@ -67,6 +67,8 @@ class UIFoundationTests(unittest.TestCase):
             window = main_window.MainWindow(connection)
             window._select_page("Android Devices")
             self.assertEqual(window.android_backup_status.text(), "Not connected")
+            self.assertFalse(window.android_transfer_group.isVisible())
+            self.assertFalse(window.android_profile_history_label.isVisible())
             window.android_backup_status.setText("Phone connected")
             self.assertEqual(window.android_backup_status.text(), "Phone connected")
             window.close()
