@@ -54,7 +54,7 @@ outside the catalog and are never changed by browsing or enrichment.
 The current implementation has working pages for Home/Dashboard, including a
 live recent-photo thumbnail strip, Library
   thumbnail browsing, dedicated Photo Viewer/inspector, Collections, People, Places,
-Favourites, Visual Duplicates, Android Devices, Backup Sets, Disks, Operations,
+Favourites (with a Library smart-view handoff), Visual Duplicates, Android Devices, Backup Sets, Disks, Operations,
   Timeline, Categories, Backup Health, and the advanced storage tools. Collections and
   categories can be opened by double-clicking a row and route to the normal
   Library grid. Users can create albums and add selected Library items without

@@ -911,6 +911,9 @@ if QT_AVAILABLE:
                 import_button = QPushButton("Import legacy gallery favourites JSON")
                 import_button.clicked.connect(self._import_legacy_favourites)
                 layout.addWidget(import_button)
+                browse_button = QPushButton("Browse favourites in Library")
+                browse_button.clicked.connect(self._browse_favourites)
+                layout.addWidget(browse_button)
                 self.favourite_result = QLabel("Favourites are catalog annotations only; originals and backup verification are unchanged.")
                 self.favourite_result.setWordWrap(True)
                 layout.addWidget(self.favourite_result)
@@ -2328,6 +2331,12 @@ if QT_AVAILABLE:
                 self.refresh()
             except Exception as exc:
                 self.favourite_result.setText(f"Favourite update failed: {type(exc).__name__}: {exc}")
+
+        def _browse_favourites(self) -> None:
+            self._library_collection_id = "favourites"
+            self.library_favourites_only.setChecked(True)
+            self._refresh_library()
+            self._select_page("Library")
 
         def _remove_favourite(self) -> None:
             try:
