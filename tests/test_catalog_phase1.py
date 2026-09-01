@@ -9,6 +9,7 @@ from pathlib import Path
 from photovault.catalog.scanner import register_volume, scan_volume
 from photovault.catalog.volume_state import refresh_volume_statuses
 from photovault.database.connection import connect
+from photovault.database.migrations import MIGRATIONS
 from photovault.platform.base import VolumeIdentity
 from photovault.platform.macos.volume import MacOSVolumeProvider
 
@@ -22,7 +23,10 @@ class CatalogPhase1Tests(unittest.TestCase):
     def test_in_memory_catalog_does_not_create_a_filesystem_artifact(self) -> None:
         db = connect(":memory:")
         self.addCleanup(db.close)
-        self.assertEqual(db.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 18)
+        self.assertEqual(
+            db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0],
+            max(version for version, _ in MIGRATIONS),
+        )
 
     def test_register_scan_and_rescan_are_read_only_and_incremental(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

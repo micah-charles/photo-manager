@@ -11,6 +11,7 @@ from photovault.backup.source_import import (
     SourceImportStatus,
     import_source_item,
     import_source_items,
+    list_import_batches,
     plan_source_import,
     restore_import_modified_times,
     stream_source_to_file,
@@ -238,6 +239,12 @@ class SourceImportTests(unittest.TestCase):
             second = SourceImportItem("2", "DCIM/Camera/b.jpg", len(source.payload))
             result = import_source_items(connection, source, [first, second], root / "destination", "vol_dest", fsync_mode="batch", batch_files=1)
             self.assertEqual((result["planned"], result["imported"], result["already_imported"]), (2, 1, 1))
+            batch = list_import_batches(connection)[0]
+            self.assertEqual(
+                (batch["id"], batch["status"], batch["planned_items"], batch["imported_items"], batch["already_imported_items"]),
+                (result["batch_id"], "COMPLETED", 2, 1, 1),
+            )
+            self.assertEqual(connection.execute("SELECT batch_id FROM source_imports WHERE logical_path=?", (second.relative_path,)).fetchone()[0], result["batch_id"])
             self.assertTrue((root / "destination/DCIM/Camera/b.jpg").exists())
             connection.close()
 

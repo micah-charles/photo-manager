@@ -39,6 +39,93 @@ class SourceImportStatus(StrEnum):
     CONFLICT = "CONFLICT"
 
 
+def start_import_batch(
+    connection: sqlite3.Connection,
+    *,
+    source_id: str,
+    destination_volume_id: str,
+    planned_items: int,
+    planned_bytes: int = 0,
+    details: dict[str, object] | None = None,
+) -> str:
+    """Record one user-visible import run before any destination bytes publish."""
+    batch_id = "import_batch_" + uuid.uuid4().hex
+    connection.execute(
+        """INSERT INTO import_batches(
+            id, source_id, destination_volume_id, started_at, status,
+            planned_items, details_json
+        ) VALUES (?, ?, ?, ?, 'RUNNING', ?, ?)""",
+        (
+            batch_id,
+            source_id,
+            destination_volume_id,
+            utc_now(),
+            planned_items,
+            json.dumps({"planned_bytes": planned_bytes, **(details or {})}, sort_keys=True),
+        ),
+    )
+    connection.commit()
+    return batch_id
+
+
+def finish_import_batch(
+    connection: sqlite3.Connection,
+    batch_id: str,
+    *,
+    status: str,
+    imported_items: int = 0,
+    already_imported_items: int = 0,
+    failed_items: int = 0,
+    imported_bytes: int = 0,
+    details: dict[str, object] | None = None,
+) -> None:
+    """Close a batch with durable counters and a terminal status."""
+    if status not in {"COMPLETED", "CANCELLED", "FAILED"}:
+        raise ValueError("invalid import batch status")
+    connection.execute(
+        """UPDATE import_batches SET completed_at=?, status=?, imported_items=?,
+           already_imported_items=?, failed_items=?, imported_bytes=?, details_json=?
+           WHERE id=?""",
+        (
+            utc_now(), status, imported_items, already_imported_items, failed_items,
+            imported_bytes, json.dumps(details or {}, sort_keys=True), batch_id,
+        ),
+    )
+    connection.commit()
+
+
+def list_import_batches(
+    connection: sqlite3.Connection,
+    *,
+    source_id: str | None = None,
+    destination_volume_id: str | None = None,
+    limit: int = 50,
+) -> list[sqlite3.Row]:
+    """Return recent import runs for activity/history pages."""
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    clauses: list[str] = []
+    params: list[object] = []
+    if source_id is not None:
+        clauses.append("b.source_id=?")
+        params.append(source_id)
+    if destination_volume_id is not None:
+        clauses.append("b.destination_volume_id=?")
+        params.append(destination_volume_id)
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    params.append(limit)
+    return list(connection.execute(
+        f"""SELECT b.*, s.display_name AS source_name,
+                  v.display_name AS destination_volume_name
+           FROM import_batches b
+           JOIN source_profiles s ON s.source_id=b.source_id
+           JOIN volumes v ON v.id=b.destination_volume_id
+           {where}
+           ORDER BY b.started_at DESC LIMIT ?""",
+        params,
+    ))
+
+
 @dataclass(frozen=True)
 class SourceImportDecision:
     item: SourceImportItem
@@ -235,6 +322,7 @@ def _record_successful_import(
     destination: Path,
     destination_volume_id: str,
     result: dict[str, int | float | str],
+    batch_id: str | None = None,
 ) -> dict[str, int | float | str]:
     """Persist a completed atomic file import on the caller's SQLite thread."""
     from photovault.catalog.metadata import extract_metadata, store_metadata
@@ -245,7 +333,7 @@ def _record_successful_import(
     source_path = f"android://{identity.source_id}/{item.object_id}/{item.relative_path}"
     connection.execute(
         "INSERT INTO operations(id, operation_type, created_at, status, dry_run, details_json) VALUES (?, 'IMPORT', ?, 'RUNNING', 0, ?)",
-        (operation_id, utc_now(), json.dumps({"source_id": identity.source_id, "items": 1, "bytes": item.size_bytes or 0}, sort_keys=True)),
+        (operation_id, utc_now(), json.dumps({"source_id": identity.source_id, "items": 1, "bytes": item.size_bytes or 0, "batch_id": batch_id}, sort_keys=True)),
     )
     cursor = connection.execute(
         "INSERT INTO operation_items(operation_id, source_path, destination_path, result) VALUES (?, ?, ?, 'RUNNING')",
@@ -270,18 +358,18 @@ def _record_successful_import(
     connection.execute("UPDATE operation_items SET asset_id=?, expected_sha256=?, result='COPIED', verification_result='VERIFIED' WHERE id=?", (asset_id, actual_hash, operation_item_id))
     connection.execute("INSERT INTO verification_history(operation_item_id, asset_id, path, expected_sha256, actual_sha256, result, verified_at) VALUES (?, ?, ?, ?, ?, 'VERIFIED', ?)", (operation_item_id, asset_id, str(destination), actual_hash, actual_hash, utc_now()))
     modified = item.modified_at.isoformat() if hasattr(item.modified_at, "isoformat") else None
-    connection.execute("""INSERT INTO source_imports(source_id, logical_path, source_object_id, source_size_bytes, source_modified_at, destination_volume_id, destination_relative_path, sha256, operation_id, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(source_id, logical_path, destination_volume_id, destination_relative_path) DO UPDATE SET source_object_id=excluded.source_object_id, source_size_bytes=excluded.source_size_bytes, source_modified_at=excluded.source_modified_at, sha256=excluded.sha256, operation_id=excluded.operation_id, imported_at=excluded.imported_at""", (identity.source_id, item.relative_path, item.object_id, item.size_bytes, modified, destination_volume_id, item.relative_path, actual_hash, operation_id, utc_now()))
+    connection.execute("""INSERT INTO source_imports(source_id, logical_path, source_object_id, source_size_bytes, source_modified_at, destination_volume_id, destination_relative_path, sha256, operation_id, imported_at, batch_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(source_id, logical_path, destination_volume_id, destination_relative_path) DO UPDATE SET source_object_id=excluded.source_object_id, source_size_bytes=excluded.source_size_bytes, source_modified_at=excluded.source_modified_at, sha256=excluded.sha256, operation_id=excluded.operation_id, imported_at=excluded.imported_at, batch_id=excluded.batch_id""", (identity.source_id, item.relative_path, item.object_id, item.size_bytes, modified, destination_volume_id, item.relative_path, actual_hash, operation_id, utc_now(), batch_id))
     connection.execute("UPDATE operations SET completed_at=?, status='COMPLETED' WHERE id=?", (utc_now(), operation_id))
     connection.commit()
     return {**result, "operation_id": operation_id, "asset_id": asset_id}
 
 
-def _record_failed_import(connection: sqlite3.Connection, source: ReadablePhotoSource, item: SourceImportItem, destination: Path, exc: Exception) -> None:
+def _record_failed_import(connection: sqlite3.Connection, source: ReadablePhotoSource, item: SourceImportItem, destination: Path, exc: Exception, batch_id: str | None = None) -> None:
     identity = source.identity(); register_source(connection, identity)
     operation_id = "op_" + uuid.uuid4().hex
     source_path = f"android://{identity.source_id}/{item.object_id}/{item.relative_path}"
-    connection.execute("INSERT INTO operations(id, operation_type, created_at, completed_at, status, dry_run, details_json) VALUES (?, 'IMPORT', ?, ?, 'FAILED', 0, ?)", (operation_id, utc_now(), utc_now(), json.dumps({"source_id": identity.source_id, "items": 1, "bytes": item.size_bytes or 0}, sort_keys=True)))
+    connection.execute("INSERT INTO operations(id, operation_type, created_at, completed_at, status, dry_run, details_json) VALUES (?, 'IMPORT', ?, ?, 'FAILED', 0, ?)", (operation_id, utc_now(), utc_now(), json.dumps({"source_id": identity.source_id, "items": 1, "bytes": item.size_bytes or 0, "batch_id": batch_id}, sort_keys=True)))
     connection.execute("INSERT INTO operation_items(operation_id, source_path, destination_path, result, verification_result, error_message) VALUES (?, ?, ?, 'FAILED', 'FAILED', ?)", (operation_id, source_path, str(destination), str(exc)))
     connection.commit()
 
@@ -349,8 +437,30 @@ def import_source_items(
             continue
         new_decisions.append(decision)
 
+    identity = source.identity()
+    batch_id = start_import_batch(
+        connection,
+        source_id=identity.source_id,
+        destination_volume_id=destination_volume_id,
+        planned_items=len(decisions),
+        planned_bytes=sum(decision.item.size_bytes or 0 for decision in decisions),
+        details={"fsync_mode": fsync_mode, "batch_files": batch_files, "workers": workers},
+    )
+
+    def finish_batch(status: str, *, failed_items: int = 0, details: dict[str, object] | None = None) -> None:
+        finish_import_batch(
+            connection,
+            batch_id,
+            status=status,
+            imported_items=len(imported),
+            already_imported_items=already_imported,
+            failed_items=failed_items,
+            imported_bytes=sum(int(row.get("bytes_written", 0)) for row in imported),
+            details=details,
+        )
+
     def accept_result(decision: SourceImportDecision, result: dict[str, int | float | str]) -> None:
-        result = _record_successful_import(connection, source, decision.item, _safe_destination(destination_root, decision.item.relative_path), destination_volume_id, result)
+        result = _record_successful_import(connection, source, decision.item, _safe_destination(destination_root, decision.item.relative_path), destination_volume_id, result, batch_id)
         imported.append(result)
         if fsync_mode == "batch":
             pending_durability.append(Path(str(result["destination"])))
@@ -386,9 +496,11 @@ def import_source_items(
             try:
                 result = stream_with_retry(decision)
             except ImportCancelled:
+                finish_batch("CANCELLED")
                 raise
             except Exception as exc:
-                _record_failed_import(connection, source, decision.item, _safe_destination(destination_root, decision.item.relative_path), exc)
+                _record_failed_import(connection, source, decision.item, _safe_destination(destination_root, decision.item.relative_path), exc, batch_id)
+                finish_batch("FAILED", failed_items=1, details={"error": str(exc)})
                 raise
             accept_result(decision, result)
     else:
@@ -407,16 +519,20 @@ def import_source_items(
                 except ImportCancelled as exc:
                     failures.append(exc)
                 except Exception as exc:
-                    _record_failed_import(connection, source, decision.item, _safe_destination(destination_root, decision.item.relative_path), exc)
+                    _record_failed_import(connection, source, decision.item, _safe_destination(destination_root, decision.item.relative_path), exc, batch_id)
                     failures.append(exc)
         if failures:
             cancelled = next((failure for failure in failures if isinstance(failure, ImportCancelled)), None)
             if cancelled is not None:
+                finish_batch("CANCELLED", failed_items=len(failures), details={"error": str(cancelled)})
                 raise cancelled
+            finish_batch("FAILED", failed_items=len(failures), details={"error": str(failures[0])})
             raise failures[0]
     flush_batch()
     restore_import_modified_times(connection, destination_root, destination_volume_id)
+    finish_batch("COMPLETED")
     return {
+        "batch_id": batch_id,
         "planned": len(decisions),
         "imported": len(imported),
         "already_imported": already_imported,

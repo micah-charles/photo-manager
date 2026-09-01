@@ -515,6 +515,33 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX idx_asset_locations_source ON asset_locations(source_id);
         """,
     ),
+    (
+        19,
+        """
+        CREATE TABLE import_batches (
+            id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL REFERENCES source_profiles(source_id) ON DELETE CASCADE,
+            destination_volume_id TEXT NOT NULL REFERENCES volumes(id) ON DELETE CASCADE,
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            status TEXT NOT NULL
+                CHECK (status IN ('RUNNING', 'COMPLETED', 'CANCELLED', 'FAILED')),
+            planned_items INTEGER NOT NULL DEFAULT 0,
+            imported_items INTEGER NOT NULL DEFAULT 0,
+            already_imported_items INTEGER NOT NULL DEFAULT 0,
+            failed_items INTEGER NOT NULL DEFAULT 0,
+            imported_bytes INTEGER NOT NULL DEFAULT 0,
+            details_json TEXT NOT NULL DEFAULT '{}'
+        );
+        ALTER TABLE source_imports ADD COLUMN batch_id TEXT
+            REFERENCES import_batches(id) ON DELETE SET NULL;
+        CREATE INDEX idx_import_batches_source
+            ON import_batches(source_id, started_at DESC);
+        CREATE INDEX idx_import_batches_destination
+            ON import_batches(destination_volume_id, started_at DESC);
+        CREATE INDEX idx_source_imports_batch ON source_imports(batch_id);
+        """,
+    ),
 ]
 
 
