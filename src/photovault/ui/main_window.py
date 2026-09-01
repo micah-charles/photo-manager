@@ -1566,8 +1566,16 @@ if QT_AVAILABLE:
         def _refresh_timeline(self) -> None:
             from photovault.catalog.timeline import list_timeline
 
-            rows = list_timeline(self.connection, limit=500)
-            self._fill_table(self._tables["Timeline"], ["Asset", "Filename", "Path", "Volume", "Captured", "Display time", "Camera", "Model", "W", "H", "Lat", "Lon", "Source", "Thumbnail"], rows)
+            source_id = self.timeline_source_filter.currentData() if hasattr(self, "timeline_source_filter") else None
+            rows = list_timeline(self.connection, limit=500, source_id=source_id)
+            grouped = []
+            for row in rows:
+                day = str(row[5] or row[4] or "Undated")[:10]
+                grouped.append((day, *row))
+            self._fill_table(self._tables["Timeline"], ["Day", "Asset", "Filename", "Path", "Volume", "Captured", "Display time", "Camera", "Model", "W", "H", "Lat", "Lon", "Source", "Thumbnail"], grouped)
+            if hasattr(self, "timeline_summary"):
+                days = len({item[0] for item in grouped})
+                self.timeline_summary.setText(f"{len(rows):,} item(s) across {days:,} day group(s). Display time includes the selected source offset; raw capture time is retained.")
 
         def _refresh_dashboard(self) -> None:
             from photovault.catalog.dashboard import dashboard_metrics

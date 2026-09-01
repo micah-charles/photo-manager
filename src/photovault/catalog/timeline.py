@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 
-def list_timeline(connection: sqlite3.Connection, volume_id: str | None = None, limit: int = 100):
+def list_timeline(connection: sqlite3.Connection, volume_id: str | None = None, limit: int = 100, source_id: str | None = None):
     query = (
         "SELECT al.asset_id, al.filename, al.relative_path, al.volume_id, "
         "COALESCE(mm.capture_datetime, al.capture_date) AS captured, "
@@ -23,6 +23,9 @@ def list_timeline(connection: sqlite3.Connection, volume_id: str | None = None, 
     if volume_id:
         query += " AND al.volume_id=?"
         params.append(volume_id)
+    if source_id:
+        query += " AND al.source_id=?"
+        params.append(source_id)
     query += " ORDER BY display_captured IS NULL, display_captured DESC, al.relative_path LIMIT ?"
     params.append(limit)
     return connection.execute(query, params).fetchall()
