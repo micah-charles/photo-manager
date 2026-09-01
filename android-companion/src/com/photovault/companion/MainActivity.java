@@ -101,7 +101,7 @@ public final class MainActivity extends Activity {
         if (snapshot == null) { status.setText("Local sharing is stopped. Choose a sharing duration above."); return; }
         String ip = localIpv4();
         status.setText("PhotoVault Companion — read-only POC\n" +
-            "Build: 0.8 — embedded-location plan\n\n" +
+            "Build: 0.9 — embedded-location fix\n\n" +
             "Status: sharing active — " + snapshot.durationLabel + "\n" +
             "Desktop URL: http://" + ip + ":" + PORT + "\n" +
             "Token: " + snapshot.token + "\n\n" +
@@ -232,7 +232,7 @@ public final class MainActivity extends Activity {
             try(ParcelFileDescriptor pfd=resolver.openFileDescriptor(uri,"r")) {
                 if(mime.startsWith("image/")) {
                     ExifInterface exif=new ExifInterface(pfd.getFileDescriptor()); float[] coordinates=new float[2];
-                    if(exif.getLatLong(coordinates) && validCoordinates(coordinates[0],coordinates[1])) location=locationJson(coordinates[0],coordinates[1],"embedded_exif");
+                    if(validExifCoordinates(exif, coordinates)) location=locationJson(coordinates[0],coordinates[1],"embedded_exif");
                 } else if(mime.startsWith("video/")) {
                     MediaMetadataRetriever retriever=new MediaMetadataRetriever();
                     try { retriever.setDataSource(pfd.getFileDescriptor()); location=iso6709Location(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION)); }
@@ -246,6 +246,15 @@ public final class MainActivity extends Activity {
             if(value==null)return null; Matcher match=ISO_6709.matcher(value); if(!match.matches())return null;
             try { double latitude=Double.parseDouble(match.group(1)); double longitude=Double.parseDouble(match.group(2)); return validCoordinates(latitude,longitude)?locationJson(latitude,longitude,"embedded_video_metadata"):null; }
             catch(NumberFormatException ignored){return null;}
+        }
+        // Pixel files with an empty GPS IFD can make framework ExifInterface
+        // report 0,0. Require the EXIF hemisphere references as well as finite
+        // coordinates, preserving legitimate 0,0 captures with real N/E refs.
+        private static boolean validExifCoordinates(ExifInterface exif, float[] coordinates) {
+            if(!exif.getLatLong(coordinates) || !validCoordinates(coordinates[0],coordinates[1])) return false;
+            String latitudeRef=exif.getAttribute(ExifInterface.TAG_GPS_LATITUDE_REF);
+            String longitudeRef=exif.getAttribute(ExifInterface.TAG_GPS_LONGITUDE_REF);
+            return ("N".equals(latitudeRef)||"S".equals(latitudeRef)) && ("E".equals(longitudeRef)||"W".equals(longitudeRef));
         }
         private static boolean validCoordinates(double latitude,double longitude){return !Double.isNaN(latitude)&&!Double.isInfinite(latitude)&&!Double.isNaN(longitude)&&!Double.isInfinite(longitude)&&latitude>=-90&&latitude<=90&&longitude>=-180&&longitude<=180;}
         private static String locationJson(double latitude,double longitude,String source){return "{\"latitude\":"+Double.toString(latitude)+",\"longitude\":"+Double.toString(longitude)+",\"source\":\""+source+"\"}";}
