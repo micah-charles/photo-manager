@@ -76,8 +76,9 @@ and cancellation while retaining advanced connection controls.
 The proven read-only and Wi-Fi Companion paths remain in the shared source
 architecture. The UI exposes Android connection and transfer controls and now
 shows state-driven status, inventory totals, average speed, ETA, completion,
-failure, a byte-based progress bar, and safe cancellation/resume messaging. A richer connected-device
-card with last-backup/new-item summaries remains P1 work.
+failure, a byte-based progress bar, safe cancellation/resume messaging, and a
+live last-backup summary when the catalog has a completed run. New-item
+delta calculation and a richer connected-device card remain P1 work.
 
 ## 9. Library and viewer status
 

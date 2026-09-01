@@ -1504,9 +1504,20 @@ if QT_AVAILABLE:
                 f"Companion version: {device.get('app_version', 'unknown')}."
             )
             self.android_backup_status.setText("Phone connected")
+            latest_backup = self.connection.execute(
+                """SELECT s.completed_at, s.imported_items, s.failed_items
+                   FROM android_backup_snapshots s JOIN android_backup_profiles p ON p.id=s.profile_id
+                   WHERE p.source_id=? AND s.status='COMPLETED'
+                   ORDER BY s.completed_at DESC LIMIT 1""",
+                (identity.source_id,),
+            ).fetchone()
+            if latest_backup is None:
+                backup_text = "No backup completed yet"
+            else:
+                backup_text = f"Last backup {latest_backup[0]} · {latest_backup[1]:,} imported · {latest_backup[2]:,} failed"
             self.android_backup_summary.setText(
                 f"{identity.display_name} · {device.get('media_count', 'unknown')} media items · "
-                f"{len(folders)} shared folder(s) discovered."
+                f"{len(folders)} shared folder(s) discovered · {backup_text}."
             )
             self._fill_table(
                 self._tables["Android Devices"],
