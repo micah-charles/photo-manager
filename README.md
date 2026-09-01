@@ -12,7 +12,7 @@ Phase 7 adds the read-only `audit-folder` command for deciding whether an old fo
 
 Phase 8 adds reversible quarantine and `undo-quarantine`. Files are hash-verified before and after the move, journalled, and never permanently deleted by this workflow. The GUI exposes dry-run Copy Plans, reversible Quarantine Plans and Undo Quarantine; execution requires an explicit confirmation and runs in a background worker.
 
-Phase 9 adds the optional PySide6 GUI foundation. Install with `pip install -e '.[desktop]'`, then run `PYTHONPATH=src python3 -m photovault.ui --catalog /path/to/catalog.db` or the `gui` CLI command. The GUI can register disks, configure Backup Sets, run read-only audits/reconciliation, build reviewed copy/quarantine plans, and undo completed quarantine operations.
+Phase 9 adds the optional PySide6 GUI foundation. Install with `pip install -e '.[desktop]'` (including Pillow for rebuildable thumbnail previews), then run `PYTHONPATH=src python3 -m photovault.ui --catalog /path/to/catalog.db` or the `gui` CLI command. The GUI can register disks, configure Backup Sets, run read-only audits/reconciliation, build reviewed copy/quarantine plans, and undo completed quarantine operations.
 
 Phase 10 adds metadata/timeline/gallery commands, for example `photovault scan <volume-id> <root> --thumbnail-root ~/.photovault/thumbnails`, `photovault timeline`, and `photovault gallery ./gallery/index.html`.
 
