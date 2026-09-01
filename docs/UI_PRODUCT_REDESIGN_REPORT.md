@@ -95,6 +95,9 @@ Favourites (with a Library smart-view handoff), Visual Duplicates, Android Devic
   Home also includes a live Android phone card based on the persistent source
   profile and last-seen timestamp; it does not claim that a phone is currently
   connected when the catalog only knows that it existed previously.
+  Dashboard, Collections, Drives, Backup Health, and Activity now keep their
+  raw tables behind explicit advanced-details toggles, preserving auditability
+  without making empty or technical tables the default experience.
 
 ## 7. Deviations from the mockup
 
