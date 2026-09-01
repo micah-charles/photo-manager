@@ -459,6 +459,7 @@ if QT_AVAILABLE:
             self._copy_plan = None
             self._quarantine_plan = None
             self._library_collection_id: str | None = None
+            self._library_review_status: str = ""
             self._viewer_items: list[dict[str, object]] = []
             self._viewer_index = -1
 
@@ -471,6 +472,7 @@ if QT_AVAILABLE:
             navigation_icons = {
                 "Dashboard": QStyle.StandardPixmap.SP_DirHomeIcon,
                 "Library": QStyle.StandardPixmap.SP_FileDialogDetailedView,
+                "Review": QStyle.StandardPixmap.SP_DialogApplyButton,
                 "Collections": QStyle.StandardPixmap.SP_DirIcon,
                 "Favourites": QStyle.StandardPixmap.SP_DialogYesButton,
                 "People": QStyle.StandardPixmap.SP_ComputerIcon,
@@ -585,6 +587,10 @@ if QT_AVAILABLE:
                 from .pages.library_page import build_library_page
 
                 build_library_page(self, layout, self._tables)
+            elif label == "Review":
+                from .pages.review_page import build_review_page
+
+                build_review_page(self, layout)
             elif label == "Collections":
                 from .pages.collections_page import build_collections_page
 
@@ -1724,6 +1730,50 @@ if QT_AVAILABLE:
                 combo.blockSignals(False)
             self.library_include_rejected.setChecked(False)
             self._refresh_library()
+
+        def _open_review_queue(self, status: str) -> None:
+            """Open a review queue in Library without changing any media bytes."""
+            self._select_page("Library")
+            index = self.library_review_filter.findData(status)
+            if index >= 0:
+                self.library_review_filter.setCurrentIndex(index)
+            if not status:
+                self.library_include_rejected.setChecked(False)
+            self._refresh_library()
+            if hasattr(self, "review_result"):
+                self.review_result.setText("Review queue opened in Library. Select items and apply a catalog-only decision.")
+
+        def _apply_selected_review(self) -> None:
+            selected = self.library_grid.selectedItems()
+            if not selected:
+                self.library_result.setText("Select one or more items before applying a review decision.")
+                return
+            try:
+                from photovault.catalog.organization import set_review
+
+                status = str(self.library_review_action.currentData())
+                asset_ids = [str(item.data(Qt.ItemDataRole.UserRole)["asset_id"]) for item in selected]
+                changed = set_review(self.connection, asset_ids, status=status)
+                self.library_result.setText(f"Updated review status for {changed} item(s). Originals were not changed.")
+                self._refresh_library()
+            except Exception as exc:
+                self.library_result.setText(f"Review update failed: {type(exc).__name__}: {exc}")
+
+        def _apply_selected_rating(self) -> None:
+            selected = self.library_grid.selectedItems()
+            rating = self.library_rating_action.currentData()
+            if not selected or rating is None:
+                self.library_result.setText("Select items and choose a rating first.")
+                return
+            try:
+                from photovault.catalog.organization import set_review
+
+                asset_ids = [str(item.data(Qt.ItemDataRole.UserRole)["asset_id"]) for item in selected]
+                changed = set_review(self.connection, asset_ids, rating=int(rating))
+                self.library_result.setText(f"Rated {changed} item(s) {rating}★. Originals were not changed.")
+                self._refresh_library()
+            except Exception as exc:
+                self.library_result.setText(f"Rating update failed: {type(exc).__name__}: {exc}")
 
         def _refresh_collections(self) -> None:
             try:
