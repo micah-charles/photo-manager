@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QTableWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPushButton, QTableWidget, QVBoxLayout, QWidget
 
 from ..components import PhotoGrid
 
@@ -57,8 +57,12 @@ def build_home_page(owner: object, layout: object, tables: dict[str, QTableWidge
     owner.dashboard_recent_grid.itemDoubleClicked.connect(owner._open_dashboard_item)
     layout.addWidget(owner.dashboard_recent_grid)
     dashboard_table = QTableWidget()
+    dashboard_table.setVisible(False)
     tables["Dashboard"] = dashboard_table
     layout.addWidget(dashboard_table)
+    owner.dashboard_technical_toggle = QCheckBox("Show advanced catalog details")
+    owner.dashboard_technical_toggle.toggled.connect(owner._set_dashboard_technical_visible)
+    layout.addWidget(owner.dashboard_technical_toggle)
     button = QPushButton("Refresh dashboard")
     button.clicked.connect(owner._refresh_dashboard)
     layout.addWidget(button)

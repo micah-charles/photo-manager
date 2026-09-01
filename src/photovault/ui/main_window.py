@@ -1999,6 +1999,9 @@ if QT_AVAILABLE:
         def _set_library_technical_visible(self, visible: bool) -> None:
             self._tables["Library"].setVisible(visible)
 
+        def _set_dashboard_technical_visible(self, visible: bool) -> None:
+            self._tables["Dashboard"].setVisible(visible)
+
         def _open_library_item(self, item: QListWidgetItem) -> None:
             """Double-click opens the selected item in the dedicated viewer."""
             details = item.data(Qt.ItemDataRole.UserRole)
