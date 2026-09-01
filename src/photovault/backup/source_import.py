@@ -82,13 +82,25 @@ def finish_import_batch(
     """Close a batch with durable counters and a terminal status."""
     if status not in {"COMPLETED", "CANCELLED", "FAILED"}:
         raise ValueError("invalid import batch status")
+    existing = connection.execute(
+        "SELECT details_json FROM import_batches WHERE id=?", (batch_id,)
+    ).fetchone()
+    prior_details: dict[str, object] = {}
+    if existing is not None and existing[0]:
+        try:
+            decoded = json.loads(existing[0])
+            if isinstance(decoded, dict):
+                prior_details = decoded
+        except json.JSONDecodeError:
+            pass
+    prior_details.update(details or {})
     connection.execute(
         """UPDATE import_batches SET completed_at=?, status=?, imported_items=?,
            already_imported_items=?, failed_items=?, imported_bytes=?, details_json=?
            WHERE id=?""",
         (
             utc_now(), status, imported_items, already_imported_items, failed_items,
-            imported_bytes, json.dumps(details or {}, sort_keys=True), batch_id,
+            imported_bytes, json.dumps(prior_details, sort_keys=True), batch_id,
         ),
     )
     connection.commit()
