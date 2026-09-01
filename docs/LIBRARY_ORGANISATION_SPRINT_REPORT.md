@@ -42,6 +42,14 @@ The catalog fixture used for visual QA is a copy under
 `/Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA`; the original regression
 catalog is not opened in write mode by the capture process.
 
+The current macOS release smoke check also passes:
+
+- PyInstaller 6.22.2 produced `dist/PhotoVault.app` for arm64;
+- the bundled executable responds to `--help`;
+- the bundle contains the native macOS Android MTP helper;
+- the Windows packaging path remains platform-neutral in Python, but requires
+  an actual Windows runner for final executable and removable-drive validation.
+
 ## Remaining work before final completion
 
 The master brief still requires a final product pass for multi-source import
