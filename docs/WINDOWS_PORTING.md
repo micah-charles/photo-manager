@@ -39,8 +39,8 @@ they are not a substitute for the Windows runner.
 The first Windows run exposed a test-harness portability issue rather than a
 volume-provider failure: SQLite connections held open while
 `TemporaryDirectory` cleaned up produced `WinError 32`. Test fixtures now close
-connections before temporary directories are removed, and the affected local
-regression group passes 56/56 tests.
+connections before temporary directories are removed; the complete non-UI
+regression suite now passes 80/80 tests locally.
 
 ## Remaining release checks
 
