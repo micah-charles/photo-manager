@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
@@ -356,7 +357,7 @@ if QT_AVAILABLE:
         def __init__(self, connection: sqlite3.Connection):
             super().__init__()
             self.connection = connection
-            self.setWindowTitle("PhotoVault")
+            self.setWindowTitle(os.environ.get("PHOTOVAULT_WINDOW_TITLE", "PhotoVault"))
             self.resize(1180, 760)
             self._tables: dict[str, QTableWidget] = {}
             self._inputs: dict[str, QLineEdit] = {}
