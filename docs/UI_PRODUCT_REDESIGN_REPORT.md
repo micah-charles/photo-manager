@@ -3,8 +3,9 @@
 ## 1. Current UI architecture
 
 PhotoVault uses a shared Python application core, SQLite catalog, optional
-PySide6 desktop UI, and platform adapters. `MainWindow` currently builds the
-pages and owns shared refresh/navigation state. Long-running scan, Android,
+PySide6 desktop UI, and platform adapters. `MainWindow` builds the remaining
+pages and owns shared refresh/navigation state; the Operations/Activity page
+has now been extracted into a dedicated page builder. Long-running scan, Android,
 copy, quarantine, and catalog-recovery work uses Qt worker threads. The
 library reads the existing thumbnail cache rather than full-resolution media.
 
@@ -138,7 +139,8 @@ real-Windows validation item.
 ## 14. Remaining known gaps
 
 1. Replace the remaining flat page construction branches with page and
-   reusable component modules.
+   reusable component modules; the first dedicated `pages/activity_page.py`
+   module and shared tile components are now in place.
 2. Finish the photo-first Home and richer connected-device Android Backup
    workflow from the supplied mockup; the device card, status, progress, and
    profile flow are now available, while the final card composition remains.

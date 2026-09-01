@@ -1014,29 +1014,9 @@ if QT_AVAILABLE:
                 self._tables[label] = table
                 layout.addWidget(table)
             elif label == "Operations":
-                self.activity_summary = QLabel("Recent library, backup, verification, and storage activity.")
-                self.activity_summary.setObjectName("StatusSummary")
-                self.activity_summary.setWordWrap(True)
-                layout.addWidget(self.activity_summary)
-                form = QFormLayout()
-                self.undo_operation_id = QLineEdit()
-                form.addRow("Quarantine operation ID", self.undo_operation_id)
-                layout.addLayout(form)
-                undo_button = QPushButton("Undo completed quarantine")
-                undo_button.clicked.connect(self._undo_quarantine)
-                layout.addWidget(undo_button)
-                self.undo_result = QLabel("Undo re-hashes the quarantined file and never overwrites a conflicting original.")
-                self.undo_result.setWordWrap(True)
-                layout.addWidget(self.undo_result)
-                layout.addWidget(QLabel("Recent activity"))
-                self.activity_feed = QListWidget()
-                self.activity_feed.setObjectName("ActivityFeed")
-                self.activity_feed.setMaximumHeight(220)
-                layout.addWidget(self.activity_feed)
-                table = QTableWidget()
-                table.setSortingEnabled(True)
-                self._tables[label] = table
-                layout.addWidget(table)
+                from .pages.activity_page import build_activity_page
+
+                build_activity_page(self, layout, self._tables)
             elif label == "Catalog Recovery":
                 form = QFormLayout()
                 self.catalog_backup_destination = QLineEdit()
