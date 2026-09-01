@@ -23,6 +23,8 @@ NAVIGATION_ITEMS: tuple[str, ...] = (
     "Places",
     "Categories",
     "Backup Health",
+    "Advanced Tools",
+    "Settings",
 )
 
 # User-facing groups for the sidebar. Page names remain stable so existing
@@ -33,5 +35,5 @@ NAVIGATION_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Backup", ("Android Devices", "Backup Sets")),
     ("Storage", ("Disks", "Backup Health", "Redundancy Audit", "Reconciliation", "Folder Safety Audit")),
     ("Activity", ("Operations", "Timeline")),
-    ("Settings", ("Catalog Recovery", "Scan", "Copy Plans", "Quarantine")),
+    ("Settings", ("Settings", "Advanced Tools", "Catalog Recovery", "Scan", "Copy Plans", "Quarantine")),
 )

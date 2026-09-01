@@ -25,7 +25,7 @@ names and page indexes for the existing services:
 - Backup: Android Devices, Backup Sets
 - Storage: Disks, Backup Health, audits, and reconciliation
 - Activity: Operations and Timeline
-- Settings: Catalog Recovery and advanced catalog tools
+- Settings: Settings, Advanced Tools, Catalog Recovery and advanced catalog tools
 
 The grouping is defined in `ui/spec.py`; the old services are not removed.
 
@@ -58,6 +58,8 @@ Favourites, Visual Duplicates, Android Devices, Backup Sets, Disks, Operations,
   categories can be opened by double-clicking a row and route to the normal
   Library grid. Users can create albums and add selected Library items without
   copying or moving originals.
+  Settings and Advanced Tools now provide progressive-disclosure landing pages
+  for the existing technical workflows.
 
 ## 7. Deviations from the mockup
 

@@ -31,4 +31,5 @@ def stylesheet() -> str:
     QLabel#SectionHeading {{ color: {t['muted']}; font-size: 11px; font-weight: 700; padding: 12px 10px 4px; }}
     QLabel#StatusBadge {{ color: {t['primary']}; font-size: 16px; font-weight: 700; background: {t['selection']}; border: 1px solid #c9dbff; border-radius: 8px; padding: 10px; }}
     QLabel#StatusSummary {{ color: {t['muted']}; background: transparent; padding: 2px 0 8px; }}
+    QLabel#SettingsCard {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 8px; padding: 12px; }}
     """
