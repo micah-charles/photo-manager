@@ -517,6 +517,17 @@ if QT_AVAILABLE:
                 layout.addWidget(button)
                 self.scan_result = QLabel("Ready")
                 layout.addWidget(self.scan_result)
+            elif label == "Backup Health":
+                self.backup_health_result = QLabel("No health check has been run yet.")
+                self.backup_health_result.setObjectName("StatusSummary")
+                self.backup_health_result.setWordWrap(True)
+                layout.addWidget(self.backup_health_result)
+                button = QPushButton("Run Backup Health check")
+                button.clicked.connect(self._refresh_backup_health)
+                layout.addWidget(button)
+                table = QTableWidget()
+                self._tables[label] = table
+                layout.addWidget(table)
             elif label in {"Redundancy Audit", "Reconciliation"}:
                 form = QFormLayout()
                 set_id = QLineEdit()
@@ -1626,6 +1637,46 @@ if QT_AVAILABLE:
             except Exception as exc:
                 self.collections_result.setText(f"Collection query failed: {type(exc).__name__}: {exc}")
 
+        def _refresh_backup_health(self) -> None:
+            try:
+                from photovault.backup.audit import audit_backup_set
+
+                sets = self.connection.execute(
+                    "SELECT id, name, required_copies FROM backup_sets ORDER BY name"
+                ).fetchall()
+                rows: list[tuple[object, ...]] = []
+                total_assets = 0
+                total_protected = 0
+                total_issues = 0
+                for backup_set in sets:
+                    report = audit_backup_set(self.connection, str(backup_set[0]))
+                    counts = report.counts
+                    issues = report.total_assets - report.protected_count
+                    total_assets += report.total_assets
+                    total_protected += report.protected_count
+                    total_issues += issues
+                    rows.append((report.name, report.protected_count, report.total_assets, report.required_copies, issues))
+                self._fill_table(
+                    self._tables["Backup Health"],
+                    ["Backup set", "Protected", "Assets", "Required copies", "Needs attention"],
+                    rows,
+                )
+                if not sets:
+                    self.backup_health_result.setText(
+                        "No backup profiles have been configured yet. Create a Backup Set after registering a destination drive."
+                    )
+                elif total_issues:
+                    self.backup_health_result.setText(
+                        f"Needs attention · {total_protected:,}/{total_assets:,} assets currently meet their required verified copies; "
+                        f"{total_issues:,} need review. No files were changed."
+                    )
+                else:
+                    self.backup_health_result.setText(
+                        f"All configured backup sets are healthy · {total_protected:,}/{total_assets:,} assets meet their required verified copies."
+                    )
+            except Exception as exc:
+                self.backup_health_result.setText(f"Backup Health check failed: {type(exc).__name__}: {exc}")
+
         def _refresh_categories(self) -> None:
             try:
                 from photovault.catalog.collections import list_collections
@@ -1882,6 +1933,8 @@ if QT_AVAILABLE:
                 refresh_volume_statuses(self.connection)
                 rows = self.connection.execute("SELECT id, display_name, status, current_mount_path, last_seen FROM volumes ORDER BY display_name").fetchall()
                 self._fill_table(self._tables["Disks"], ["ID", "Name", "Status", "Mount path", "Last seen"], [tuple(row) for row in rows])
+            if "Backup Health" in self._tables:
+                self._refresh_backup_health()
             if "Backup Sets" in self._tables:
                 rows = self.connection.execute("SELECT id, name, required_copies, scope, updated_at FROM backup_sets ORDER BY name").fetchall()
                 self._fill_table(self._tables["Backup Sets"], ["ID", "Name", "Required copies", "Scope", "Updated"], [tuple(row) for row in rows])

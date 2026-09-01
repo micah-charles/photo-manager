@@ -23,7 +23,7 @@ names and page indexes for the existing services:
 - Photos: Home, Library, Collections, Favourites
 - Explore: People, Places, Categories, Visual Duplicates
 - Backup: Android Devices, Backup Sets
-- Storage: Disks, audits, and reconciliation
+- Storage: Disks, Backup Health, audits, and reconciliation
 - Activity: Operations and Timeline
 - Settings: Catalog Recovery and advanced catalog tools
 
@@ -53,7 +53,7 @@ outside the catalog and are never changed by browsing or enrichment.
 The current implementation has working pages for Home/Dashboard, Library
 thumbnail browsing and inspector preview, Collections, People, Places,
 Favourites, Visual Duplicates, Android Devices, Backup Sets, Disks, Operations,
-  Timeline, Categories, and the advanced storage tools. Collections and
+  Timeline, Categories, Backup Health, and the advanced storage tools. Collections and
   categories can be opened by double-clicking a row and route to the normal
   Library grid.
 
@@ -87,8 +87,9 @@ with provenance and backup-protection sections.
 ## 10. Storage and Backup Health
 
 The underlying storage safety tools remain available and use live catalog
-data. They are currently separate pages inside the grouped Storage/Settings
-areas; a user-facing Backup Health summary card is still required.
+data. Backup Health now aggregates the existing `audit_backup_set` reports
+into a live protected/total/needs-attention summary and per-backup-set table;
+the detailed audit pages remain available for technical review.
 
 ## 11. People, Places, Categories, and Duplicates
 
@@ -122,7 +123,8 @@ environment from source control.
    workflows from the supplied mockup.
 3. Add visual album cards and user-created collections while preserving smart
    collection semantics.
-4. Add a user-facing Backup Health summary and readable Activity feed.
+4. Add a readable Activity feed and richer drive cards; Backup Health summary
+   is now available from the grouped Storage navigation.
 5. Normalize model labels into PhotoVault categories and move AI indexing into
    a cancellable UI worker.
 6. Add cross-platform Windows volume/Android adapters and packaging checks.
