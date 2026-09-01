@@ -18,6 +18,7 @@ The desktop UI currently exposes:
   time-offset editing;
 - Viewer organisation metadata inspection;
 - source-aware unified Timeline display time while retaining raw capture time.
+- Timeline day grouping and a cross-source filter for chronological browsing.
 
 All organisation actions are catalog-only. They do not move, rename, delete, or
 rewrite original media. Existing verified import and backup safety boundaries are
