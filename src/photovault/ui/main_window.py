@@ -1592,6 +1592,8 @@ if QT_AVAILABLE:
                     smart_collections = [item for item in collections if item.kind != "ALBUM"]
                     for collection in smart_collections:
                         tile = QListWidgetItem(f"{collection.title}\n{collection.item_count:,} items")
+                        if collection.cover_path and Path(collection.cover_path).is_file():
+                            tile.setIcon(QIcon(collection.cover_path))
                         tile.setToolTip(f"{collection.title}\n{collection.detail}")
                         tile.setData(Qt.ItemDataRole.UserRole, collection.id)
                         self.collections_grid.addItem(tile)

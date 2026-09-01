@@ -47,7 +47,23 @@ def list_collections(connection: sqlite3.Connection) -> list[CatalogCollection]:
         folder = str(relative_path).rsplit("/", 1)[0] if "/" in str(relative_path) else "/"
         if (asset_id, folder) not in seen:
             folders[folder] += 1; seen.add((asset_id, folder))
-    result.extend(CatalogCollection(f"folder:{folder}", "FOLDER", folder, count, "source folder") for folder, count in sorted(folders.items(), key=lambda row: (-row[1], row[0])))
+    for folder, count in sorted(folders.items(), key=lambda row: (-row[1], row[0])):
+        if folder == "/":
+            folder_filter = "%"
+        else:
+            folder_filter = folder.strip("/") + "/%"
+        cover = connection.execute(
+            """SELECT t.path
+               FROM asset_locations al
+               JOIN thumbnails t ON t.asset_id=al.asset_id AND t.version='v1-320'
+               WHERE al.missing_since IS NULL AND al.relative_path LIKE ?
+               ORDER BY al.relative_path LIMIT 1""",
+            (folder_filter,),
+        ).fetchone()
+        result.append(CatalogCollection(
+            f"folder:{folder}", "FOLDER", folder, count, "source folder",
+            str(cover[0]) if cover and cover[0] else None,
+        ))
 
     for row in connection.execute(
         """SELECT p.id, p.label, p.centroid_latitude, p.centroid_longitude, COUNT(m.asset_id)
