@@ -674,23 +674,9 @@ if QT_AVAILABLE:
                     layout.addWidget(QLabel("Review groups — double-click to browse"))
                     layout.addWidget(self.duplicate_groups_list)
                 else:
-                    form = QFormLayout()
-                    radius = QLineEdit("100")
-                    form.addRow("Cluster radius (m)", radius)
-                    layout.addLayout(form)
-                    button = QPushButton("Cluster GPS places")
-                    button.clicked.connect(lambda _checked=False, r=radius: self._places(r))
-                    layout.addWidget(button)
-                    result = QLabel("No network geocoder is used by default.")
-                    result.setWordWrap(True)
-                    self._results[label] = result
-                    layout.addWidget(result)
-                    layout.addWidget(QLabel("Browse place clusters"))
-                    self.places_grid = QListWidget()
-                    configure_tile_grid(self.places_grid, "PlacesGrid")
-                    self.places_grid.itemDoubleClicked.connect(self._open_place_tile)
-                    self.places_grid.addItem("No embedded GPS clusters yet")
-                    layout.addWidget(self.places_grid)
+                    from .pages.places_page import build_places_page
+
+                    build_places_page(self, layout)
             elif label == "Favourites":
                 form = QFormLayout()
                 self.favourite_asset_id = QLineEdit()
