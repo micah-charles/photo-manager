@@ -55,12 +55,13 @@ def record_source_items(
             """
             INSERT INTO source_items(
                 source_id, object_id, logical_path, name, media_type, size_bytes,
-                created_at, modified_at, last_seen
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                created_at, modified_at, source_latitude, source_longitude, last_seen
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(source_id, logical_path) DO UPDATE SET
                 object_id=excluded.object_id, name=excluded.name,
                 media_type=excluded.media_type, size_bytes=excluded.size_bytes,
                 created_at=excluded.created_at, modified_at=excluded.modified_at,
+                source_latitude=excluded.source_latitude, source_longitude=excluded.source_longitude,
                 last_seen=excluded.last_seen
             """,
             (
@@ -72,6 +73,8 @@ def record_source_items(
                 item.size_bytes,
                 item.created_at.isoformat() if item.created_at else None,
                 item.modified_at.isoformat() if item.modified_at else None,
+                item.source_latitude,
+                item.source_longitude,
                 now,
             ),
         )

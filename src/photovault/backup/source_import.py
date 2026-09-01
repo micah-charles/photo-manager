@@ -31,6 +31,8 @@ class SourceImportItem:
     expected_sha256: str | None = None
     media_type: str = "IMAGE"
     modified_at: datetime | None = None
+    source_latitude: float | None = None
+    source_longitude: float | None = None
 
 
 class SourceImportStatus(StrEnum):
@@ -260,11 +262,13 @@ def _record_successful_import(
         connection.execute("INSERT INTO exact_hashes(asset_id, sha256, byte_count, hashed_at) VALUES (?, ?, ?, ?)", (asset_id, actual_hash, result["bytes_written"], now))
     stat = destination.stat()
     connection.execute("INSERT INTO asset_locations(asset_id, volume_id, relative_path, filename, size_bytes, modified_ns) VALUES (?, ?, ?, ?, ?, ?)", (asset_id, destination_volume_id, item.relative_path, destination.name, stat.st_size, stat.st_mtime_ns))
+    from photovault.catalog.metadata import store_source_location
+    store_source_location(connection, asset_id, item.source_latitude, item.source_longitude)
     connection.execute("UPDATE operation_items SET asset_id=?, expected_sha256=?, result='COPIED', verification_result='VERIFIED' WHERE id=?", (asset_id, actual_hash, operation_item_id))
     connection.execute("INSERT INTO verification_history(operation_item_id, asset_id, path, expected_sha256, actual_sha256, result, verified_at) VALUES (?, ?, ?, ?, ?, 'VERIFIED', ?)", (operation_item_id, asset_id, str(destination), actual_hash, actual_hash, utc_now()))
     modified = item.modified_at.isoformat() if hasattr(item.modified_at, "isoformat") else None
-    connection.execute("""INSERT INTO source_imports(source_id, logical_path, source_object_id, source_size_bytes, source_modified_at, destination_volume_id, destination_relative_path, sha256, operation_id, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(source_id, logical_path, destination_volume_id, destination_relative_path) DO UPDATE SET source_object_id=excluded.source_object_id, source_size_bytes=excluded.source_size_bytes, source_modified_at=excluded.source_modified_at, sha256=excluded.sha256, operation_id=excluded.operation_id, imported_at=excluded.imported_at""", (identity.source_id, item.relative_path, item.object_id, item.size_bytes, modified, destination_volume_id, item.relative_path, actual_hash, operation_id, utc_now()))
+    connection.execute("""INSERT INTO source_imports(source_id, logical_path, source_object_id, source_size_bytes, source_modified_at, source_latitude, source_longitude, destination_volume_id, destination_relative_path, sha256, operation_id, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(source_id, logical_path, destination_volume_id, destination_relative_path) DO UPDATE SET source_object_id=excluded.source_object_id, source_size_bytes=excluded.source_size_bytes, source_modified_at=excluded.source_modified_at, source_latitude=excluded.source_latitude, source_longitude=excluded.source_longitude, sha256=excluded.sha256, operation_id=excluded.operation_id, imported_at=excluded.imported_at""", (identity.source_id, item.relative_path, item.object_id, item.size_bytes, modified, item.source_latitude, item.source_longitude, destination_volume_id, item.relative_path, actual_hash, operation_id, utc_now()))
     connection.execute("UPDATE operations SET completed_at=?, status='COMPLETED' WHERE id=?", (utc_now(), operation_id))
     connection.commit()
     return {**result, "operation_id": operation_id, "asset_id": asset_id}

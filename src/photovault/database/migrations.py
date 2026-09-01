@@ -369,6 +369,16 @@ MIGRATIONS: list[tuple[int, str]] = [
             ON android_backup_profile_folders(profile_id);
         """,
     ),
+    (
+        14,
+        """
+        ALTER TABLE source_items ADD COLUMN source_latitude REAL;
+        ALTER TABLE source_items ADD COLUMN source_longitude REAL;
+        ALTER TABLE source_imports ADD COLUMN source_latitude REAL;
+        ALTER TABLE source_imports ADD COLUMN source_longitude REAL;
+        ALTER TABLE gps_metadata ADD COLUMN location_source TEXT NOT NULL DEFAULT 'embedded_exif';
+        """,
+    ),
 ]
 
 

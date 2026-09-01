@@ -21,12 +21,13 @@ class AndroidWifiTests(unittest.TestCase):
             if "/api/device" in request.full_url:
                 return Response(json.dumps({"ok": True, "device": {"device_id": "installed-uuid", "manufacturer": "Google", "model": "Pixel", "media_count": 1}}).encode())
             if "/api/media?" in request.full_url:
-                return Response(json.dumps({"ok": True, "items": [{"object_id": "7", "name": "x.jpg", "mime_type": "image/jpeg", "size_bytes": 3, "date_taken": 0, "modified_at": 0}]}).encode())
+                return Response(json.dumps({"ok": True, "items": [{"object_id": "7", "name": "x.jpg", "mime_type": "image/jpeg", "size_bytes": 3, "date_taken": 0, "modified_at": 0, "latitude": 55.9533, "longitude": -3.1883}]}).encode())
             return Response(b"abc")
         with patch("photovault.sources.android_wifi.urlopen", fake_open):
             source = AndroidCompanionWifiSource("http://phone:8765", "secret")
             self.assertEqual(source.identity().adapter, "android_companion_wifi")
-            self.assertEqual(list(source.list_children(None))[0].name, "x.jpg")
+            item = list(source.list_children(None))[0]
+            self.assertEqual((item.name, item.source_latitude, item.source_longitude), ("x.jpg", 55.9533, -3.1883))
             sink = io.BytesIO(); metrics = source.stream_object("7", sink, offset=2)
         self.assertEqual(sink.getvalue(), b"abc")
         self.assertEqual(metrics["bytes_received"], 3)

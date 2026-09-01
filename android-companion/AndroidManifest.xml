@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.photovault.companion"
-    android:versionCode="6" android:versionName="0.6-benchmark-selection">
+    android:versionCode="7" android:versionName="0.7-mediastore-location">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />

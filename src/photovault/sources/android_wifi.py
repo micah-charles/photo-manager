@@ -36,6 +36,14 @@ def _when_millis(value: object) -> datetime | None:
         return None
 
 
+def _coordinate(value: object) -> float | None:
+    try:
+        coordinate = float(value)
+        return coordinate if -180 <= coordinate <= 180 else None
+    except (TypeError, ValueError):
+        return None
+
+
 @dataclass
 class AndroidCompanionWifiSource(PhotoSource):
     base_url: str
@@ -102,6 +110,8 @@ class AndroidCompanionWifiSource(PhotoSource):
             size_bytes=row.get("size_bytes"),
             created_at=_when_millis(row.get("date_taken")),
             modified_at=_when_millis(row.get("modified_at", 0)) if row.get("modified_at", 0) else None,
+            source_latitude=_coordinate(row.get("latitude")),
+            source_longitude=_coordinate(row.get("longitude")),
         )
 
     def list_children(self, parent_id: str | None) -> Iterable[PhotoItem]:

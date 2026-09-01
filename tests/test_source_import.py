@@ -57,15 +57,15 @@ class InterruptibleRangeSource(FakeSource):
 class SourceImportTests(unittest.TestCase):
     def test_source_identity_and_inventory_are_persisted_separately(self) -> None:
         identity = SourceIdentity("android_test", "Google", "Pixel 8 Pro", "Pixel 8 Pro", "test", 0x18D1, 0x4EE1)
-        item = PhotoItem("android_test", "675", "28", "photo.jpg", "IMAGE", 123)
+        item = PhotoItem("android_test", "675", "28", "photo.jpg", "IMAGE", 123, source_latitude=55.9533, source_longitude=-3.1883)
         with tempfile.TemporaryDirectory() as directory:
             connection = connect(Path(directory) / "catalog.db")
             register_source(connection, identity)
             self.assertEqual(record_source_items(connection, identity.source_id, [item], "DCIM/Camera"), 1)
             profile = connection.execute("SELECT source_id, model, usb_vendor_id FROM source_profiles").fetchone()
-            stored_item = connection.execute("SELECT object_id, logical_path, size_bytes FROM source_items").fetchone()
+            stored_item = connection.execute("SELECT object_id, logical_path, size_bytes, source_latitude, source_longitude FROM source_items").fetchone()
             self.assertEqual(tuple(profile), ("android_test", "Pixel 8 Pro", 0x18D1))
-            self.assertEqual(tuple(stored_item), ("675", "DCIM/Camera/photo.jpg", 123))
+            self.assertEqual(tuple(stored_item), ("675", "DCIM/Camera/photo.jpg", 123, 55.9533, -3.1883))
             self.assertNotIn("serial", {row[1] for row in connection.execute("PRAGMA table_info(source_profiles)")})
             connection.close()
 
@@ -99,6 +99,25 @@ class SourceImportTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT status FROM operations WHERE id=?", (result["operation_id"],)).fetchone()[0], "COMPLETED")
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM verification_history WHERE result='VERIFIED'").fetchone()[0], 1)
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM asset_locations WHERE volume_id='vol_dest'").fetchone()[0], 1)
+            connection.close()
+
+    def test_import_persists_android_mediastore_location_without_rewriting_media(self) -> None:
+        payload = b"location is source metadata, not a file rewrite"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            connection = connect(root / "catalog.db")
+            connection.execute("INSERT INTO volumes(id, display_name, identity_kind, identity_value, first_seen, last_seen, status) VALUES ('vol_dest', 'Destination', 'test', 'dest', datetime('now'), datetime('now'), 'CONNECTED')")
+            connection.commit()
+            result = import_source_item(
+                connection, FakeSource(payload),
+                SourceImportItem("675", "DCIM/Camera/photo.jpg", len(payload), source_latitude=55.9533, source_longitude=-3.1883),
+                root / "destination", "vol_dest",
+            )
+            self.assertEqual(
+                tuple(connection.execute("SELECT latitude, longitude, location_source FROM gps_metadata WHERE asset_id=?", (result["asset_id"],)).fetchone()),
+                (55.9533, -3.1883, "android_mediastore"),
+            )
+            self.assertEqual((root / "destination/DCIM/Camera/photo.jpg").read_bytes(), payload)
             connection.close()
 
     def test_import_preserves_source_modified_time_when_supported(self) -> None:

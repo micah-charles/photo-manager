@@ -178,6 +178,7 @@ if QT_AVAILABLE:
                     import_items.extend(SourceImportItem(
                         item.object_id, f"{folder.strip('/')}/{item.name}", item.size_bytes,
                         media_type=item.media_type, modified_at=item.modified_at,
+                        source_latitude=item.source_latitude, source_longitude=item.source_longitude,
                     ) for item in folder_items)
                 if len({item.relative_path for item in import_items}) != len(import_items):
                     raise ValueError("selected folder contains duplicate destination names; nothing was copied")
