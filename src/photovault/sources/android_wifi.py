@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -26,6 +27,15 @@ class AndroidMediaFolder:
     size_bytes: int
 
 
+@dataclass(frozen=True)
+class AndroidEmbeddedLocation:
+    """Coordinates directly read by the Companion from an original media file."""
+
+    latitude: float
+    longitude: float
+    source: str
+
+
 def _when_millis(value: object) -> datetime | None:
     try:
         number = int(value)
@@ -33,14 +43,6 @@ def _when_millis(value: object) -> datetime | None:
         seconds = number / 1000 if number > 10_000_000_000 else number
         return datetime.fromtimestamp(seconds, tz=timezone.utc).replace(tzinfo=None)
     except (TypeError, ValueError, OSError):
-        return None
-
-
-def _coordinate(value: object) -> float | None:
-    try:
-        coordinate = float(value)
-        return coordinate if -180 <= coordinate <= 180 else None
-    except (TypeError, ValueError):
         return None
 
 
@@ -110,8 +112,6 @@ class AndroidCompanionWifiSource(PhotoSource):
             size_bytes=row.get("size_bytes"),
             created_at=_when_millis(row.get("date_taken")),
             modified_at=_when_millis(row.get("modified_at", 0)) if row.get("modified_at", 0) else None,
-            source_latitude=_coordinate(row.get("latitude")),
-            source_longitude=_coordinate(row.get("longitude")),
         )
 
     def list_children(self, parent_id: str | None) -> Iterable[PhotoItem]:
@@ -153,7 +153,23 @@ class AndroidCompanionWifiSource(PhotoSource):
         raise AndroidCompanionUnavailable(f"media object not present in companion manifest: {object_id}")
 
     def capabilities(self) -> frozenset[str]:
-        return frozenset({"identity", "media_manifest", "stream_object", "range_read"})
+        return frozenset({"identity", "media_manifest", "stream_object", "range_read", "embedded_metadata"})
+
+    def embedded_location(self, object_id: str) -> AndroidEmbeddedLocation | None:
+        """Read original-file GPS on demand; never infer it from MediaStore or Photos."""
+        location = self._json(f"/api/media/{object_id}/metadata").get("location")
+        if location is None:
+            return None
+        if not isinstance(location, dict):
+            raise AndroidCompanionUnavailable("invalid embedded location response")
+        try:
+            latitude, longitude = float(location["latitude"]), float(location["longitude"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise AndroidCompanionUnavailable("invalid embedded location coordinates") from exc
+        source = str(location.get("source") or "")
+        if source not in {"embedded_exif", "embedded_video_metadata"} or not (math.isfinite(latitude) and math.isfinite(longitude) and -90 <= latitude <= 90 and -180 <= longitude <= 180):
+            raise AndroidCompanionUnavailable("invalid embedded location provenance")
+        return AndroidEmbeddedLocation(latitude, longitude, source)
 
     def stream_object(self, object_id: str, sink: BinaryIO, *, offset: int = 0) -> dict[str, int | float]:
         headers = {"Range": f"bytes={offset}-"} if offset else {}

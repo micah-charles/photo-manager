@@ -20,19 +20,31 @@ class AndroidWifiTests(unittest.TestCase):
             seen.append((request.full_url, request.headers.get("Range")))
             if "/api/device" in request.full_url:
                 return Response(json.dumps({"ok": True, "device": {"device_id": "installed-uuid", "manufacturer": "Google", "model": "Pixel", "media_count": 1}}).encode())
+            if "/metadata?" in request.full_url:
+                return Response(json.dumps({"ok": True, "object_id": "7", "location": None}).encode())
             if "/api/media?" in request.full_url:
-                return Response(json.dumps({"ok": True, "items": [{"object_id": "7", "name": "x.jpg", "mime_type": "image/jpeg", "size_bytes": 3, "date_taken": 0, "modified_at": 0, "latitude": 55.9533, "longitude": -3.1883}]}).encode())
+                return Response(json.dumps({"ok": True, "items": [{"object_id": "7", "name": "x.jpg", "mime_type": "image/jpeg", "size_bytes": 3, "date_taken": 0, "modified_at": 0}]}).encode())
             return Response(b"abc")
         with patch("photovault.sources.android_wifi.urlopen", fake_open):
             source = AndroidCompanionWifiSource("http://phone:8765", "secret")
             self.assertEqual(source.identity().adapter, "android_companion_wifi")
             item = list(source.list_children(None))[0]
-            self.assertEqual((item.name, item.source_latitude, item.source_longitude), ("x.jpg", 55.9533, -3.1883))
+            self.assertEqual(item.name, "x.jpg")
+            self.assertIsNone(source.embedded_location("7"))
             sink = io.BytesIO(); metrics = source.stream_object("7", sink, offset=2)
         self.assertEqual(sink.getvalue(), b"abc")
         self.assertEqual(metrics["bytes_received"], 3)
         self.assertTrue(seen[-1][0].endswith("/api/media/7?token=secret"))
         self.assertEqual(seen[-1][1], "bytes=2-")
+
+    def test_embedded_location_is_explicit_and_validated(self) -> None:
+        def fake_open(request, timeout):
+            if "/metadata?" in request.full_url:
+                return Response(json.dumps({"ok": True, "object_id": "7", "location": {"latitude": 55.9533, "longitude": -3.1883, "source": "embedded_exif"}}).encode())
+            raise AssertionError(request.full_url)
+        with patch("photovault.sources.android_wifi.urlopen", fake_open):
+            location = AndroidCompanionWifiSource("http://phone:8765", "secret").embedded_location("7")
+        self.assertEqual((location.latitude, location.longitude, location.source), (55.9533, -3.1883, "embedded_exif"))
 
     def test_persistent_companion_id_is_independent_of_ip_address(self) -> None:
         def fake_open(request, timeout):

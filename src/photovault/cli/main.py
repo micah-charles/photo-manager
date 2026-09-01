@@ -253,7 +253,6 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
                 import_items = [SourceImportItem(
                     item.object_id, f"{args.relative_path.strip('/')}/{item.name}", item.size_bytes,
                     media_type=item.media_type, modified_at=item.modified_at,
-                    source_latitude=item.source_latitude, source_longitude=item.source_longitude,
                 ) for item in items]
                 if len({item.relative_path for item in import_items}) != len(import_items):
                     raise AndroidCompanionUnavailable("selected items contain duplicate destination names; no copy was started")

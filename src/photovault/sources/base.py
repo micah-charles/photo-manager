@@ -34,8 +34,6 @@ class PhotoItem:
     size_bytes: int | None
     created_at: datetime | None = None
     modified_at: datetime | None = None
-    source_latitude: float | None = None
-    source_longitude: float | None = None
     is_collection: bool = False
 
 

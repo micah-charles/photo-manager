@@ -109,8 +109,6 @@ def _image_metadata(path: Path) -> MetadataRecord:
             latitude=latitude,
             longitude=longitude,
         )
-
-
 def _video_metadata(path: Path) -> MetadataRecord:
     ffprobe = shutil.which("ffprobe")
     if not ffprobe:
@@ -168,23 +166,3 @@ def store_metadata(connection, asset_id: str, record: MetadataRecord) -> None:
             "ON CONFLICT(asset_id) DO UPDATE SET latitude=excluded.latitude, longitude=excluded.longitude, extracted_at=excluded.extracted_at, location_source='embedded_exif'",
             (asset_id, record.latitude, record.longitude, _utc_now()),
         )
-
-
-def store_source_location(connection, asset_id: str, latitude: float | None, longitude: float | None) -> bool:
-    """Store a verified Android MediaStore location without claiming it is EXIF.
-
-    Embedded coordinates remain the higher-authority copy of original-file
-    metadata. Source metadata only fills an absent location, is local to the
-    catalog, and never writes bytes back to the media file.
-    """
-    if latitude is None or longitude is None or not (math.isfinite(latitude) and math.isfinite(longitude)):
-        return False
-    existing = connection.execute("SELECT location_source FROM gps_metadata WHERE asset_id=?", (asset_id,)).fetchone()
-    if existing is not None and existing[0] == "embedded_exif":
-        return False
-    connection.execute(
-        "INSERT INTO gps_metadata(asset_id, latitude, longitude, extracted_at, location_source) VALUES (?, ?, ?, ?, 'android_mediastore') "
-        "ON CONFLICT(asset_id) DO UPDATE SET latitude=excluded.latitude, longitude=excluded.longitude, extracted_at=excluded.extracted_at, location_source='android_mediastore'",
-        (asset_id, latitude, longitude, _utc_now()),
-    )
-    return True

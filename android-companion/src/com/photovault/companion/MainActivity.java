@@ -7,6 +7,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.media.ExifInterface;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
@@ -38,6 +40,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Deliberately small, no-dependency companion proof of concept.
@@ -49,6 +53,7 @@ public final class MainActivity extends Activity {
     private static final int PERMISSIONS = 42;
     private static final String INSTALLATION_PREFS = "photovault_companion";
     private static final String INSTALLATION_ID = "installation_id";
+    private static final Pattern ISO_6709 = Pattern.compile("^([+-]\\d+(?:\\.\\d+)?)([+-]\\d+(?:\\.\\d+)?)(?:[+-].*)?/$");
     private TextView status;
 
     @Override public void onCreate(Bundle state) {
@@ -96,7 +101,7 @@ public final class MainActivity extends Activity {
         if (snapshot == null) { status.setText("Local sharing is stopped. Choose a sharing duration above."); return; }
         String ip = localIpv4();
         status.setText("PhotoVault Companion — read-only POC\n" +
-            "Build: 0.7 — MediaStore location\n\n" +
+            "Build: 0.8 — embedded-location plan\n\n" +
             "Status: sharing active — " + snapshot.durationLabel + "\n" +
             "Desktop URL: http://" + ip + ":" + PORT + "\n" +
             "Token: " + snapshot.token + "\n\n" +
@@ -140,13 +145,14 @@ public final class MainActivity extends Activity {
                 else if("/api/folders".equals(path)) folders(out);
                 else if("/api/media/count".equals(path)) mediaCount(out,args);
                 else if("/api/media".equals(path)) media(out,args);
+                else if(path.startsWith("/api/media/") && path.endsWith("/metadata")) embeddedMetadata(out,path.substring(11, path.length()-9));
                 else if(path.startsWith("/api/media/")) object(out,path.substring(11),headers.get("range"));
                 else reply(out,404,"application/json",jsonError("not found").getBytes(StandardCharsets.UTF_8));
             } catch (Exception e) { e.printStackTrace(); }
         }
         private void device(BufferedOutputStream out) throws IOException {
             int count=count(MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL), mediaSelection(), null);
-            String body="{\"ok\":true,\"device\":{\"device_id\":\""+escape(deviceId)+"\",\"manufacturer\":\""+escape(android.os.Build.MANUFACTURER)+"\",\"model\":\""+escape(android.os.Build.MODEL)+"\",\"friendly_name\":\""+escape(android.os.Build.MODEL)+"\",\"app_version\":\""+escape(appVersion)+"\",\"adapter\":\"android_companion_wifi\",\"media_count\":"+count+",\"capabilities\":[\"identity\",\"media_manifest\",\"range_read\"]}}";
+            String body="{\"ok\":true,\"device\":{\"device_id\":\""+escape(deviceId)+"\",\"manufacturer\":\""+escape(android.os.Build.MANUFACTURER)+"\",\"model\":\""+escape(android.os.Build.MODEL)+"\",\"friendly_name\":\""+escape(android.os.Build.MODEL)+"\",\"app_version\":\""+escape(appVersion)+"\",\"adapter\":\"android_companion_wifi\",\"media_count\":"+count+",\"capabilities\":[\"identity\",\"media_manifest\",\"range_read\",\"embedded_metadata\"]}}";
             reply(out,200,"application/json",body.getBytes(StandardCharsets.UTF_8));
         }
         private static String version(Context context) { try { return context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName; } catch (Exception ignored) { return "unknown"; } }
@@ -212,12 +218,45 @@ public final class MainActivity extends Activity {
             long length=end-start+1; String head=(range==null?"HTTP/1.1 200 OK\r\n":"HTTP/1.1 206 Partial Content\r\n")+"Content-Type: "+mime+"\r\nAccept-Ranges: bytes\r\nContent-Length: "+length+"\r\n"+(range==null?"":"Content-Range: bytes "+start+"-"+end+"/"+size+"\r\n")+"Connection: close\r\n\r\n"; out.write(head.getBytes(StandardCharsets.US_ASCII));
             try(ParcelFileDescriptor pfd=resolver.openFileDescriptor(uri,"r"); FileInputStream file=new FileInputStream(pfd.getFileDescriptor())) { skipFully(file,start); byte[] b=new byte[64*1024]; long left=length; while(left>0){int n=file.read(b,0,(int)Math.min(b.length,left));if(n<0)break;out.write(b,0,n);left-=n;} out.flush(); }
         }
+        /**
+         * Reads only embedded metadata from the original media descriptor.
+         * This deliberately does not consult MediaStore latitude/longitude:
+         * Android 10+ guarantees those indexed values are null for privacy.
+         */
+        private void embeddedMetadata(BufferedOutputStream out, String text) throws IOException {
+            long id; try { id=Long.parseLong(text); } catch(NumberFormatException e){reply(out,400,"application/json",jsonError("bad id").getBytes());return;}
+            Uri uri=MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL,id); String mime=null;
+            try(Cursor c=resolver.query(uri,new String[]{MediaStore.MediaColumns.MIME_TYPE},null,null,null)){if(c!=null&&c.moveToFirst()) mime=c.getString(0);}
+            if(mime==null){reply(out,404,"application/json",jsonError("media not found").getBytes());return;}
+            String location=null;
+            try(ParcelFileDescriptor pfd=resolver.openFileDescriptor(uri,"r")) {
+                if(mime.startsWith("image/")) {
+                    ExifInterface exif=new ExifInterface(pfd.getFileDescriptor()); float[] coordinates=new float[2];
+                    if(exif.getLatLong(coordinates) && validCoordinates(coordinates[0],coordinates[1])) location=locationJson(coordinates[0],coordinates[1],"embedded_exif");
+                } else if(mime.startsWith("video/")) {
+                    MediaMetadataRetriever retriever=new MediaMetadataRetriever();
+                    try { retriever.setDataSource(pfd.getFileDescriptor()); location=iso6709Location(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION)); }
+                    finally { retriever.release(); }
+                }
+            } catch (Exception ignored) { /* unreadable or non-EXIF originals simply have no embedded location */ }
+            String body="{\"ok\":true,\"object_id\":\""+id+"\",\"location\":"+(location==null?"null":location)+"}";
+            reply(out,200,"application/json",body.getBytes(StandardCharsets.UTF_8));
+        }
+        private static String iso6709Location(String value) {
+            if(value==null)return null; Matcher match=ISO_6709.matcher(value); if(!match.matches())return null;
+            try { double latitude=Double.parseDouble(match.group(1)); double longitude=Double.parseDouble(match.group(2)); return validCoordinates(latitude,longitude)?locationJson(latitude,longitude,"embedded_video_metadata"):null; }
+            catch(NumberFormatException ignored){return null;}
+        }
+        private static boolean validCoordinates(double latitude,double longitude){return !Double.isNaN(latitude)&&!Double.isInfinite(latitude)&&!Double.isNaN(longitude)&&!Double.isInfinite(longitude)&&latitude>=-90&&latitude<=90&&longitude>=-180&&longitude<=180;}
+        private static String locationJson(double latitude,double longitude,String source){return "{\"latitude\":"+Double.toString(latitude)+",\"longitude\":"+Double.toString(longitude)+",\"source\":\""+source+"\"}";}
         private static void skipFully(FileInputStream f,long amount)throws IOException{while(amount>0){long n=f.skip(amount);if(n<=0)throw new IOException("cannot seek media");amount-=n;}}
-        private static String[] columns(){return new String[]{MediaStore.MediaColumns._ID,MediaStore.MediaColumns.DISPLAY_NAME,MediaStore.MediaColumns.RELATIVE_PATH,MediaStore.MediaColumns.MIME_TYPE,MediaStore.MediaColumns.SIZE,MediaStore.MediaColumns.DATE_TAKEN,MediaStore.MediaColumns.DATE_MODIFIED,MediaStore.MediaColumns.WIDTH,MediaStore.MediaColumns.HEIGHT,MediaStore.MediaColumns.DURATION,MediaStore.Images.ImageColumns.LATITUDE,MediaStore.Images.ImageColumns.LONGITUDE};}
+        // Android 10+ deliberately returns null for MediaStore LATITUDE and
+        // LONGITUDE. Embedded location is read from the source file on demand,
+        // never inferred from this manifest endpoint.
+        private static String[] columns(){return new String[]{MediaStore.MediaColumns._ID,MediaStore.MediaColumns.DISPLAY_NAME,MediaStore.MediaColumns.RELATIVE_PATH,MediaStore.MediaColumns.MIME_TYPE,MediaStore.MediaColumns.SIZE,MediaStore.MediaColumns.DATE_TAKEN,MediaStore.MediaColumns.DATE_MODIFIED,MediaStore.MediaColumns.WIDTH,MediaStore.MediaColumns.HEIGHT,MediaStore.MediaColumns.DURATION};}
         private static String normalRelativePath(String path){if(path==null)return null;path=path.trim();if(path.isEmpty())return null;return path.endsWith("/")?path:path+"/";}
         private static String mediaSelection(){return MediaStore.Files.FileColumns.MEDIA_TYPE+" IN ("+MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE+","+MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO+")";}
-        private static String mediaJson(Cursor c){return "{\"object_id\":\""+c.getLong(0)+"\",\"name\":\""+escape(c.getString(1))+"\",\"relative_path\":\""+escape(c.getString(2))+"\",\"mime_type\":\""+escape(c.getString(3))+"\",\"size_bytes\":"+c.getLong(4)+",\"date_taken\":"+c.getLong(5)+",\"modified_at\":"+c.getLong(6)+",\"width\":"+c.getInt(7)+",\"height\":"+c.getInt(8)+",\"duration\":"+c.getLong(9)+",\"latitude\":"+nullableDouble(c,10)+",\"longitude\":"+nullableDouble(c,11)+"}";}
-        private static String nullableDouble(Cursor c,int index){return c.isNull(index)?"null":Double.toString(c.getDouble(index));}
+        private static String mediaJson(Cursor c){return "{\"object_id\":\""+c.getLong(0)+"\",\"name\":\""+escape(c.getString(1))+"\",\"relative_path\":\""+escape(c.getString(2))+"\",\"mime_type\":\""+escape(c.getString(3))+"\",\"size_bytes\":"+c.getLong(4)+",\"date_taken\":"+c.getLong(5)+",\"modified_at\":"+c.getLong(6)+",\"width\":"+c.getInt(7)+",\"height\":"+c.getInt(8)+",\"duration\":"+c.getLong(9)+"}";}
         private static void reply(BufferedOutputStream out,int status,String type,byte[] body)throws IOException{String h="HTTP/1.1 "+status+" OK\r\nContent-Type: "+type+"\r\nContent-Length: "+body.length+"\r\nConnection: close\r\n\r\n";out.write(h.getBytes(StandardCharsets.US_ASCII));out.write(body);out.flush();}
         private static String readLine(BufferedInputStream in)throws IOException{ByteArrayOutputStream b=new ByteArrayOutputStream();int x;while((x=in.read())>=0){if(x=='\n')break;if(x!='\r')b.write(x);}return x<0&&b.size()==0?null:b.toString("UTF-8");}
         private static Map<String,String> parseQuery(String q)throws Exception{Map<String,String> r=new HashMap<>();for(String s:q.split("&")){int i=s.indexOf('=');if(i>=0)r.put(URLDecoder.decode(s.substring(0,i),"UTF-8"),URLDecoder.decode(s.substring(i+1),"UTF-8"));}return r;}
