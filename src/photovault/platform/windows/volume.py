@@ -27,7 +27,10 @@ class WindowsVolumeProvider:
                 filesystem, len(filesystem),
             )
             if ok:
-                identity = f"{serial.value:08x}:{root[:2].upper()}"
+                # Drive letters are mount locations, not volume identity: the
+                # same removable disk may move from E: to F:. The filesystem
+                # serial remains stable across that remount.
+                identity = f"{serial.value:08x}"
                 return VolumeIdentity("windows_volume_serial", identity,
                                       volume_name.value or root[:2], filesystem.value or None)
         except (AttributeError, OSError):

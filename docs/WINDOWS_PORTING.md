@@ -8,7 +8,7 @@ PySide6/PyInstaller entry point.
 
 `photovault.platform.windows.volume.WindowsVolumeProvider` calls
 `GetVolumeInformationW` through `ctypes` and records a stable volume-serial
-identity plus volume name/filesystem metadata. If the Windows API is
+identity (independent of the current drive letter) plus volume name/filesystem metadata. If the Windows API is
 unavailable, it records an explicit `path_fallback` identity rather than
 silently pretending the path is stable.
 
