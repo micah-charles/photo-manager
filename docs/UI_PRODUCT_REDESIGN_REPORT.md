@@ -191,8 +191,10 @@ screen visibly explains its interaction model: a single click selects a card,
 while double-click or Enter opens it in Library.
 
 The PySide6 UI foundation suite (including deterministic Android transfer
-progress/ETA coverage) and full Python test suite pass in the
-external `.venv`. The optional UI suite runs when PySide6 is present; headless
+progress/ETA coverage) passes 17/17, and full Python test discovery passes
+98/98 in the external `.venv`. The UI test harness explicitly tears down its
+shared QApplication so macOS pasteboard services do not abort at process exit.
+The optional UI suite runs when PySide6 is present; headless
 CI environments continue to skip those tests cleanly. The current working
 tree intentionally excludes the external model, pip cache, and virtual
 environment from source control. A local PyInstaller macOS build was also

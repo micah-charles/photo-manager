@@ -14,6 +14,23 @@ from photovault.platform.base import VolumeIdentity
 
 
 class UIFoundationTests(unittest.TestCase):
+    @classmethod
+    def tearDownClass(cls) -> None:
+        """Release the shared Qt application before macOS services tear down."""
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            return
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            for widget in app.topLevelWidgets():
+                widget.close()
+            app.processEvents()
+            app.quit()
+            app.processEvents()
+
     def test_integrity_first_navigation_contract(self) -> None:
         self.assertEqual(
             NAVIGATION_ITEMS,
