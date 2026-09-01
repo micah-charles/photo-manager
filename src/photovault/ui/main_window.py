@@ -475,6 +475,7 @@ if QT_AVAILABLE:
                 "Review": QStyle.StandardPixmap.SP_DialogApplyButton,
                 "Events": QStyle.StandardPixmap.SP_FileDialogListView,
                 "Tags": QStyle.StandardPixmap.SP_FileDialogListView,
+                "Sources": QStyle.StandardPixmap.SP_ComputerIcon,
                 "Collections": QStyle.StandardPixmap.SP_DirIcon,
                 "Favourites": QStyle.StandardPixmap.SP_DialogYesButton,
                 "People": QStyle.StandardPixmap.SP_ComputerIcon,
@@ -601,6 +602,10 @@ if QT_AVAILABLE:
                 from .pages.tags_page import build_tags_page
 
                 build_tags_page(self, layout, self._tables)
+            elif label == "Sources":
+                from .pages.sources_page import build_sources_page
+
+                build_sources_page(self, layout, self._tables)
             elif label == "Collections":
                 from .pages.collections_page import build_collections_page
 
@@ -1864,6 +1869,35 @@ if QT_AVAILABLE:
                 self._tables["Tags"].item(row, 0).setData(Qt.ItemDataRole.UserRole, tag.id)
             self.tags_result.setText(f"{len(tags)} tag(s). Double-click a tag to filter Library.")
 
+        def _refresh_sources(self) -> None:
+            from photovault.catalog.organization import list_sources
+
+            rows = list_sources(self.connection)
+            self._fill_table(
+                self._tables["Sources"],
+                ["Source", "Type", "Device", "Items", "Display offset", "Last seen"],
+                [(row["display_name"], row["source_type"], f"{row['manufacturer']} {row['model']}", row["item_count"], f"{row['time_offset_seconds']} s", row["last_seen"] or "—") for row in rows],
+            )
+            for index, row in enumerate(rows):
+                self._tables["Sources"].item(index, 0).setData(Qt.ItemDataRole.UserRole, row["source_id"])
+            self.sources_result.setText(f"{len(rows)} source(s). Select a row to edit its display offset.")
+
+        def _select_source_row(self, row: int, _column: int) -> None:
+            source_id = self._tables["Sources"].item(row, 0).data(Qt.ItemDataRole.UserRole)
+            if source_id:
+                self.source_id_input.setText(str(source_id))
+                self.source_offset_input.setText(self._tables["Sources"].item(row, 4).text().removesuffix(" s"))
+
+        def _apply_source_offset(self) -> None:
+            try:
+                from photovault.catalog.organization import set_source_time_offset
+
+                set_source_time_offset(self.connection, self.source_id_input.text().strip(), int(self.source_offset_input.text().strip()))
+                self.sources_result.setText("Display offset saved. Original capture metadata was not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.sources_result.setText(f"Source offset update failed: {type(exc).__name__}: {exc}")
+
         def _open_tag_row(self, row: int, _column: int) -> None:
             tag_id = self._tables["Tags"].item(row, 0).data(Qt.ItemDataRole.UserRole)
             if tag_id:
@@ -2646,6 +2680,8 @@ if QT_AVAILABLE:
                 self._refresh_events()
             if "Tags" in self._tables:
                 self._refresh_tags()
+            if "Sources" in self._tables:
+                self._refresh_sources()
             if "Operations" in self._tables:
                 rows = self.connection.execute("SELECT id, operation_type, status, dry_run, created_at, completed_at FROM operations ORDER BY created_at DESC").fetchall()
                 labels = {

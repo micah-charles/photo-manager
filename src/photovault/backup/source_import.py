@@ -266,7 +266,7 @@ def _record_successful_import(
     # catalog immediately instead of requiring a second manual scan.
     store_metadata(connection, asset_id, extract_metadata(destination))
     stat = destination.stat()
-    connection.execute("INSERT INTO asset_locations(asset_id, volume_id, relative_path, filename, size_bytes, modified_ns) VALUES (?, ?, ?, ?, ?, ?)", (asset_id, destination_volume_id, item.relative_path, destination.name, stat.st_size, stat.st_mtime_ns))
+    connection.execute("INSERT INTO asset_locations(asset_id, volume_id, relative_path, filename, size_bytes, modified_ns, source_id) VALUES (?, ?, ?, ?, ?, ?, ?)", (asset_id, destination_volume_id, item.relative_path, destination.name, stat.st_size, stat.st_mtime_ns, identity.source_id))
     connection.execute("UPDATE operation_items SET asset_id=?, expected_sha256=?, result='COPIED', verification_result='VERIFIED' WHERE id=?", (asset_id, actual_hash, operation_item_id))
     connection.execute("INSERT INTO verification_history(operation_item_id, asset_id, path, expected_sha256, actual_sha256, result, verified_at) VALUES (?, ?, ?, ?, ?, 'VERIFIED', ?)", (operation_item_id, asset_id, str(destination), actual_hash, actual_hash, utc_now()))
     modified = item.modified_at.isoformat() if hasattr(item.modified_at, "isoformat") else None

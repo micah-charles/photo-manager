@@ -76,6 +76,17 @@ def list_sources(connection: sqlite3.Connection) -> list[sqlite3.Row]:
     ))
 
 
+def set_source_time_offset(connection: sqlite3.Connection, source_id: str, offset_seconds: int) -> None:
+    """Set a display-only capture-time offset for one source."""
+    changed = connection.execute(
+        "UPDATE source_profiles SET time_offset_seconds=?, last_seen=last_seen WHERE source_id=?",
+        (int(offset_seconds), source_id),
+    ).rowcount
+    if not changed:
+        raise ValueError("unknown source")
+    connection.commit()
+
+
 def create_event(
     connection: sqlite3.Connection,
     name: str,

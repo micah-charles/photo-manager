@@ -6,6 +6,7 @@ NAVIGATION_ITEMS: tuple[str, ...] = (
     "Review",
     "Events",
     "Tags",
+    "Sources",
     "Photo Viewer",
     "Collections",
     "People",
@@ -35,8 +36,8 @@ NAVIGATION_ITEMS: tuple[str, ...] = (
 # pages, but are reached through Advanced Tools rather than crowding the main
 # navigation.
 NAVIGATION_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Photos", ("Dashboard", "Library", "Review", "Events", "Tags", "Collections", "Favourites")),
-    ("Explore", ("People", "Places", "Categories", "Visual Duplicates")),
+    ("Photos", ("Dashboard", "Library", "Review", "Events", "Collections", "Favourites")),
+    ("Explore", ("People", "Places", "Categories", "Tags", "Sources", "Visual Duplicates")),
     ("Backup", ("Android Devices", "Backup Profiles")),
     ("Storage", ("Disks", "Backup Health", "Advanced Tools")),
     ("Activity", ("Operations",)),
