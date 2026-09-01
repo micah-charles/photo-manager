@@ -504,48 +504,21 @@ if QT_AVAILABLE:
 
                 build_backup_profiles_page(self, layout, self._tables)
             elif label == "Scan":
-                form = QFormLayout()
-                self.scan_volume_id = QLineEdit()
-                self.scan_root = QLineEdit()
-                form.addRow("Volume ID", self.scan_volume_id)
-                form.addRow("Mounted root", self.scan_root)
-                layout.addLayout(form)
-                button = QPushButton("Scan read-only")
-                button.clicked.connect(self._scan)
-                self.scan_button = button
-                layout.addWidget(button)
-                self.scan_result = QLabel("Ready")
-                layout.addWidget(self.scan_result)
+                from .pages.technical_pages import build_scan_page
+
+                build_scan_page(self, layout)
             elif label == "Backup Health":
                 from .pages.backup_health_page import build_backup_health_page
 
                 build_backup_health_page(self, layout, self._tables)
             elif label in {"Redundancy Audit", "Reconciliation"}:
-                form = QFormLayout()
-                set_id = QLineEdit()
-                self._inputs[label] = set_id
-                form.addRow("Backup set ID", set_id)
-                layout.addLayout(form)
-                button = QPushButton("Run read-only report")
-                button.clicked.connect(lambda _checked=False, page=label: self._run_set_report(page))
-                layout.addWidget(button)
-                result = QLabel("Ready")
-                result.setWordWrap(True)
-                self._results[label] = result
-                layout.addWidget(result)
+                from .pages.technical_pages import build_set_report_page
+
+                build_set_report_page(self, layout, label)
             elif label == "Folder Safety Audit":
-                form = QFormLayout()
-                folder_path = QLineEdit()
-                self._inputs[label] = folder_path
-                form.addRow("Folder path", folder_path)
-                layout.addLayout(form)
-                button = QPushButton("Audit folder (read-only)")
-                button.clicked.connect(self._run_folder_report)
-                layout.addWidget(button)
-                result = QLabel("Ready")
-                result.setWordWrap(True)
-                self._results[label] = result
-                layout.addWidget(result)
+                from .pages.technical_pages import build_folder_safety_page
+
+                build_folder_safety_page(self, layout)
             elif label == "Copy Plans":
                 form = QFormLayout()
                 self.copy_set_id = QLineEdit()

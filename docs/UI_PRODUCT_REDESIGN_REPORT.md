@@ -55,6 +55,8 @@ The grouping is defined in `ui/spec.py`; the old services are not removed.
   Profiles, Backup Health, Settings, and Advanced Tools
 - `src/photovault/ui/components.py`: shared `PhotoGrid` presentation component
   used by the Home and Library photo surfaces
+- `src/photovault/ui/pages/technical_pages.py`: isolated Scan, backup-set
+  audit, reconciliation, and folder-safety page construction
 - `src/photovault/catalog/collections.py`: catalog-derived browse views
 - `src/photovault/catalog/classification.py`: optional local ONNX category
   indexing with resumable checkpoints
