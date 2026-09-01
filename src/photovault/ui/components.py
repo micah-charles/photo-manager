@@ -11,7 +11,37 @@ from typing import Any
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QListWidget, QListWidgetItem
+from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem
+
+
+class PhotoGrid(QListWidget):
+    """Shared photo-first grid with safe thumbnail-sized interaction defaults."""
+
+    def __init__(
+        self,
+        *,
+        object_name: str = "PhotoGrid",
+        icon_size: tuple[int, int] = (160, 120),
+        grid_size: tuple[int, int] = (190, 170),
+        multi_select: bool = True,
+    ) -> None:
+        super().__init__()
+        self.setObjectName(object_name)
+        self.setViewMode(QListWidget.ViewMode.IconMode)
+        self.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.setIconSize(QSize(*icon_size))
+        self.setGridSize(QSize(*grid_size))
+        self.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+            if multi_select else QAbstractItemView.SelectionMode.SingleSelection
+        )
+
+    def show_empty_state(self, message: str) -> None:
+        """Show a non-actionable empty state without leaving stale tiles."""
+        self.clear()
+        item = QListWidgetItem(message)
+        item.setFlags(Qt.ItemFlag.NoItemFlags)
+        self.addItem(item)
 
 
 def configure_tile_grid(

@@ -1361,7 +1361,7 @@ if QT_AVAILABLE:
                     item.setData(Qt.ItemDataRole.UserRole, str(row[1]))
                     self.dashboard_recent_grid.addItem(item)
                 if not recent:
-                    self.dashboard_recent_grid.addItem("No photos indexed yet")
+                    self.dashboard_recent_grid.show_empty_state("No photos indexed yet")
             self._fill_table(
                 self._tables["Dashboard"], ["Metric", "Value"],
                 [
@@ -1792,7 +1792,10 @@ if QT_AVAILABLE:
                 self.people_result.setText(f"People import failed: {type(exc).__name__}: {exc}")
 
         def _populate_library_grid(self, rows: list[sqlite3.Row]) -> None:
-            self.library_grid.clear()
+            if not rows:
+                self.library_grid.show_empty_state("No photos indexed yet")
+            else:
+                self.library_grid.clear()
             self._viewer_items = []
             self._viewer_index = -1
             self.library_preview.setPixmap(QPixmap())

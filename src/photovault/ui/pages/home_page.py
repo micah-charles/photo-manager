@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QPushButton, QTableWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QTableWidget, QVBoxLayout, QWidget
+
+from ..components import PhotoGrid
 
 
 def build_home_page(owner: object, layout: object, tables: dict[str, QTableWidget]) -> None:
@@ -40,12 +42,9 @@ def build_home_page(owner: object, layout: object, tables: dict[str, QTableWidge
         quick_actions.addWidget(action)
     layout.addLayout(quick_actions)
     layout.addWidget(QLabel("Recent photos"))
-    owner.dashboard_recent_grid = QListWidget()
-    owner.dashboard_recent_grid.setObjectName("RecentPhotoGrid")
-    owner.dashboard_recent_grid.setViewMode(QListWidget.ViewMode.IconMode)
-    owner.dashboard_recent_grid.setResizeMode(QListWidget.ResizeMode.Adjust)
-    owner.dashboard_recent_grid.setIconSize(QSize(120, 90))
-    owner.dashboard_recent_grid.setGridSize(QSize(150, 125))
+    owner.dashboard_recent_grid = PhotoGrid(
+        object_name="RecentPhotoGrid", icon_size=(120, 90), grid_size=(150, 125), multi_select=False,
+    )
     owner.dashboard_recent_grid.itemDoubleClicked.connect(owner._open_dashboard_item)
     layout.addWidget(owner.dashboard_recent_grid)
     dashboard_table = QTableWidget()

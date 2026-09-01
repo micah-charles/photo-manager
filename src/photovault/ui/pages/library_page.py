@@ -1,7 +1,7 @@
 """Photo-first Library page construction."""
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -9,12 +9,13 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
-    QListWidget,
     QLineEdit,
     QPushButton,
     QTableWidget,
     QVBoxLayout,
 )
+
+from ..components import PhotoGrid
 
 
 def build_library_page(owner: object, layout: object, tables: dict[str, QTableWidget]) -> None:
@@ -72,15 +73,10 @@ def build_library_page(owner: object, layout: object, tables: dict[str, QTableWi
     layout.addWidget(owner.library_technical_toggle)
 
     browser_layout = QHBoxLayout()
-    owner.library_grid = QListWidget()
-    owner.library_grid.setViewMode(QListWidget.ViewMode.IconMode)
-    owner.library_grid.setResizeMode(QListWidget.ResizeMode.Adjust)
-    owner.library_grid.setIconSize(QSize(160, 120))
-    owner.library_grid.setGridSize(QSize(190, 170))
-    owner.library_grid.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+    owner.library_grid = PhotoGrid(object_name="PhotoGrid")
     owner.library_grid.itemSelectionChanged.connect(owner._library_selection_changed)
     owner.library_grid.itemDoubleClicked.connect(owner._open_library_item)
-    owner.library_grid.addItem("No photos indexed yet")
+    owner.library_grid.show_empty_state("No photos indexed yet")
     browser_layout.addWidget(owner.library_grid, 3)
 
     preview_layout = QVBoxLayout()
