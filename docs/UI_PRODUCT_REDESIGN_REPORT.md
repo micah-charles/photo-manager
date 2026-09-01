@@ -74,9 +74,10 @@ flow remain P1 work.
 ## 9. Library and viewer status
 
 Library supports real catalog queries, media filters, search/folder filters,
-sorting, favourites, pagination, thumbnail grid selection, multi-select, and
-single-item cached-thumbnail preview. The next redesign step is to make the
-grid dominant, move raw tables to Advanced, and add a fuller photo inspector
+sorting, favourites, pagination, thumbnail grid selection, multi-select,
+double-click/open, and single-item cached-thumbnail preview. The grid is now
+the primary view; the raw asset table is hidden by default behind an Advanced
+catalog-details toggle. The next redesign step is a fuller photo inspector
 with provenance and backup-protection sections.
 
 ## 10. Storage and Backup Health
