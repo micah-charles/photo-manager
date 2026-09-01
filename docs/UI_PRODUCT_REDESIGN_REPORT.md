@@ -100,6 +100,10 @@ Favourites (with a Library smart-view handoff), Visual Duplicates, Android Devic
   without making empty or technical tables the default experience.
   Android URL/token fields are likewise inside Advanced connection settings;
   normal backup users see the connection action and state summary first.
+  After a Companion manifest is fetched, the backup setup exposes a checkable
+  live folder picker with item counts and sizes; its selection synchronizes to
+  the existing safe import planner. The text folder field remains available as
+  a compatibility fallback.
 
 ## 7. Deviations from the mockup
 
