@@ -461,6 +461,7 @@ if QT_AVAILABLE:
             self._copy_plan = None
             self._quarantine_plan = None
             self._library_collection_id: str | None = None
+            self._library_import_batch_id: str | None = None
             self._library_review_status: str = ""
             self._viewer_items: list[dict[str, object]] = []
             self._viewer_index = -1
@@ -1298,12 +1299,22 @@ if QT_AVAILABLE:
 
         def _review_android_batch(self) -> None:
             """Open the safe Review workflow after a completed Android import."""
-            self._select_page("Review")
-            if hasattr(self, "review_result"):
-                self.review_result.setText(
-                    "Review the latest Android import in Library. Review decisions update catalog metadata only."
-                )
-            self._open_review_queue("UNREVIEWED")
+            batch_id = str(getattr(self, "_android_last_batch_id", "") or "")
+            if not batch_id:
+                self.android_backup_completion.setText("No completed import batch is available for Review.")
+                return
+            self._library_import_batch_id = batch_id
+            self._library_collection_id = None
+            self.library_search.clear()
+            self.library_folder.clear()
+            self.library_review_filter.setCurrentIndex(0)
+            self.library_include_rejected.setChecked(False)
+            self._library_offset = 0
+            self._refresh_library()
+            self._select_page("Library")
+            self.library_collection_result.setText(
+                "Latest Android import batch · Review decisions update catalog metadata only."
+            )
 
         def _android_transfer_cancelled(self, message: str) -> None:
             self.android_backup_status.setText("Backup cancelled")
@@ -1769,6 +1780,7 @@ if QT_AVAILABLE:
                     tag_id=str(self.library_tag_filter.currentData() or ""),
                     place_id=str(self.library_place_filter.currentData() or ""),
                     person_id=str(self.library_person_filter.currentData() or ""),
+                    import_batch_id=str(getattr(self, "_library_import_batch_id", "") or ""),
                     review_status=str(self.library_review_filter.currentData() or ""),
                     min_rating=self.library_rating_filter.currentData(),
                     include_rejected=self.library_include_rejected.isChecked(),
@@ -1788,6 +1800,7 @@ if QT_AVAILABLE:
                     tag_id=base_query.tag_id,
                     place_id=base_query.place_id,
                     person_id=base_query.person_id,
+                    import_batch_id=base_query.import_batch_id,
                     category=base_query.category,
                     review_status=base_query.review_status,
                     min_rating=base_query.min_rating,

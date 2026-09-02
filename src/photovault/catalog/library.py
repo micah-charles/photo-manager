@@ -20,6 +20,7 @@ class LibraryQuery:
     tag_id: str = ""
     place_id: str = ""
     person_id: str = ""
+    import_batch_id: str = ""
     category: str = ""
     review_status: str = ""
     min_rating: int | None = None
@@ -88,6 +89,9 @@ def _where_for_query(query: LibraryQuery) -> tuple[list[str], list[object]]:
     if query.person_id:
         where.append("EXISTS (SELECT 1 FROM person_members pm WHERE pm.asset_id=al.asset_id AND pm.person_id=? )")
         params.append(query.person_id)
+    if query.import_batch_id:
+        where.append("EXISTS (SELECT 1 FROM source_imports si JOIN exact_hashes eh ON eh.sha256=si.sha256 WHERE si.batch_id=? AND eh.asset_id=al.asset_id)")
+        params.append(query.import_batch_id)
     if query.category:
         if ":" in query.category:
             model, label = query.category.split(":", 1)

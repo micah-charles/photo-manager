@@ -95,3 +95,40 @@ class LibraryTests(unittest.TestCase):
             rows = list_library_items(connection, LibraryQuery(recently_added=True))
             self.assertEqual([row["filename"] for row in rows], ["second.jpg", "first.jpg"])
             connection.close()
+
+    def test_import_batch_filter_limits_library_to_that_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "media"; root.mkdir()
+            (root / "first.jpg").write_bytes(b"first")
+            (root / "second.jpg").write_bytes(b"second")
+            connection = connect(Path(directory) / "catalog.db")
+            volume_id = register_volume(connection, root, FixedProvider())
+            scan_volume(connection, volume_id, root)
+            assets = {row["filename"]: row["asset_id"] for row in connection.execute("SELECT filename, asset_id FROM asset_locations")}
+            hashes = {row[0]: row[1] for row in connection.execute("SELECT asset_id, sha256 FROM exact_hashes")}
+            source_id = str(connection.execute("SELECT source_id FROM asset_locations LIMIT 1").fetchone()[0])
+            connection.executemany(
+                "INSERT INTO operations(id, operation_type, created_at, completed_at, status, dry_run) VALUES (?, 'IMPORT', datetime('now'), datetime('now'), 'COMPLETED', 0)",
+                (("op-1",), ("op-2",)),
+            )
+            connection.executemany(
+                """INSERT INTO import_batches
+                   (id, source_id, destination_volume_id, started_at, completed_at,
+                    status, planned_items, imported_items)
+                   VALUES (?, ?, ?, datetime('now'), datetime('now'), 'COMPLETED', 1, 1)""",
+                (("batch-1", source_id, volume_id), ("batch-2", source_id, volume_id)),
+            )
+            for filename, batch_id in (("first.jpg", "batch-1"), ("second.jpg", "batch-2")):
+                connection.execute(
+                    """INSERT INTO source_imports
+                       (source_id, logical_path, source_object_id, source_size_bytes,
+                        destination_volume_id, destination_relative_path, sha256,
+                        operation_id, imported_at, batch_id)
+                       VALUES (?, ?, ?, 5, ?, ?, ?, ?, datetime('now'), ?)""",
+                    (source_id, filename, filename, volume_id, filename, hashes[assets[filename]], "op-1" if batch_id == "batch-1" else "op-2", batch_id),
+                )
+            connection.commit()
+            rows = list_library_items(connection, LibraryQuery(import_batch_id="batch-1"))
+            self.assertEqual([row["filename"] for row in rows], ["first.jpg"])
+            self.assertEqual(count_library_items(connection, LibraryQuery(import_batch_id="batch-1")), 1)
+            connection.close()

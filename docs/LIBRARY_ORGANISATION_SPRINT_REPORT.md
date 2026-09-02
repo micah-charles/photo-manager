@@ -46,7 +46,7 @@ unchanged.
 PYTHONUNBUFFERED=1 PYTHONWARNINGS=ignore QT_QPA_PLATFORM=offscreen \
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 
-Ran 110 tests
+Ran 112 tests
 OK
 ```
 
