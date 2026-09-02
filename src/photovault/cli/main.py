@@ -36,7 +36,9 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("volume-refresh", help="refresh connected/offline status from mount paths")
     timeline = sub.add_parser("timeline", help="list catalogued media by capture time")
     timeline.add_argument("--volume-id")
+    timeline.add_argument("--source-id")
     timeline.add_argument("--limit", type=int, default=100)
+    timeline.add_argument("--offset", type=int, default=0)
     library = sub.add_parser("library", help="browse catalogued media without rescanning folders")
     library.add_argument("--search", default="")
     library.add_argument("--folder", default="")
@@ -440,7 +442,7 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
     elif args.command == "timeline":
         from photovault.catalog.timeline import list_timeline
 
-        for row in list_timeline(connection, args.volume_id, args.limit):
+        for row in list_timeline(connection, args.volume_id, args.limit, args.source_id, args.offset):
             print("\t".join("" if value is None else str(value) for value in row))
     elif args.command == "library":
         from photovault.catalog.library import LibraryQuery, count_library_items, list_library_items
