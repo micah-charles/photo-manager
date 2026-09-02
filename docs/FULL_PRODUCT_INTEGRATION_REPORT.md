@@ -58,7 +58,7 @@ move or a change to verification truth.
 | Cross-platform destination identity | **COMPLETE** | Wi-Fi copy no longer requires `/Volumes`; `register_volume()` selects macOS/Windows platform volume providers. |
 | Verified transfer UI | **PARTIAL — live gate pending** | PySide6 Android page has Companion URL/token, folder totals, destination, all/image/video filter, workers, cancel, resume, SHA-256 transfer, live telemetry and durable import-batch history. Needs unlocked live runtime validation. |
 | Resume | **COMPLETE — core** | Range-capable source rehashes a retained partial then resumes; mismatch removes partial; interruption keeps it. |
-| Incremental backup profiles | **COMPLETE — core/UI creation** | Migration 11 persists source/folder/filter/destination-volume profiles and completed/cancelled/failed snapshots. Profile picker/history UI remains next. |
+| Incremental backup profiles | **COMPLETE — core/UI** | Migration 11 persists source/folder/filter/destination-volume profiles and completed/cancelled/failed snapshots; Android Devices includes profile picker, load/continue actions, and history. |
 | Thumbnails | **COMPLETE — catalog + basic UI** | Existing thumbnail generation, cached previews, Library grid, selection and viewer routing are available; richer video preview remains future work. |
 | Browse and preview | **COMPLETE — basic catalog UI** | Library provides catalog-backed filters, sorting, pagination, selection, cached preview and viewer routing; Events also has a contextual detail view with thumbnails and catalog-only membership removal. |
 | Favourites | **COMPLETE — catalog + basic UI** | Migration 12 stores non-destructive favourites and notes; Favourites page lists/edits them and safely imports matched legacy gallery JSON entries. Visual star controls remain next. |
@@ -88,6 +88,14 @@ move or a change to verification truth.
 ```text
 Dashboard
 Library
+Review
+Events
+Tags
+Sources
+Collections
+People
+Places
+Categories
 Disks
 Android Devices      ← Companion Wi-Fi production entry point
 Backup Sets
@@ -104,9 +112,9 @@ Visual Duplicates
 Places
 ```
 
-The next navigation additions should be Library, Transfers, People, Search and
-Catalog Recovery. Existing pages should continue calling core services rather
-than adding a second filesystem implementation inside the UI.
+Event Detail is a contextual page opened from Events; technical pages remain
+reachable through Advanced Tools. Existing pages continue calling core
+services rather than adding a second filesystem implementation inside the UI.
 
 ## Android Companion operational model
 
