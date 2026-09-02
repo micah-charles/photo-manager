@@ -91,6 +91,10 @@ class UIFoundationTests(unittest.TestCase):
             self.assertEqual(window.event_start.text(), "2026-08-22")
             self.assertEqual(window.event_end.text(), "2026-08-26")
             self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Events"))
+            window._select_page("Timeline")
+            window.timeline_start_date.setText("not-a-date")
+            window._refresh_timeline()
+            self.assertIn("YYYY-MM-DD", window.timeline_summary.text())
             window.close()
             connection.close()
 

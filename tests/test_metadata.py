@@ -81,6 +81,10 @@ class MetadataTests(unittest.TestCase):
             self.assertEqual(list_timeline(db, volume_id, 1, offset=1), [])
             self.assertEqual(len(list_timeline(db, volume_id, 10, start_date="2024-01-02", end_date="2024-01-02")), 1)
             self.assertEqual(len(list_timeline(db, volume_id, 10, start_date="2024-01-03")), 0)
+            with self.assertRaisesRegex(ValueError, "YYYY-MM-DD"):
+                list_timeline(db, volume_id, 10, start_date="tomorrow")
+            with self.assertRaisesRegex(ValueError, "must not be after"):
+                list_timeline(db, volume_id, 10, start_date="2024-01-03", end_date="2024-01-02")
             gallery = write_gallery(db, Path(temp) / "gallery" / "index.html", volume_id)
             self.assertTrue(gallery.exists())
             gallery_html = gallery.read_text(encoding="utf-8")

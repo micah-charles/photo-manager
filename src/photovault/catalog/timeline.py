@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 import sqlite3
 
 
@@ -16,6 +17,14 @@ def list_timeline(
         raise ValueError("limit must be positive")
     if offset < 0:
         raise ValueError("offset must not be negative")
+    for label, value in (("start_date", start_date), ("end_date", end_date)):
+        if value:
+            try:
+                date.fromisoformat(value)
+            except ValueError as exc:
+                raise ValueError(f"{label} must use YYYY-MM-DD") from exc
+    if start_date and end_date and start_date > end_date:
+        raise ValueError("start_date must not be after end_date")
     display_expression = (
         "datetime(COALESCE(mm.capture_datetime, al.capture_date), "
         "printf('%+d seconds', COALESCE(sp.time_offset_seconds, 0)))"
