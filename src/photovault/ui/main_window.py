@@ -3176,6 +3176,7 @@ if QT_AVAILABLE:
                     "source_name": row["source_name"], "review_status": row["review_status"],
                     "rating": row["rating"], "event_names": row["event_names"],
                     "tag_names": row["tag_names"], "place_names": row["place_names"],
+                    "inherited_place_names": row["inherited_place_names"],
                     "person_names": row["person_names"],
                 }
                 item.setData(Qt.ItemDataRole.UserRole, details)
