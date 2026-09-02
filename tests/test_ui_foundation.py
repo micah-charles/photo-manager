@@ -296,6 +296,24 @@ class UIFoundationTests(unittest.TestCase):
             window.close()
             connection.close()
 
+    def test_category_settings_use_numeric_values(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window.category_limit.setValue(12)
+            window.category_top_k.setValue(3)
+            self.assertEqual(window.category_limit.value(), 12)
+            self.assertEqual(window.category_top_k.value(), 3)
+            window.close()
+            connection.close()
+
     def test_collections_double_click_opens_library_for_empty_album(self) -> None:
         from photovault.ui import main_window
 

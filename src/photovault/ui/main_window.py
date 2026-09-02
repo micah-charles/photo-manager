@@ -2763,14 +2763,8 @@ if QT_AVAILABLE:
             if not model.is_file() or not labels.is_file():
                 self.categories_result.setText("Choose an existing local ONNX model and matching labels file first.")
                 return
-            try:
-                limit = int(self.category_limit.text().strip())
-                top_k = int(self.category_top_k.text().strip())
-                if limit < 0 or top_k < 1:
-                    raise ValueError
-            except ValueError:
-                self.categories_result.setText("Limit must be 0 or greater, and Top labels must be at least 1.")
-                return
+            limit = self.category_limit.value()
+            top_k = self.category_top_k.value()
             self.category_start_button.setEnabled(False)
             self.category_cancel_button.setEnabled(True)
             self.category_progress.setValue(0)
