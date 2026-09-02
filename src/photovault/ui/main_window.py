@@ -477,6 +477,7 @@ if QT_AVAILABLE:
             navigation_icons = {
                 "Dashboard": QStyle.StandardPixmap.SP_DirHomeIcon,
                 "Library": QStyle.StandardPixmap.SP_FileDialogDetailedView,
+                "Timeline": QStyle.StandardPixmap.SP_FileDialogDetailedView,
                 "Import": QStyle.StandardPixmap.SP_DialogOpenButton,
                 "Review": QStyle.StandardPixmap.SP_DialogApplyButton,
                 "Events": QStyle.StandardPixmap.SP_FileDialogListView,

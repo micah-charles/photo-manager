@@ -38,7 +38,7 @@ NAVIGATION_ITEMS: tuple[str, ...] = (
 # pages, but are reached through Advanced Tools rather than crowding the main
 # navigation.
 NAVIGATION_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Photos", ("Dashboard", "Library", "Import", "Review", "Events", "Collections", "Favourites")),
+    ("Photos", ("Dashboard", "Library", "Timeline", "Import", "Review", "Events", "Collections", "Favourites")),
     ("Explore", ("People", "Places", "Categories", "Tags", "Sources", "Visual Duplicates")),
     ("Backup", ("Android Devices", "Backup Profiles")),
     ("Storage", ("Disks", "Backup Health", "Advanced Tools")),
@@ -48,5 +48,5 @@ NAVIGATION_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 ADVANCED_PAGE_ITEMS: tuple[str, ...] = (
     "Scan", "Redundancy Audit", "Reconciliation", "Folder Safety Audit",
-    "Copy Plans", "Quarantine", "Catalog Recovery", "Backup Sets", "Timeline", "Event Detail",
+    "Copy Plans", "Quarantine", "Catalog Recovery", "Backup Sets", "Event Detail",
 )
