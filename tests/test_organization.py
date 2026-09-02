@@ -16,6 +16,7 @@ from photovault.catalog.organization import (
     list_sources,
     list_tags,
     remove_assets_from_event,
+    remove_place,
     remove_tags,
     set_asset_source,
     set_review,
@@ -77,6 +78,8 @@ class OrganisationTests(unittest.TestCase):
             place_id = create_place(db, "Edinburgh", city="Edinburgh")
             self.assertEqual(assign_place(db, [assets[0]], place_id), 1)
             self.assertEqual(list_places(db)[0].item_count, 1)
+            self.assertEqual(remove_place(db, [assets[0]], place_id), 1)
+            self.assertEqual(list_places(db)[0].item_count, 0)
             self.assertEqual(set_review(db, assets, status="PICKED", rating=4), 2)
             self.assertEqual(tuple(db.execute("SELECT review_status, rating FROM asset_reviews ORDER BY asset_id").fetchone()), ("PICKED", 4))
             self.assertTrue((Path(temp) / "photos" / "one.jpg").exists())

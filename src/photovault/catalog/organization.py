@@ -339,6 +339,16 @@ def assign_place(connection: sqlite3.Connection, asset_ids: list[str] | tuple[st
     return changed
 
 
+def remove_place(connection: sqlite3.Connection, asset_ids: list[str] | tuple[str, ...], place_id: str) -> int:
+    """Remove a catalog place assignment without touching embedded GPS or files."""
+    cursor = connection.executemany(
+        "DELETE FROM asset_places WHERE asset_id=? AND place_id=?",
+        ((str(asset_id), str(place_id)) for asset_id in dict.fromkeys(asset_ids)),
+    )
+    connection.commit()
+    return max(0, int(cursor.rowcount))
+
+
 def update_place(connection: sqlite3.Connection, place_id: str, *, name: str, country: str | None = None, region: str | None = None, city: str | None = None, latitude: float | None = None, longitude: float | None = None) -> None:
     clean = " ".join(name.strip().split())
     if not clean:

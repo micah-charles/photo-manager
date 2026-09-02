@@ -2022,6 +2022,51 @@ if QT_AVAILABLE:
             except Exception as exc:
                 self.library_result.setText(f"Place assignment failed: {type(exc).__name__}: {exc}")
 
+        def _remove_selected_event(self) -> None:
+            asset_ids = self._selected_library_asset_ids()
+            event_id = self.library_assign_event.currentData()
+            if not asset_ids or not event_id:
+                self.library_result.setText("Select media and an event first.")
+                return
+            try:
+                from photovault.catalog.organization import remove_assets_from_event
+
+                changed = remove_assets_from_event(self.connection, str(event_id), asset_ids)
+                self.library_result.setText(f"Removed {changed} selected item(s) from the event. Originals were not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.library_result.setText(f"Event removal failed: {type(exc).__name__}: {exc}")
+
+        def _remove_selected_tag(self) -> None:
+            asset_ids = self._selected_library_asset_ids()
+            tag_id = self.library_assign_tag.currentData()
+            if not asset_ids or not tag_id:
+                self.library_result.setText("Select media and a tag first.")
+                return
+            try:
+                from photovault.catalog.organization import remove_tags
+
+                changed = remove_tags(self.connection, asset_ids, [str(tag_id)])
+                self.library_result.setText(f"Removed {changed} tag assignment(s). Originals were not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.library_result.setText(f"Tag removal failed: {type(exc).__name__}: {exc}")
+
+        def _clear_selected_place(self) -> None:
+            asset_ids = self._selected_library_asset_ids()
+            place_id = self.library_assign_place.currentData()
+            if not asset_ids or not place_id:
+                self.library_result.setText("Select media and a place first.")
+                return
+            try:
+                from photovault.catalog.organization import remove_place
+
+                changed = remove_place(self.connection, asset_ids, str(place_id))
+                self.library_result.setText(f"Cleared {changed} place assignment(s). Embedded GPS metadata was not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.library_result.setText(f"Place removal failed: {type(exc).__name__}: {exc}")
+
         def _refresh_tags(self) -> None:
             from photovault.catalog.organization import list_tags
 
