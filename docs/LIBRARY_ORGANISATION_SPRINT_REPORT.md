@@ -80,9 +80,14 @@ The current macOS release smoke check also passes:
 - the Windows packaging path remains platform-neutral in Python, but requires
   an actual Windows runner for final executable and removable-drive validation.
 
+Settings now persist locally through the desktop user's QSettings store. Category
+analysis paths and limits, duplicate method/threshold, place cluster radius, and
+Vision people JSON path reload after restarting the app; saving them never writes
+to originals or catalog media.
+
 The live acceptance procedure is documented in
 `docs/PHASE_0_LIVE_ACCEPTANCE_RUNBOOK.md`. The latest offscreen capture on
-2026-09-02 produced 16 PNG pages successfully; interactive GUI inspection and
+2026-09-02 produced 18 PNG pages successfully; interactive GUI inspection and
 live-device transfer still require an unlocked desktop.
 
 ## Remaining work before final completion

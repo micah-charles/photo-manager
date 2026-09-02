@@ -2794,6 +2794,24 @@ if QT_AVAILABLE:
             self._classification_thread.finished.connect(self._classification_thread.deleteLater)
             self._classification_thread.start()
 
+        def _save_settings(self) -> None:
+            try:
+                from PySide6.QtCore import QSettings
+
+                preferences = QSettings("PhotoVault", "PhotoVault")
+                preferences.setValue("ai/category_model", self.category_model_path.text().strip())
+                preferences.setValue("ai/category_labels", self.category_labels_path.text().strip())
+                preferences.setValue("ai/category_limit", self.category_limit.value())
+                preferences.setValue("ai/category_top_k", self.category_top_k.value())
+                preferences.setValue("duplicates/algorithm", self.duplicate_algorithm.currentData())
+                preferences.setValue("duplicates/threshold", self.duplicate_threshold.value())
+                preferences.setValue("places/cluster_radius", self.place_cluster_radius.value())
+                preferences.setValue("people/features_json", self.people_features_json.text().strip())
+                preferences.sync()
+                self.settings_result.setText("Settings saved locally. Originals and catalog media were not changed.")
+            except Exception as exc:
+                self.settings_result.setText(f"Settings could not be saved: {type(exc).__name__}: {exc}")
+
         def _cancel_category_analysis(self) -> None:
             if self._classification_worker is not None:
                 self._classification_worker.request_cancel()

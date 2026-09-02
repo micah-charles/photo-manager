@@ -1,10 +1,12 @@
 """Settings landing page construction."""
 from __future__ import annotations
 
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QSpinBox
 
 
 def build_settings_page(owner: object, layout: object) -> None:
+    preferences = QSettings("PhotoVault", "PhotoVault")
     intro = QLabel(
         "PhotoVault keeps backup truth separate from photo enrichment. Use the links below to reach catalog, backup, and intelligence controls."
     )
@@ -31,15 +33,18 @@ def build_settings_page(owner: object, layout: object) -> None:
     layout.addWidget(ai_help)
     ai_form = QFormLayout()
     owner.category_model_path = QLineEdit()
+    owner.category_model_path.setText(preferences.value("ai/category_model", "", str))
     owner.category_model_path.setPlaceholderText("Path to local ONNX model (stored outside Git)")
     owner.category_labels_path = QLineEdit()
+    owner.category_labels_path.setText(preferences.value("ai/category_labels", "", str))
     owner.category_labels_path.setPlaceholderText("Path to matching labels.txt")
     owner.category_limit = QSpinBox()
     owner.category_limit.setRange(0, 10_000_000)
     owner.category_limit.setSpecialValueText("All images")
+    owner.category_limit.setValue(int(preferences.value("ai/category_limit", 0)))
     owner.category_top_k = QSpinBox()
     owner.category_top_k.setRange(1, 100)
-    owner.category_top_k.setValue(5)
+    owner.category_top_k.setValue(int(preferences.value("ai/category_top_k", 5)))
     ai_form.addRow("Category model", owner.category_model_path)
     ai_form.addRow("Category labels", owner.category_labels_path)
     ai_form.addRow("Analysis limit", owner.category_limit)
@@ -76,7 +81,11 @@ def build_settings_page(owner: object, layout: object) -> None:
     owner.duplicate_algorithm.addItem("Difference hash (dHash)", "dhash64")
     owner.duplicate_threshold = QSpinBox()
     owner.duplicate_threshold.setRange(0, 64)
-    owner.duplicate_threshold.setValue(8)
+    owner.duplicate_threshold.setValue(int(preferences.value("duplicates/threshold", 8)))
+    duplicate_algorithm = preferences.value("duplicates/algorithm", "phash64", str)
+    duplicate_index = owner.duplicate_algorithm.findData(duplicate_algorithm)
+    if duplicate_index >= 0:
+        owner.duplicate_algorithm.setCurrentIndex(duplicate_index)
     duplicate_form.addRow("Similarity method", owner.duplicate_algorithm)
     duplicate_form.addRow("Similarity threshold", owner.duplicate_threshold)
     layout.addLayout(duplicate_form)
@@ -97,7 +106,7 @@ def build_settings_page(owner: object, layout: object) -> None:
     places_form = QFormLayout()
     owner.place_cluster_radius = QSpinBox()
     owner.place_cluster_radius.setRange(1, 100_000)
-    owner.place_cluster_radius.setValue(100)
+    owner.place_cluster_radius.setValue(int(preferences.value("places/cluster_radius", 100)))
     owner.place_cluster_radius.setSuffix(" m")
     places_form.addRow("GPS cluster radius", owner.place_cluster_radius)
     layout.addLayout(places_form)
@@ -111,6 +120,7 @@ def build_settings_page(owner: object, layout: object) -> None:
     people_help.setWordWrap(True)
     layout.addWidget(people_help)
     owner.people_features_json = QLineEdit()
+    owner.people_features_json.setText(preferences.value("people/features_json", "", str))
     owner.people_features_json.setPlaceholderText("Path to macOS Vision features JSON")
     layout.addWidget(owner.people_features_json)
     people_actions = QHBoxLayout()
@@ -121,6 +131,14 @@ def build_settings_page(owner: object, layout: object) -> None:
     open_people.clicked.connect(lambda: owner._select_page("People"))
     people_actions.addWidget(open_people)
     layout.addLayout(people_actions)
+    settings_actions = QHBoxLayout()
+    save_settings = QPushButton("Save settings")
+    save_settings.clicked.connect(owner._save_settings)
+    settings_actions.addWidget(save_settings)
+    owner.settings_result = QLabel("Settings are local to this Mac user account.")
+    owner.settings_result.setWordWrap(True)
+    settings_actions.addWidget(owner.settings_result, 1)
+    layout.addLayout(settings_actions)
     for button_text, target in (("Open Advanced Tools", "Advanced Tools"), ("Open Catalog Recovery", "Catalog Recovery")):
         button = QPushButton(button_text)
         button.clicked.connect(lambda _checked=False, page=target: owner._select_page(page))
