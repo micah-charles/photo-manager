@@ -58,7 +58,7 @@ are documented in `docs/LIBRARY_ORGANISATION_ARCHITECTURE.md`.
 PYTHONUNBUFFERED=1 PYTHONWARNINGS=ignore QT_QPA_PLATFORM=offscreen \
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 
-Ran 118 tests
+Ran 119 tests
 OK
 ```
 
