@@ -64,6 +64,22 @@ PYTHONPATH=src python3 -m photovault.cli --catalog /tmp/photovault.db volume-ref
 
 The catalog is metadata only. Originals remain ordinary filesystem files.
 
+## Experimental Smart Collage POC
+
+Phase 1 is an isolated, read-only layout experiment. It does not change the
+catalog or source photographs. Given a folder of images, it writes 30
+structured layout candidates (10 each from native, BSP and optimisation
+providers), individual JPEG previews, a labelled contact sheet and
+`candidates.json`:
+
+```bash
+PYTHONPATH=src python -m photovault.cli collage-poc /path/to/photos /tmp/collage-poc --limit 15 --seed 42
+```
+
+See [the audit and Phase 1 boundary](docs/smart-collage-poc-audit.md). Face
+protection, ranking and review UI are intentionally later phases pending
+visual review of these outputs.
+
 In the web Library, click a Topic to open its photos, click `Edit` to change
 its name or date range, and use `Create Topic` for a new one. Photo cards can
 be dragged onto a Topic card; alternatively select several cards and choose a

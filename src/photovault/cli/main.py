@@ -205,6 +205,11 @@ def parser() -> argparse.ArgumentParser:
     web = sub.add_parser("web", help="serve the local PhotoVault web UI")
     web.add_argument("--host", default="127.0.0.1", help="bind address; loopback is the safe default")
     web.add_argument("--port", type=int, default=8765)
+    collage = sub.add_parser("collage-poc", help="generate an opt-in Smart Collage Phase 1 preview set")
+    collage.add_argument("folder", type=Path, help="folder containing source photographs")
+    collage.add_argument("output", type=Path, help="new/output directory for previews and metadata")
+    collage.add_argument("--limit", type=int, default=15, help="maximum photographs to use (default: 15)")
+    collage.add_argument("--seed", type=int, default=42, help="reproducible candidate seed")
     mcp = sub.add_parser("mcp-server", help="serve PhotoVault semantic tools over MCP stdio")
     mcp.add_argument("--catalog", type=Path, dest="mcp_catalog", required=True)
     sub.add_parser("gui", help="launch the optional PySide6 desktop UI")
@@ -230,6 +235,12 @@ def main() -> int:
         from photovault.agent.mcp_server import run
 
         run(args.mcp_catalog)
+        return 0
+    if args.command == "collage-poc":
+        from photovault.collage.poc.runner import run_poc
+
+        result = run_poc(args.folder, args.output, args.limit, args.seed)
+        print("COLLAGE_POC\t" + "\t".join(f"{key}={value}" for key, value in result.items()))
         return 0
     connection = connect(args.catalog)
 
