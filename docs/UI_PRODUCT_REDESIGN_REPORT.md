@@ -186,13 +186,13 @@ full-resolution loading for the library.
 ## 13. Test results
 
 The latest visual review was captured from the rebuilt macOS application
-against the external regression catalog at commit `50de0da`. The Collections
+against the external regression catalog at commit `1a12a41`. The Collections
 screen visibly explains its interaction model: a single click selects a card,
 while double-click or Enter opens it in Library.
 
 The PySide6 UI foundation suite (including deterministic Android transfer
-progress/ETA coverage) passes 17/17, and full Python test discovery passes
-98/98 in the external `.venv`. The UI test harness explicitly tears down its
+progress/ETA coverage) passes 26/26, and full Python test discovery passes
+120/120 in the external `.venv`. The UI test harness explicitly tears down its
 shared QApplication so macOS pasteboard services do not abort at process exit.
 The optional UI suite runs when PySide6 is present; headless
 CI environments continue to skip those tests cleanly. The current working
