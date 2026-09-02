@@ -18,6 +18,7 @@ try:
         QApplication,
         QCheckBox,
         QComboBox,
+        QFileDialog,
         QFormLayout,
         QHBoxLayout,
         QLabel,
@@ -902,6 +903,20 @@ if QT_AVAILABLE:
             self._android_transfer_thread.finished.connect(self._android_transfer_thread_finished)
             self._android_transfer_thread.finished.connect(self._android_transfer_thread.deleteLater)
             self._android_transfer_thread.start()
+
+        def _choose_android_destination(self) -> None:
+            """Choose an existing backup directory using the native picker."""
+            current = self.android_transfer_destination.text().strip()
+            selected = QFileDialog.getExistingDirectory(
+                self,
+                "Choose PhotoVault backup destination",
+                current if Path(current).is_dir() else str(Path.home()),
+            )
+            if selected:
+                self.android_transfer_destination.setText(selected)
+                self.android_transfer_result.setText(
+                    f"Destination selected: {selected}. Review the folder and profile before starting."
+                )
 
         def _start_thumbnail_generation(self) -> None:
             if self._catalog_path is None:

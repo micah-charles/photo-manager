@@ -111,7 +111,12 @@ def build_android_backup_page(owner: object, layout: object, tables: dict[str, Q
     transfer_form.addRow("Backup folders", owner.android_transfer_folders)
     transfer_form.addRow("Profile name", owner.android_transfer_profile_name)
     transfer_form.addRow("Media", owner.android_transfer_media_filter)
-    transfer_form.addRow("Destination directory", owner.android_transfer_destination)
+    destination_row = QHBoxLayout()
+    destination_row.addWidget(owner.android_transfer_destination, 1)
+    owner.android_destination_browse = QPushButton("Browse…")
+    owner.android_destination_browse.clicked.connect(owner._choose_android_destination)
+    destination_row.addWidget(owner.android_destination_browse)
+    transfer_form.addRow("Destination directory", destination_row)
     transfer_form.addRow("Concurrent workers", owner.android_transfer_workers)
     transfer_layout.addLayout(transfer_form)
 

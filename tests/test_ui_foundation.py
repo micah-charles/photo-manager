@@ -112,6 +112,26 @@ class UIFoundationTests(unittest.TestCase):
             window.close()
             connection.close()
 
+    def test_android_destination_picker_fills_existing_directory(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            destination = str(Path(temp) / "backup")
+            Path(destination).mkdir()
+            with patch("photovault.ui.main_window.QFileDialog.getExistingDirectory", return_value=destination):
+                window._choose_android_destination()
+            self.assertEqual(window.android_transfer_destination.text(), destination)
+            self.assertIn("Destination selected", window.android_transfer_result.text())
+            window.close()
+            connection.close()
+
     def test_android_backup_terminal_states_have_explicit_safe_summary(self) -> None:
         from photovault.ui import main_window
 
