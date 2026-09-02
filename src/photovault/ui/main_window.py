@@ -2570,10 +2570,10 @@ if QT_AVAILABLE:
 
                 _, model, raw_label = category_id.split(":", 2)
                 tag_name = normalize_label(raw_label)
-                rows = self.connection.execute(
-                    "SELECT asset_id FROM image_categories WHERE model=? AND (label=? OR label=?)",
-                    (model, raw_label, tag_name),
-                ).fetchall()
+                rows = [row for row in self.connection.execute(
+                    "SELECT asset_id, label FROM image_categories WHERE model=?",
+                    (model,),
+                ) if normalize_label(str(row[1])) == tag_name]
                 tag_id = create_tag(self.connection, tag_name)
                 changed = assign_tags(self.connection, [str(row[0]) for row in rows], [tag_id], source="ai_accepted")
                 self.categories_result.setText(
