@@ -1768,8 +1768,23 @@ if QT_AVAILABLE:
 
         def _refresh_timeline(self) -> None:
             from photovault.catalog.timeline import list_timeline
+            from photovault.catalog.organization import list_sources
 
             source_id = self.timeline_source_filter.currentData() if hasattr(self, "timeline_source_filter") else None
+            if hasattr(self, "timeline_source_filter"):
+                # Keep the source selector useful after a new phone/camera or
+                # folder is registered, while preserving the user's choice.
+                source_filter = self.timeline_source_filter
+                previous_source = source_filter.currentData()
+                source_filter.blockSignals(True)
+                source_filter.clear()
+                source_filter.addItem("All sources", None)
+                for source in list_sources(self.connection):
+                    source_filter.addItem(str(source["display_name"]), str(source["source_id"]))
+                restored_index = source_filter.findData(previous_source)
+                source_filter.setCurrentIndex(restored_index if restored_index >= 0 else 0)
+                source_filter.blockSignals(False)
+                source_id = source_filter.currentData()
             page_size = int(self.timeline_page_size.currentData()) if hasattr(self, "timeline_page_size") else 500
             offset = int(getattr(self, "_timeline_offset", 0))
             rows = list_timeline(self.connection, limit=page_size, source_id=source_id, offset=offset)
