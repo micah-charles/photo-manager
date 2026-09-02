@@ -35,7 +35,7 @@ class UIFoundationTests(unittest.TestCase):
         self.assertEqual(
             NAVIGATION_ITEMS,
             (
-                "Dashboard", "Library", "Review", "Events", "Event Detail", "Tags", "Sources", "Photo Viewer", "Collections", "People", "Disks", "Android Devices", "Backup Profiles", "Backup Sets", "Scan", "Redundancy Audit",
+                "Dashboard", "Library", "Import", "Review", "Events", "Event Detail", "Tags", "Sources", "Photo Viewer", "Collections", "People", "Disks", "Android Devices", "Backup Profiles", "Backup Sets", "Scan", "Redundancy Audit",
                 "Reconciliation", "Folder Safety Audit", "Copy Plans", "Quarantine", "Operations",
                 "Catalog Recovery", "Timeline", "Favourites", "Visual Duplicates", "Places", "Categories", "Backup Health", "Advanced Tools", "Settings",
             ),
@@ -311,6 +311,24 @@ class UIFoundationTests(unittest.TestCase):
             window.category_top_k.setValue(3)
             self.assertEqual(window.category_limit.value(), 12)
             self.assertEqual(window.category_top_k.value(), 3)
+            window.close()
+            connection.close()
+
+    def test_import_page_exposes_explicit_folder_modes(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._select_page("Import")
+            self.assertEqual(window.import_mode.itemData(0), "catalog")
+            self.assertEqual(window.import_mode.itemData(1), "managed")
+            self.assertTrue(window.import_folder_path.accessibleName())
             window.close()
             connection.close()
 

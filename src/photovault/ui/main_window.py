@@ -477,6 +477,7 @@ if QT_AVAILABLE:
             navigation_icons = {
                 "Dashboard": QStyle.StandardPixmap.SP_DirHomeIcon,
                 "Library": QStyle.StandardPixmap.SP_FileDialogDetailedView,
+                "Import": QStyle.StandardPixmap.SP_DialogOpenButton,
                 "Review": QStyle.StandardPixmap.SP_DialogApplyButton,
                 "Events": QStyle.StandardPixmap.SP_FileDialogListView,
                 "Tags": QStyle.StandardPixmap.SP_FileDialogListView,
@@ -595,6 +596,10 @@ if QT_AVAILABLE:
                 from .pages.library_page import build_library_page
 
                 build_library_page(self, layout, self._tables)
+            elif label == "Import":
+                from .pages.import_page import build_import_page
+
+                build_import_page(self, layout)
             elif label == "Review":
                 from .pages.review_page import build_review_page
 
@@ -956,6 +961,57 @@ if QT_AVAILABLE:
                 self.sources_result.setText(
                     f"Source selected: {selected}. Choose Catalog in Place or a reviewed Managed Copy workflow."
                 )
+
+        def _choose_import_folder(self) -> None:
+            current = self.import_folder_path.text().strip()
+            selected = QFileDialog.getExistingDirectory(
+                self,
+                "Choose folder or mounted camera card to import",
+                current if Path(current).is_dir() else str(Path.home()),
+            )
+            if selected:
+                self.import_folder_path.setText(selected)
+                self.import_result.setText(f"Source selected: {selected}. Preview it, then choose an import mode.")
+
+        def _preview_import_folder(self) -> None:
+            try:
+                from photovault.catalog.scanner import iter_media
+
+                root = Path(self.import_folder_path.text().strip()).expanduser().resolve()
+                if not root.is_dir():
+                    raise ValueError("choose an existing folder or mounted card")
+                counts = {"IMAGE": 0, "VIDEO": 0}
+                total_bytes = 0
+                for path, media_type in iter_media(root):
+                    counts[media_type] = counts.get(media_type, 0) + 1
+                    try:
+                        total_bytes += path.stat().st_size
+                    except OSError:
+                        pass
+                self.import_result.setText(
+                    f"Source preview: {counts.get('IMAGE', 0):,} images, {counts.get('VIDEO', 0):,} videos, "
+                    f"{total_bytes / (1024 ** 3):.2f} GB. No files or catalog records were changed."
+                )
+            except Exception as exc:
+                self.import_result.setText(f"Source preview failed: {type(exc).__name__}: {exc}")
+
+        def _start_general_import(self) -> None:
+            source_path = self.import_folder_path.text().strip()
+            if not source_path:
+                self.import_result.setText("Choose a source folder or mounted camera card first.")
+                return
+            if self.import_mode.currentData() == "catalog":
+                self.source_folder_path.setText(source_path)
+                self._select_page("Sources")
+                self._scan_source_folder()
+                self.import_result.setText("Catalog-in-place scan started in the background. Source files remain in place.")
+                return
+            self.source_folder_path.setText(source_path)
+            self._select_page("Sources")
+            self._open_source_managed_copy()
+            self.copy_result.setText(
+                "Managed Copy selected. Review the copy plan and destination before executing; the source folder has not been changed."
+            )
 
         def _open_source_managed_copy(self) -> None:
             """Route managed folder copies to the existing reviewed copy workflow."""

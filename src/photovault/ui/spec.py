@@ -3,6 +3,7 @@ from __future__ import annotations
 NAVIGATION_ITEMS: tuple[str, ...] = (
     "Dashboard",
     "Library",
+    "Import",
     "Review",
     "Events",
     "Event Detail",
@@ -37,7 +38,7 @@ NAVIGATION_ITEMS: tuple[str, ...] = (
 # pages, but are reached through Advanced Tools rather than crowding the main
 # navigation.
 NAVIGATION_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Photos", ("Dashboard", "Library", "Review", "Events", "Collections", "Favourites")),
+    ("Photos", ("Dashboard", "Library", "Import", "Review", "Events", "Collections", "Favourites")),
     ("Explore", ("People", "Places", "Categories", "Tags", "Sources", "Visual Duplicates")),
     ("Backup", ("Android Devices", "Backup Profiles")),
     ("Storage", ("Disks", "Backup Health", "Advanced Tools")),
