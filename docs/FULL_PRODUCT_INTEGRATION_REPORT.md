@@ -90,29 +90,24 @@ move or a change to verification truth.
 ```text
 Dashboard
 Library
+Timeline
 Import
 Review
 Events
-Tags
-Sources
 Collections
+Favourites
 People
 Places
 Categories
+Tags
+Sources
+Visual Duplicates
 Disks
 Android Devices      ← Companion Wi-Fi production entry point
-Backup Sets
-Scan
-Redundancy Audit
-Reconciliation
-Folder Safety Audit
-Copy Plans
-Quarantine
 Operations
-Timeline
-Favourites
-Visual Duplicates
-Places
+
+Advanced Tools → Backup Sets, Scan, Redundancy Audit, Reconciliation,
+Folder Safety Audit, Copy Plans, Quarantine, Catalog Recovery
 ```
 
 Event Detail is a contextual page opened from Events; technical pages remain
