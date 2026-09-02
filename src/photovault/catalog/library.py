@@ -52,9 +52,25 @@ def _where_for_query(query: LibraryQuery) -> tuple[list[str], list[object]]:
     if not query.include_rejected and not query.review_status:
         where.append("COALESCE(ar.review_status, 'UNREVIEWED') NOT IN ('REJECTED', 'HIDDEN')")
     if query.search.strip():
-        where.append("(lower(al.filename) LIKE ? OR lower(al.relative_path) LIKE ?)")
+        where.append(
+            """(lower(al.filename) LIKE ? OR lower(al.relative_path) LIKE ?
+                OR lower(COALESCE(mm.capture_datetime, al.capture_date, '')) LIKE ?
+                OR EXISTS (SELECT 1 FROM source_profiles sp_search
+                           WHERE sp_search.source_id=al.source_id
+                             AND lower(sp_search.display_name) LIKE ?)
+                OR EXISTS (SELECT 1 FROM event_assets ea_search JOIN events e_search ON e_search.id=ea_search.event_id
+                           WHERE ea_search.asset_id=al.asset_id AND lower(e_search.name) LIKE ?)
+                OR EXISTS (SELECT 1 FROM asset_tags at_search JOIN tags t_search ON t_search.id=at_search.tag_id
+                           WHERE at_search.asset_id=al.asset_id AND lower(t_search.name) LIKE ?)
+                OR EXISTS (SELECT 1 FROM person_members pm_search JOIN people p_search ON p_search.id=pm_search.person_id
+                           WHERE pm_search.asset_id=al.asset_id AND lower(COALESCE(p_search.display_name, p_search.external_key)) LIKE ?)
+                OR EXISTS (SELECT 1 FROM asset_places ap_search JOIN places pl_search ON pl_search.id=ap_search.place_id
+                           WHERE ap_search.asset_id=al.asset_id AND lower(pl_search.name) LIKE ?)
+                OR EXISTS (SELECT 1 FROM image_categories ic_search
+                           WHERE ic_search.asset_id=al.asset_id AND lower(ic_search.label) LIKE ?))"""
+        )
         term = "%" + query.search.strip().lower() + "%"
-        params.extend((term, term))
+        params.extend((term,) * 9)
     if query.folder_prefix.strip("/"):
         where.append("al.relative_path LIKE ?")
         params.append(query.folder_prefix.strip("/") + "/%")

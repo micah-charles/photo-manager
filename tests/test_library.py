@@ -62,6 +62,8 @@ class LibraryTests(unittest.TestCase):
             self.assertEqual([row["filename"] for row in by_source], ["phone.jpg"])
             self.assertEqual(list_library_items(connection, LibraryQuery(event_id=event_id, include_rejected=True))[0]["filename"], "phone.jpg")
             self.assertEqual(list_library_items(connection, LibraryQuery(tag_id=tag_id, include_rejected=True))[0]["filename"], "phone.jpg")
+            self.assertEqual(list_library_items(connection, LibraryQuery(search="travel", include_rejected=True))[0]["filename"], "phone.jpg")
+            self.assertEqual(list_library_items(connection, LibraryQuery(search="phone", include_rejected=True))[0]["filename"], "phone.jpg")
             self.assertEqual(list_library_items(connection, LibraryQuery(review_status="REJECTED", include_rejected=True))[0]["filename"], "phone.jpg")
             self.assertEqual(count_library_items(connection, LibraryQuery(review_status="REJECTED", include_rejected=True)), 1)
             connection.close()
