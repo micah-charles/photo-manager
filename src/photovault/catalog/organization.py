@@ -32,6 +32,7 @@ class Event:
     description: str
     item_count: int
     is_suggested: bool
+    default_place_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -95,6 +96,7 @@ def create_event(
     end_datetime: str | None = None,
     event_type: str = "other",
     description: str = "",
+    default_place_id: str | None = None,
     is_suggested: bool = False,
 ) -> str:
     clean = " ".join(name.strip().split())
@@ -102,17 +104,44 @@ def create_event(
         raise ValueError("event name is required")
     if start_datetime and end_datetime and start_datetime > end_datetime:
         raise ValueError("event start must not be after event end")
+    if default_place_id and connection.execute("SELECT 1 FROM places WHERE id=?", (default_place_id,)).fetchone() is None:
+        raise ValueError("unknown default place")
     event_id = str(uuid.uuid4())
     now = _now()
     connection.execute(
         """INSERT INTO events(id, name, start_datetime, end_datetime, event_type,
-           description, is_suggested, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           description, default_place_id, is_suggested, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (event_id, clean, start_datetime, end_datetime, event_type, description,
-         int(is_suggested), now, now),
+         default_place_id, int(is_suggested), now, now),
     )
     connection.commit()
     return event_id
+
+
+def add_event_assets_in_date_range(
+    connection: sqlite3.Connection,
+    event_id: str,
+    start_date: str,
+    end_date: str,
+    *,
+    membership_source: str = "date_range",
+) -> int:
+    """Add all currently catalogued assets captured between two inclusive dates."""
+    if connection.execute("SELECT 1 FROM events WHERE id=?", (event_id,)).fetchone() is None:
+        raise ValueError("unknown event")
+    if not start_date or not end_date or start_date > end_date:
+        raise ValueError("event date range is invalid")
+    rows = connection.execute(
+        """SELECT al.asset_id
+           FROM asset_locations al
+           LEFT JOIN media_metadata mm ON mm.asset_id=al.asset_id
+           WHERE al.missing_since IS NULL
+             AND substr(COALESCE(mm.capture_datetime, al.capture_date), 1, 10) BETWEEN ? AND ?
+           ORDER BY COALESCE(mm.capture_datetime, al.capture_date), al.asset_id""",
+        (start_date, end_date),
+    ).fetchall()
+    return add_assets_to_event(connection, event_id, [str(row[0]) for row in rows], membership_source=membership_source)
 
 
 def add_assets_to_event(
@@ -135,15 +164,17 @@ def add_assets_to_event(
     return max(0, int(cursor.rowcount))
 
 
-def update_event(connection: sqlite3.Connection, event_id: str, *, name: str, start_datetime: str | None = None, end_datetime: str | None = None, event_type: str = "other", description: str = "") -> None:
+def update_event(connection: sqlite3.Connection, event_id: str, *, name: str, start_datetime: str | None = None, end_datetime: str | None = None, event_type: str = "other", description: str = "", default_place_id: str | None = None) -> None:
     clean = " ".join(name.strip().split())
     if not clean:
         raise ValueError("event name is required")
     if start_datetime and end_datetime and start_datetime > end_datetime:
         raise ValueError("event start must not be after event end")
+    if default_place_id and connection.execute("SELECT 1 FROM places WHERE id=?", (default_place_id,)).fetchone() is None:
+        raise ValueError("unknown default place")
     changed = connection.execute(
-        "UPDATE events SET name=?, start_datetime=?, end_datetime=?, event_type=?, description=?, updated_at=? WHERE id=?",
-        (clean, start_datetime, end_datetime, event_type, description, _now(), event_id),
+        "UPDATE events SET name=?, start_datetime=?, end_datetime=?, event_type=?, description=?, default_place_id=?, updated_at=? WHERE id=?",
+        (clean, start_datetime, end_datetime, event_type, description, default_place_id, _now(), event_id),
     ).rowcount
     if not changed:
         raise ValueError("unknown event")
@@ -169,9 +200,9 @@ def remove_assets_from_event(connection: sqlite3.Connection, event_id: str, asse
 
 
 def list_events(connection: sqlite3.Connection) -> list[Event]:
-    return [Event(row[0], row[1], row[2], row[3], row[4], row[5], int(row[6]), bool(row[7])) for row in connection.execute(
+    return [Event(row[0], row[1], row[2], row[3], row[4], row[5], int(row[6]), bool(row[7]), row[8]) for row in connection.execute(
         """SELECT e.id, e.name, e.start_datetime, e.end_datetime, e.event_type,
-                  e.description, COUNT(ea.asset_id), e.is_suggested
+                  e.description, COUNT(ea.asset_id), e.is_suggested, e.default_place_id
            FROM events e LEFT JOIN event_assets ea ON ea.event_id=e.id
            GROUP BY e.id ORDER BY COALESCE(e.start_datetime, e.created_at) DESC, e.name"""
     )]
@@ -296,6 +327,9 @@ def set_review(connection: sqlite3.Connection, asset_ids: list[str] | tuple[str,
                  updated_at=excluded.updated_at""",
             (asset_id, status, rating, now, rating, rating),
         )
+        if rating == 0:
+            # Review's 0 shortcut means clear the rating, not a visible zero-star rating.
+            connection.execute("UPDATE asset_reviews SET rating=NULL, updated_at=? WHERE asset_id=?", (now, asset_id))
         changed += 1
     connection.commit()
     return changed

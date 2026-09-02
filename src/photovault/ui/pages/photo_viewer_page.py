@@ -28,7 +28,7 @@ def build_photo_viewer_page(owner: object, layout: object) -> None:
     review_button.clicked.connect(owner._apply_viewer_review)
     toolbar.addWidget(review_button)
     owner.viewer_rating_action = QComboBox()
-    owner.viewer_rating_action.addItem("Rating", None)
+    owner.viewer_rating_action.addItem("Clear rating", 0)
     for rating in range(1, 6):
         owner.viewer_rating_action.addItem(f"{rating}★", rating)
     toolbar.addWidget(owner.viewer_rating_action)
@@ -38,7 +38,7 @@ def build_photo_viewer_page(owner: object, layout: object) -> None:
     toolbar.addStretch(1)
     layout.addLayout(toolbar)
 
-    shortcuts = QLabel("Keyboard: ←/→ navigate · P pick · R reject · H hide")
+    shortcuts = QLabel("Keyboard: ←/→ navigate · P pick · X/R reject · H hide · F favourite · 0–5 rating")
     shortcuts.setObjectName("StatusSummary")
     layout.addWidget(shortcuts)
 

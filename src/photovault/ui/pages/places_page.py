@@ -1,16 +1,21 @@
 """Places page construction for offline-safe GPS browsing."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QLabel, QListWidget, QLineEdit, QFormLayout, QPushButton, QTableWidget
+from PySide6.QtWidgets import QCheckBox, QLabel, QListWidget, QLineEdit, QFormLayout, QPushButton, QTableWidget, QWidget
 
 from ..components import configure_tile_grid
 
 
 def build_places_page(owner: object, layout: object, tables: dict[str, QTableWidget]) -> None:
-    form = QFormLayout()
+    advanced_toggle = QCheckBox("Show advanced place clustering settings")
+    layout.addWidget(advanced_toggle)
+    advanced_body = QWidget()
+    advanced_body.setVisible(False)
+    form = QFormLayout(advanced_body)
     radius = QLineEdit("100")
     form.addRow("Cluster radius (m)", radius)
-    layout.addLayout(form)
+    advanced_toggle.toggled.connect(advanced_body.setVisible)
+    layout.addWidget(advanced_body)
     manual_form = QFormLayout()
     owner.place_name = QLineEdit()
     owner.place_name.setPlaceholderText("e.g. Edinburgh")

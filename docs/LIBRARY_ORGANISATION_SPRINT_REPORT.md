@@ -1,5 +1,7 @@
 # PhotoVault library organisation sprint
 
+**Updated:** 2026-09-02
+
 ## Verified implementation status
 
 The catalog now has additive migration support for source provenance, source
@@ -13,6 +15,8 @@ The desktop UI currently exposes:
 - batch review status, rating, Event, Tag, and Place actions;
 - Review queues with keyboard shortcuts in the Viewer (`P`, `R`, `H`, and arrows);
 - Event and Tag creation and filter navigation;
+- Event type/default-place fields and inclusive date-range membership when both
+  event dates are supplied;
 - manual Place creation;
 - Source listing, local folder/SD registration, background scan, and display-only
   time-offset editing;
@@ -35,11 +39,11 @@ unchanged.
 PYTHONUNBUFFERED=1 PYTHONWARNINGS=ignore QT_QPA_PLATFORM=offscreen \
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 
-Ran 104 tests
+Ran 105 tests
 OK
 ```
 
-The deterministic Qt capture harness covers 16 pages. The latest screenshots
+The deterministic Qt capture harness covers 16 pages. The existing screenshots
 are stored outside the repository at:
 
 `/Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA/screenshots`
@@ -55,6 +59,12 @@ The current macOS release smoke check also passes:
 - the bundle contains the native macOS Android MTP helper;
 - the Windows packaging path remains platform-neutral in Python, but requires
   an actual Windows runner for final executable and removable-drive validation.
+
+The live acceptance procedure is documented in
+`docs/PHASE_0_LIVE_ACCEPTANCE_RUNBOOK.md`. A new headless capture attempt on
+2026-09-02 was blocked by the locked macOS pasteboard/HIServices session and
+produced no new images; the existing deterministic captures remain the local
+visual evidence, while live GUI inspection still requires an unlocked desktop.
 
 ## Remaining work before final completion
 

@@ -1,16 +1,21 @@
 """Visual duplicate review page construction."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFormLayout, QLabel, QLineEdit, QListWidget, QPushButton
+from PySide6.QtWidgets import QCheckBox, QFormLayout, QLabel, QLineEdit, QListWidget, QPushButton, QWidget
 
 
 def build_duplicates_page(owner: object, layout: object) -> None:
-    form = QFormLayout()
+    advanced_toggle = QCheckBox("Show advanced duplicate-analysis settings")
+    layout.addWidget(advanced_toggle)
+    advanced_body = QWidget()
+    advanced_body.setVisible(False)
+    form = QFormLayout(advanced_body)
     algorithm = QLineEdit("phash64")
     threshold = QLineEdit("8")
     form.addRow("Algorithm", algorithm)
     form.addRow("Hamming threshold", threshold)
-    layout.addLayout(form)
+    advanced_toggle.toggled.connect(advanced_body.setVisible)
+    layout.addWidget(advanced_body)
     button = QPushButton("Find advisory groups")
     button.clicked.connect(lambda _checked=False, a=algorithm, t=threshold: owner._visual_duplicates(a, t))
     layout.addWidget(button)

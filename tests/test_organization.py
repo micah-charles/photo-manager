@@ -6,6 +6,7 @@ from pathlib import Path
 
 from photovault.catalog.organization import (
     add_assets_to_event,
+    add_event_assets_in_date_range,
     assign_place,
     assign_tags,
     create_event,
@@ -82,7 +83,25 @@ class OrganisationTests(unittest.TestCase):
             self.assertEqual(list_places(db)[0].item_count, 0)
             self.assertEqual(set_review(db, assets, status="PICKED", rating=4), 2)
             self.assertEqual(tuple(db.execute("SELECT review_status, rating FROM asset_reviews ORDER BY asset_id").fetchone()), ("PICKED", 4))
+            self.assertEqual(set_review(db, [assets[0]], rating=0), 1)
+            self.assertIsNone(db.execute("SELECT rating FROM asset_reviews WHERE asset_id=?", (assets[0],)).fetchone()[0])
             self.assertTrue((Path(temp) / "photos" / "one.jpg").exists())
+            db.close()
+
+    def test_event_date_range_membership_and_default_place(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            db = self._catalog(temp)
+            assets = [row[0] for row in db.execute("SELECT id FROM assets ORDER BY id")]
+            db.execute("UPDATE media_metadata SET capture_datetime=? WHERE asset_id=?", ("2026-08-23T10:00:00", assets[0]))
+            db.execute("UPDATE media_metadata SET capture_datetime=? WHERE asset_id=?", ("2026-09-02T10:00:00", assets[1]))
+            db.commit()
+            place_id = create_place(db, "Edinburgh")
+            event_id = create_event(db, "August trip", start_datetime="2026-08-22", end_datetime="2026-08-26", event_type="trip", default_place_id=place_id)
+            self.assertEqual(add_event_assets_in_date_range(db, event_id, "2026-08-22", "2026-08-26"), 1)
+            event = list_events(db)[0]
+            self.assertEqual(event.default_place_id, place_id)
+            self.assertEqual(event.item_count, 1)
+            self.assertEqual(db.execute("SELECT membership_source FROM event_assets WHERE event_id=?", (event_id,)).fetchone()[0], "date_range")
             db.close()
 
     def test_user_review_metadata_validates_values(self) -> None:

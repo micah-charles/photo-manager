@@ -128,6 +128,7 @@ def build_library_page(owner: object, layout: object, tables: dict[str, QTableWi
     actions.addWidget(review_button)
     owner.library_rating_action = QComboBox()
     owner.library_rating_action.addItem("No rating change", None)
+    owner.library_rating_action.addItem("Clear rating", 0)
     for rating in range(1, 6):
         owner.library_rating_action.addItem(f"Rate {rating}★", rating)
     actions.addWidget(owner.library_rating_action)

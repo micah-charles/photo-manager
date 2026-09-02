@@ -1,7 +1,7 @@
 """Event management page for logical, catalog-only grouping."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFormLayout, QLabel, QLineEdit, QPushButton, QTableWidget
+from PySide6.QtWidgets import QComboBox, QFormLayout, QLabel, QLineEdit, QPushButton, QTableWidget
 
 
 def build_events_page(owner: object, layout: object, tables: dict[str, QTableWidget]) -> None:
@@ -15,9 +15,17 @@ def build_events_page(owner: object, layout: object, tables: dict[str, QTableWid
     owner.event_start.setPlaceholderText("YYYY-MM-DD (optional)")
     owner.event_end = QLineEdit()
     owner.event_end.setPlaceholderText("YYYY-MM-DD (optional)")
+    owner.event_type = QComboBox()
+    owner.event_type.addItem("Other", "other")
+    for value, label in (("trip", "Trip"), ("holiday", "Holiday"), ("family", "Family"), ("school", "School"), ("music", "Music"), ("work", "Work"), ("celebration", "Celebration")):
+        owner.event_type.addItem(label, value)
+    owner.event_default_place = QComboBox()
+    owner.event_default_place.addItem("No default place", None)
     form.addRow("Event name", owner.event_name)
     form.addRow("Start date", owner.event_start)
     form.addRow("End date", owner.event_end)
+    form.addRow("Type", owner.event_type)
+    form.addRow("Default place", owner.event_default_place)
     layout.addLayout(form)
     create = QPushButton("Create event")
     create.clicked.connect(owner._create_event)
@@ -35,10 +43,14 @@ def build_events_page(owner: object, layout: object, tables: dict[str, QTableWid
     suggest.setToolTip("Create low-confidence, catalog-only suggestions; existing manual events are preserved.")
     suggest.clicked.connect(owner._suggest_events)
     layout.addWidget(suggest)
+    owner.event_range_hint = QLabel("When both dates are supplied, Create event also adds catalogued media in that inclusive range.")
+    owner.event_range_hint.setWordWrap(True)
+    layout.addWidget(owner.event_range_hint)
     owner.events_result = QLabel("Events are catalog metadata.")
     owner.events_result.setWordWrap(True)
     layout.addWidget(owner.events_result)
     table = QTableWidget()
+    table.cellClicked.connect(owner._load_event_row)
     table.cellDoubleClicked.connect(owner._open_event_row)
     tables["Events"] = table
     layout.addWidget(table)

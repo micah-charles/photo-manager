@@ -1,17 +1,22 @@
 """People/face-group page construction."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QAbstractItemView, QFormLayout, QLabel, QLineEdit, QListWidget, QPushButton, QTableWidget
+from PySide6.QtWidgets import QAbstractItemView, QCheckBox, QFormLayout, QLabel, QLineEdit, QListWidget, QPushButton, QTableWidget, QWidget
 
 from ..components import configure_tile_grid
 
 
 def build_people_page(owner: object, layout: object, tables: dict[str, QTableWidget]) -> None:
-    form = QFormLayout()
+    advanced_toggle = QCheckBox("Show advanced face-analysis import")
+    layout.addWidget(advanced_toggle)
+    advanced_body = QWidget()
+    advanced_body.setVisible(False)
+    form = QFormLayout(advanced_body)
     owner.people_features_json = QLineEdit()
     owner.people_features_json.setPlaceholderText("Read-only macOS Vision features JSON")
     form.addRow("Vision features JSON", owner.people_features_json)
-    layout.addLayout(form)
+    advanced_toggle.toggled.connect(advanced_body.setVisible)
+    layout.addWidget(advanced_body)
     import_button = QPushButton("Import macOS Vision people groups")
     import_button.clicked.connect(owner._import_people_features)
     layout.addWidget(import_button)

@@ -1803,18 +1803,24 @@ if QT_AVAILABLE:
 
         def _create_event(self) -> None:
             try:
-                from photovault.catalog.organization import create_event
+                from photovault.catalog.organization import add_event_assets_in_date_range, create_event
 
-                create_event(
+                start = self.event_start.text().strip() or None
+                end = self.event_end.text().strip() or None
+                event_id = create_event(
                     self.connection,
                     self.event_name.text(),
-                    start_datetime=self.event_start.text().strip() or None,
-                    end_datetime=self.event_end.text().strip() or None,
+                    start_datetime=start,
+                    end_datetime=end,
+                    event_type=str(self.event_type.currentData()),
+                    default_place_id=self.event_default_place.currentData(),
                 )
+                added = add_event_assets_in_date_range(self.connection, event_id, start, end) if start and end else 0
                 self.event_name.clear()
                 self.event_start.clear()
                 self.event_end.clear()
-                self.events_result.setText("Event created. Add media to it from Library selection in a later step.")
+                suffix = f" Added {added:,} catalogued item(s) from the date range." if start and end else " Select media in Library to add items."
+                self.events_result.setText("Event created." + suffix)
                 self.refresh()
             except Exception as exc:
                 self.events_result.setText(f"Event creation failed: {type(exc).__name__}: {exc}")
@@ -1830,7 +1836,7 @@ if QT_AVAILABLE:
                 event_id = self._selected_event_id()
                 if not event_id:
                     raise ValueError("select an event first")
-                update_event(self.connection, event_id, name=self.event_name.text(), start_datetime=self.event_start.text().strip() or None, end_datetime=self.event_end.text().strip() or None)
+                update_event(self.connection, event_id, name=self.event_name.text(), start_datetime=self.event_start.text().strip() or None, end_datetime=self.event_end.text().strip() or None, event_type=str(self.event_type.currentData()), default_place_id=self.event_default_place.currentData())
                 self.events_result.setText("Event updated. Original media was not changed.")
                 self.refresh()
             except Exception as exc:
@@ -1850,7 +1856,7 @@ if QT_AVAILABLE:
                 self.events_result.setText(f"Event deletion failed: {type(exc).__name__}: {exc}")
 
         def _refresh_events(self) -> None:
-            from photovault.catalog.organization import list_events
+            from photovault.catalog.organization import list_events, list_places
 
             events = list_events(self.connection)
             self._fill_table(
@@ -1861,6 +1867,29 @@ if QT_AVAILABLE:
             for row, event in enumerate(events):
                 self._tables["Events"].item(row, 0).setData(Qt.ItemDataRole.UserRole, event.id)
             self.events_result.setText(f"{len(events)} event(s). Double-click an event to filter Library.")
+            if hasattr(self, "event_default_place"):
+                self.event_default_place.blockSignals(True)
+                self.event_default_place.clear()
+                self.event_default_place.addItem("No default place", None)
+                for place in list_places(self.connection):
+                    self.event_default_place.addItem(place.name, place.id)
+                self.event_default_place.blockSignals(False)
+
+        def _load_event_row(self, row: int, _column: int) -> None:
+            event_id = self._tables["Events"].item(row, 0).data(Qt.ItemDataRole.UserRole)
+            from photovault.catalog.organization import list_events
+
+            event = next((item for item in list_events(self.connection) if item.id == event_id), None)
+            if event is None:
+                return
+            self.event_name.setText(event.name)
+            self.event_start.setText(event.start_datetime or "")
+            self.event_end.setText(event.end_datetime or "")
+            type_index = self.event_type.findData(event.event_type)
+            if type_index >= 0:
+                self.event_type.setCurrentIndex(type_index)
+            place_index = self.event_default_place.findData(event.default_place_id)
+            self.event_default_place.setCurrentIndex(max(0, place_index))
 
         def _suggest_events(self) -> None:
             try:
@@ -2179,7 +2208,8 @@ if QT_AVAILABLE:
 
                 asset_ids = [str(item.data(Qt.ItemDataRole.UserRole)["asset_id"]) for item in selected]
                 changed = set_review(self.connection, asset_ids, rating=int(rating))
-                self.library_result.setText(f"Rated {changed} item(s) {rating}★. Originals were not changed.")
+                label = "cleared rating" if int(rating) == 0 else f"rated {rating}★"
+                self.library_result.setText(f"{label.capitalize()} for {changed} item(s). Originals were not changed.")
                 self._refresh_library()
             except Exception as exc:
                 self.library_result.setText(f"Rating update failed: {type(exc).__name__}: {exc}")
@@ -2723,7 +2753,7 @@ if QT_AVAILABLE:
 
                 details = self._viewer_items[self._viewer_index]
                 set_review(self.connection, [str(details["asset_id"])], rating=int(rating))
-                details["rating"] = int(rating)
+                details["rating"] = None if int(rating) == 0 else int(rating)
                 self.viewer_details.setText(self._format_library_details(details))
             except Exception as exc:
                 self.viewer_details.setText(f"Rating update failed: {type(exc).__name__}: {exc}")
@@ -2738,12 +2768,31 @@ if QT_AVAILABLE:
                 if key == Qt.Key.Key_Right:
                     self._show_viewer_item(self._viewer_index + 1)
                     return
-                status = {Qt.Key.Key_P: "PICKED", Qt.Key.Key_R: "REJECTED", Qt.Key.Key_H: "HIDDEN"}.get(key)
+                status = {Qt.Key.Key_P: "PICKED", Qt.Key.Key_R: "REJECTED", Qt.Key.Key_X: "REJECTED", Qt.Key.Key_H: "HIDDEN"}.get(key)
                 if status:
                     index = self.viewer_review_action.findData(status)
                     if index >= 0:
                         self.viewer_review_action.setCurrentIndex(index)
                     self._apply_viewer_review()
+                    return
+                if key == Qt.Key.Key_F:
+                    from photovault.catalog.favourites import remove_favourite, set_favourite
+
+                    details = self._viewer_items[self._viewer_index]
+                    if details.get("is_favourite"):
+                        remove_favourite(self.connection, str(details["asset_id"]))
+                        details["is_favourite"] = False
+                    else:
+                        set_favourite(self.connection, str(details["asset_id"]))
+                        details["is_favourite"] = True
+                    self.viewer_details.setText(self._format_library_details(details))
+                    return
+                if Qt.Key.Key_0 <= key <= Qt.Key.Key_5:
+                    rating = key - Qt.Key.Key_0
+                    index = self.viewer_rating_action.findData(rating)
+                    if index >= 0:
+                        self.viewer_rating_action.setCurrentIndex(index)
+                    self._apply_viewer_rating()
                     return
             super().keyPressEvent(event)
 

@@ -1,6 +1,6 @@
 # PhotoVault full product integration report
 
-**Updated:** 2026-08-31  
+**Updated:** 2026-09-02  
 **Primary repository:** `/Volumes/ExtremePro/project/codex/photo-manager-github`  
 **Legacy reference:** `/Volumes/ExtremePro/project/photos`
 
@@ -43,7 +43,7 @@ user data and is outside this repository. It must be treated as read-only.
 
 - timeline and folder-oriented catalog views
 - thumbnails, places, visual duplicate candidates and favourites
-- future grid/preview, people/faces and semantic search
+- catalog-backed grid/preview, people/faces and optional semantic analysis
 
 Layer 2 may read and annotate Layer 1. It never authorizes deletion, overwrite,
 move or a change to verification truth.
@@ -56,18 +56,18 @@ move or a change to verification truth.
 | Persistent Android identity | **COMPLETE — code; hardware install pending** | Android `SharedPreferences` installation UUID is exposed at `/api/device`; desktop derives source ID from it, not IP. Clearing app data/reinstall intentionally creates a new identity. |
 | USB MTP | **BLOCKED / experimental** | Discovery, inventory and short PTP/MTP operations work; sustained reads fail in macOS IOUSBHost/libusb. It remains an explicitly labelled macOS fallback, never the default. |
 | Cross-platform destination identity | **COMPLETE** | Wi-Fi copy no longer requires `/Volumes`; `register_volume()` selects macOS/Windows platform volume providers. |
-| Verified transfer UI | **IN PROGRESS** | PySide6 Android page has Companion URL/token, folder totals, destination, all/image/video filter, 1–8 workers, cancel, resume, SHA-256 transfer and live telemetry. Need rendered runtime validation and richer transfer history page. |
+| Verified transfer UI | **PARTIAL — live gate pending** | PySide6 Android page has Companion URL/token, folder totals, destination, all/image/video filter, workers, cancel, resume, SHA-256 transfer, live telemetry and durable import-batch history. Needs unlocked live runtime validation. |
 | Resume | **COMPLETE — core** | Range-capable source rehashes a retained partial then resumes; mismatch removes partial; interruption keeps it. |
 | Incremental backup profiles | **COMPLETE — core/UI creation** | Migration 11 persists source/folder/filter/destination-volume profiles and completed/cancelled/failed snapshots. Profile picker/history UI remains next. |
-| Thumbnails | **COMPLETE — catalog service** | Existing thumbnail generation and timeline records are available. Grid/lazy multi-size cache UI remains next. |
-| Browse and preview | **IN PROGRESS** | Library page now provides catalog-backed filename/folder/media/favourite filters, sorting and offline state; gallery grid, preview, video poster/player and multi-select are not yet implemented. |
+| Thumbnails | **COMPLETE — catalog + basic UI** | Existing thumbnail generation, cached previews, Library grid, selection and viewer routing are available; richer video preview remains future work. |
+| Browse and preview | **COMPLETE — basic catalog UI** | Library provides catalog-backed filters, sorting, pagination, selection, cached preview and viewer routing; live visual runtime inspection remains pending. |
 | Favourites | **COMPLETE — catalog + basic UI** | Migration 12 stores non-destructive favourites and notes; Favourites page lists/edits them and safely imports matched legacy gallery JSON entries. Visual star controls remain next. |
-| Places | **COMPLETE — catalog service / basic UI** | Offline GPS clustering works; reverse-geocoding cache and place browser remain next. |
+| Places | **PARTIAL — manual + clustering UI** | Offline GPS clustering and manual place creation/assignment/editing work; reverse-geocoding cache remains next. |
 | Visual duplicates | **COMPLETE — catalog service / basic UI** | dHash/pHash + BK-tree candidate grouping works; visual review workflow remains next. |
-| Faces / people | **PLANNED** | Contract exists; legacy macOS Vision feature-print implementation is reference material. Adapter, person persistence and Windows ONNX backend are not yet integrated. |
+| Faces / people | **PARTIAL — imported groups** | Person-group persistence and macOS Vision JSON import/browse are available; manual person CRUD and Windows ONNX face backend remain next. |
 | Semantic classification/search | **IN PROGRESS** | ONNX embedding index/search exists; labels, generated collections and UI search need integration. |
 | Catalog backup / recovery | **PARTIAL** | `catalog-backup` uses SQLite online backup API and verifies its new output; `catalog-check` is read-only. Explicit restore UI remains outstanding. |
-| macOS/Windows packaging | **PLANNED** | Python core and volume providers are cross-platform; desktop packaging and Windows runtime test remain outstanding. |
+| macOS/Windows packaging | **PARTIAL** | macOS arm64 package and smoke test pass; Windows packaging/runtime/removable-drive validation remains outstanding. |
 
 ## Legacy migration matrix
 
@@ -131,8 +131,8 @@ Automated test command:
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-Current result: **71 passed, 4 skipped**. The skipped tests require PySide6,
-which is not installed in this environment. Core tests cover volume identity,
+Current result: **105 passed**. PySide6 is available in the project environment.
+Core tests cover volume identity,
 catalog migrations, verified copy safety, source import, Android Wi-Fi paging,
 stable device identity, range resume, profiles/snapshots, favourites, metadata,
 duplicates, places, backup audit and quarantine.

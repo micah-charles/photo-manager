@@ -1,7 +1,7 @@
 """Categories/AI analysis page construction."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QAbstractItemView, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QProgressBar, QTableWidget
+from PySide6.QtWidgets import QAbstractItemView, QCheckBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QProgressBar, QTableWidget, QWidget
 
 from ..components import PhotoGrid
 
@@ -12,7 +12,11 @@ def build_categories_page(owner: object, layout: object, tables: dict[str, QTabl
     )
     owner.categories_result.setWordWrap(True)
     layout.addWidget(owner.categories_result)
-    analysis_form = QFormLayout()
+    advanced_toggle = QCheckBox("Show advanced category analysis settings")
+    layout.addWidget(advanced_toggle)
+    advanced_body = QWidget()
+    advanced_body.setVisible(False)
+    analysis_form = QFormLayout(advanced_body)
     owner.category_model_path = QLineEdit()
     owner.category_model_path.setPlaceholderText("Path to local ONNX model (stored outside Git)")
     owner.category_labels_path = QLineEdit()
@@ -23,7 +27,8 @@ def build_categories_page(owner: object, layout: object, tables: dict[str, QTabl
     analysis_form.addRow("Labels", owner.category_labels_path)
     analysis_form.addRow("Limit (0 = all)", owner.category_limit)
     analysis_form.addRow("Top labels", owner.category_top_k)
-    layout.addLayout(analysis_form)
+    advanced_toggle.toggled.connect(advanced_body.setVisible)
+    layout.addWidget(advanced_body)
     analysis_actions = QHBoxLayout()
     owner.category_start_button = QPushButton("Run local category analysis")
     owner.category_start_button.clicked.connect(owner._start_category_analysis)
