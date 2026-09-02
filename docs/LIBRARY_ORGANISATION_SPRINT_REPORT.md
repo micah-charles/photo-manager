@@ -96,7 +96,7 @@ to originals or catalog media.
 
 The live acceptance procedure is documented in
 `docs/PHASE_0_LIVE_ACCEPTANCE_RUNBOOK.md`. The latest offscreen capture on
-2026-09-02 produced 19 PNG pages successfully; interactive GUI inspection and
+2026-09-02 produced 20 PNG pages successfully; interactive GUI inspection and
 live-device transfer still require an unlocked desktop.
 
 ## Remaining work before final completion
