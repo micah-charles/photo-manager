@@ -64,7 +64,7 @@ Ran 120 tests
 OK
 ```
 
-The deterministic Qt capture harness covers 19 pages, including Import, Event Detail and
+The deterministic Qt capture harness covers 20 pages, including Timeline, Import, Event Detail and
 Settings. The existing screenshots
 are stored outside the repository at:
 

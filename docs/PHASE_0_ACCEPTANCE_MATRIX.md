@@ -24,10 +24,10 @@ source changes tracked on the same branch).
 | Responsiveness | Scan, Android, transfer, thumbnails, classification, recovery and operations use worker/thread paths | Verified by code and UI tests |
 | macOS packaging | `scripts/build_app.py --clean`, arm64 `dist/PhotoVault.app`, bundled `--help` smoke test | Verified locally |
 | Windows packaging | Cross-platform provider, CI matrix, Windows package smoke test and artifact upload are defined | Awaiting Windows runner result |
-| Visual review deliverables | `scripts/capture_ui_review.py`, 19 external screenshots, and source/package artifacts | Verified locally |
+| Visual review deliverables | `scripts/capture_ui_review.py`, 20 external screenshots, and source/package artifacts | Verified locally |
 
 The current local verification total is 120/120 tests. The latest deterministic
-Qt capture contains 19 pages, including Import, Event Detail and Settings. The corresponding external-drive delivery files are
+Qt capture contains 20 pages, including Timeline, Import, Event Detail and Settings. The corresponding external-drive delivery files are
 `/Volumes/ExtremePro/PhotoVault-UI-Review-20260901/photovault-source-0227a88.zip`
 and
 `/Volumes/ExtremePro/PhotoVault-UI-Review-20260901/photovault-ui-review-0227a88.zip`.

@@ -206,7 +206,7 @@ external-drive `.venv` so thumbnail generation and perceptual hashing are
 available; neither dependency or its cache is committed.
 
 A repeatable visual review harness is available at
-`scripts/capture_ui_review.py`. It captured Dashboard, Library, Collections,
+`scripts/capture_ui_review.py`. It captured Dashboard, Library, Timeline, Collections,
 Android Devices, Backup Health, Advanced Tools, People, Places, Categories,
 and Visual Duplicates against the external regression catalog. The review
 pack is stored outside the repository at
