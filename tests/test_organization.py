@@ -7,11 +7,13 @@ from pathlib import Path
 from photovault.catalog.organization import (
     add_assets_to_event,
     add_event_assets_in_date_range,
+    approve_event_suggestion,
     assign_place,
     assign_tags,
     create_event,
     create_place,
     create_tag,
+    dismiss_event_suggestion,
     list_events,
     list_places,
     list_sources,
@@ -145,4 +147,26 @@ class OrganisationTests(unittest.TestCase):
             self.assertEqual(suggest_events_from_dates(db), 0)
             row = db.execute("SELECT is_suggested, COUNT(*) FROM events e JOIN event_assets ea ON ea.event_id=e.id GROUP BY e.id").fetchone()
             self.assertEqual(tuple(row), (1, 2))
+            db.close()
+
+    def test_event_suggestions_can_be_accepted_or_dismissed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            db = self._catalog(temp)
+            assets = [row[0] for row in db.execute("SELECT id FROM assets ORDER BY id")]
+            for asset_id, captured in zip(assets, ("2026-08-23T10:00:00", "2026-08-23T11:00:00")):
+                db.execute("UPDATE media_metadata SET capture_datetime=? WHERE asset_id=?", (captured, asset_id))
+            db.commit()
+            self.assertEqual(suggest_events_from_dates(db), 2)
+            suggested = list_events(db)[0]
+            approve_event_suggestion(db, suggested.id)
+            self.assertFalse(list_events(db)[0].is_suggested)
+            self.assertEqual(suggest_events_from_dates(db), 0)
+
+            db.execute("DELETE FROM event_assets WHERE event_id=?", (suggested.id,))
+            db.execute("DELETE FROM events WHERE id=?", (suggested.id,))
+            db.commit()
+            self.assertEqual(suggest_events_from_dates(db), 2)
+            remaining = next(event for event in list_events(db) if event.is_suggested)
+            dismiss_event_suggestion(db, remaining.id)
+            self.assertEqual(suggest_events_from_dates(db), 0)
             db.close()

@@ -58,7 +58,7 @@ are documented in `docs/LIBRARY_ORGANISATION_ARCHITECTURE.md`.
 PYTHONUNBUFFERED=1 PYTHONWARNINGS=ignore QT_QPA_PLATFORM=offscreen \
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 
-Ran 117 tests
+Ran 118 tests
 OK
 ```
 
@@ -84,6 +84,8 @@ The user-facing Import page now supports mounted folder/camera-card preview and
 explicit Catalog in Place versus reviewed Managed Copy routing. Event default
 places are surfaced as explicit inherited context in Library/inspector when no
 asset place overrides them; original embedded metadata remains unchanged.
+Event suggestions now have explicit Accept and Dismiss actions; dismissals are
+remembered by date range and are not recreated on later suggestion scans.
 Settings now
 persist locally through the desktop user's QSettings store. Category
 analysis paths and limits, duplicate method/threshold, place cluster radius, and

@@ -235,6 +235,11 @@ def suggest_events_from_dates(connection: sqlite3.Connection, *, max_gap_days: i
             continue
         start, end = group[0][1], group[-1][1]
         name = f"Suggested · {start}" if start == end else f"Suggested · {start} – {end}"
+        suggestion_key = f"{start}|{end}"
+        if connection.execute(
+            "SELECT 1 FROM dismissed_event_suggestions WHERE suggestion_key=?", (suggestion_key,)
+        ).fetchone() is not None:
+            continue
         existing = connection.execute("SELECT id FROM events WHERE name=?", (name,)).fetchone()
         event_id = str(existing[0]) if existing else create_event(
             connection, name, start_datetime=start, end_datetime=end,
@@ -242,6 +247,34 @@ def suggest_events_from_dates(connection: sqlite3.Connection, *, max_gap_days: i
         )
         created += add_assets_to_event(connection, event_id, [asset_id for asset_id, _date in group], membership_source="suggested")
     return created
+
+
+def approve_event_suggestion(connection: sqlite3.Connection, event_id: str) -> None:
+    """Promote a suggested Event to a normal user Event."""
+    changed = connection.execute(
+        "UPDATE events SET is_suggested=0, updated_at=? WHERE id=? AND is_suggested=1",
+        (_now(), event_id),
+    ).rowcount
+    if not changed:
+        raise ValueError("suggested event not found")
+    connection.commit()
+
+
+def dismiss_event_suggestion(connection: sqlite3.Connection, event_id: str) -> None:
+    """Dismiss a suggestion and remember its date range for future scans."""
+    row = connection.execute(
+        "SELECT start_datetime, end_datetime, is_suggested FROM events WHERE id=?", (event_id,)
+    ).fetchone()
+    if row is None or not row[2]:
+        raise ValueError("suggested event not found")
+    start, end = str(row[0] or ""), str(row[1] or row[0] or "")
+    connection.execute(
+        "INSERT OR REPLACE INTO dismissed_event_suggestions(suggestion_key, dismissed_at) VALUES (?, ?)",
+        (f"{start}|{end}", _now()),
+    )
+    connection.execute("DELETE FROM event_assets WHERE event_id=?", (event_id,))
+    connection.execute("DELETE FROM events WHERE id=?", (event_id,))
+    connection.commit()
 
 
 def create_tag(connection: sqlite3.Connection, name: str) -> str:

@@ -2121,6 +2121,32 @@ if QT_AVAILABLE:
             except Exception as exc:
                 self.events_result.setText(f"Event suggestion failed: {type(exc).__name__}: {exc}")
 
+        def _approve_event_suggestion(self) -> None:
+            try:
+                from photovault.catalog.organization import approve_event_suggestion
+
+                event_id = self._selected_event_id()
+                if not event_id:
+                    raise ValueError("select a suggested event first")
+                approve_event_suggestion(self.connection, event_id)
+                self.events_result.setText("Suggestion accepted as a normal Event; media files were not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.events_result.setText(f"Suggestion acceptance failed: {type(exc).__name__}: {exc}")
+
+        def _dismiss_event_suggestion(self) -> None:
+            try:
+                from photovault.catalog.organization import dismiss_event_suggestion
+
+                event_id = self._selected_event_id()
+                if not event_id:
+                    raise ValueError("select a suggested event first")
+                dismiss_event_suggestion(self.connection, event_id)
+                self.events_result.setText("Suggestion dismissed and will not be recreated for the same date range.")
+                self.refresh()
+            except Exception as exc:
+                self.events_result.setText(f"Suggestion dismissal failed: {type(exc).__name__}: {exc}")
+
         def _open_event_row(self, row: int, _column: int) -> None:
             event_id = self._tables["Events"].item(row, 0).data(Qt.ItemDataRole.UserRole)
             if event_id:

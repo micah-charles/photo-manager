@@ -58,6 +58,7 @@ move or a change to verification truth.
 | Cross-platform destination identity | **COMPLETE** | Wi-Fi copy no longer requires `/Volumes`; `register_volume()` selects macOS/Windows platform volume providers. |
 | Verified transfer UI | **PARTIAL — live gate pending** | PySide6 Android page has Companion URL/token, folder totals, destination, all/image/video filter, advanced worker setting, cancel, resume, SHA-256 transfer, live telemetry and durable import-batch history. Needs unlocked live runtime validation. |
 | General folder import | **COMPLETE — catalog-in-place entry point** | Import page previews mounted folder image/video counts and routes explicitly to Catalog in Place or reviewed Managed Copy; source files are never modified by the catalog path. |
+| Event suggestions | **COMPLETE — deterministic review flow** | Date-density suggestions are catalog-only and support explicit Accept/Dismiss actions, with dismissal persistence. |
 | Resume | **COMPLETE — core** | Range-capable source rehashes a retained partial then resumes; mismatch removes partial; interruption keeps it. |
 | Incremental backup profiles | **COMPLETE — core/UI** | Migration 11 persists source/folder/filter/destination-volume profiles and completed/cancelled/failed snapshots; Android Devices includes profile picker, load/continue actions, and history. |
 | Thumbnails | **COMPLETE — catalog + basic UI** | Existing thumbnail generation, cached previews, Library grid, selection and viewer routing are available; richer video preview remains future work. |
@@ -141,7 +142,7 @@ Automated test command:
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-Current result: **116 passed**. PySide6 is available in the project environment; the UI foundation subset is 24/24.
+Current result: **118 passed**. PySide6 is available in the project environment; the UI foundation subset is 24/24.
 Core tests cover volume identity,
 catalog migrations, verified copy safety, source import, Android Wi-Fi paging,
 stable device identity, range resume, profiles/snapshots, favourites, metadata,

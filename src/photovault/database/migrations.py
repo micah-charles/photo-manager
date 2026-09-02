@@ -542,6 +542,15 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX idx_source_imports_batch ON source_imports(batch_id);
         """,
     ),
+    (
+        20,
+        """
+        CREATE TABLE dismissed_event_suggestions (
+            suggestion_key TEXT PRIMARY KEY,
+            dismissed_at TEXT NOT NULL
+        );
+        """,
+    ),
 ]
 
 
