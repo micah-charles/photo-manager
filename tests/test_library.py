@@ -79,3 +79,19 @@ class LibraryTests(unittest.TestCase):
             rows = list_library_items(connection, LibraryQuery(recently_added=True))
             self.assertEqual([row["filename"] for row in rows], ["old-capture.jpg"])
             connection.close()
+
+    def test_recently_added_orders_by_catalog_time(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "media"; root.mkdir()
+            (root / "first.jpg").write_bytes(b"first")
+            (root / "second.jpg").write_bytes(b"second")
+            connection = connect(Path(directory) / "catalog.db")
+            volume_id = register_volume(connection, root, FixedProvider())
+            scan_volume(connection, volume_id, root)
+            assets = {row["filename"]: row["asset_id"] for row in connection.execute("SELECT filename, asset_id FROM asset_locations")}
+            connection.execute("UPDATE assets SET created_at=? WHERE id=?", ("2026-08-30T00:00:00+00:00", assets["first.jpg"]))
+            connection.execute("UPDATE assets SET created_at=? WHERE id=?", ("2026-08-31T00:00:00+00:00", assets["second.jpg"]))
+            connection.commit()
+            rows = list_library_items(connection, LibraryQuery(recently_added=True))
+            self.assertEqual([row["filename"] for row in rows], ["second.jpg", "first.jpg"])
+            connection.close()

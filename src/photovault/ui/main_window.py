@@ -2754,7 +2754,8 @@ if QT_AVAILABLE:
                 item.setToolTip(
                     f"{row['relative_path']}\n{row['volume_name']} ({row['volume_status']})\n"
                     f"Capture: {row['captured'] or 'unknown'}\n"
-                    f"Display: {row['display_captured'] or 'unknown'}"
+                    f"Display: {row['display_captured'] or 'unknown'}\n"
+                    f"Imported: {row['imported_at'] or 'unknown'}"
                 )
                 details = {
                     "asset_id": row["asset_id"], "filename": row["filename"],
@@ -2762,6 +2763,7 @@ if QT_AVAILABLE:
                     "volume_status": row["volume_status"], "thumbnail_path": thumbnail,
                     "is_favourite": bool(row["is_favourite"]), "media_type": row["media_type"],
                     "size_bytes": row["size_bytes"], "captured": row["captured"],
+                    "imported_at": row["imported_at"],
                     "camera_make": row["camera_make"], "camera_model": row["camera_model"],
                     "width": row["width"], "height": row["height"],
                     "latitude": row["latitude"], "longitude": row["longitude"],

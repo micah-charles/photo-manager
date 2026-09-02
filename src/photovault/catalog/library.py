@@ -115,10 +115,12 @@ def list_library_items(connection: sqlite3.Connection, query: LibraryQuery = Lib
     if query.limit < 1 or query.offset < 0:
         raise ValueError("limit must be positive and offset cannot be negative")
     where, params = _where_for_query(query)
+    order_by = "a.created_at DESC, al.relative_path" if query.recently_added else _SORTS[query.sort]
     sql = f"""
         SELECT al.asset_id, a.media_type, al.filename, al.relative_path, al.size_bytes,
                al.volume_id, v.display_name AS volume_name, v.status AS volume_status,
                v.current_mount_path,
+               a.created_at AS imported_at,
                COALESCE(mm.capture_datetime, al.capture_date) AS captured,
                CASE WHEN COALESCE(mm.capture_datetime, al.capture_date) IS NOT NULL
                     THEN datetime(COALESCE(mm.capture_datetime, al.capture_date),
@@ -148,7 +150,7 @@ def list_library_items(connection: sqlite3.Connection, query: LibraryQuery = Lib
         LEFT JOIN source_profiles sp ON sp.source_id=al.source_id
         LEFT JOIN asset_reviews ar ON ar.asset_id=al.asset_id
         WHERE {' AND '.join(where)}
-        ORDER BY {_SORTS[query.sort]}
+        ORDER BY {order_by}
         LIMIT ? OFFSET ?
     """
     params.extend((query.limit, query.offset))
