@@ -1681,6 +1681,7 @@ if QT_AVAILABLE:
                     search=self.library_search.text(), folder_prefix=self.library_folder.text(),
                     media_type=self.library_media_type.currentText(),
                     favourite_only=self.library_favourites_only.isChecked(),
+                    recently_added=bool(getattr(self, "_library_recently_added", False)),
                     source_id=str(self.library_source_filter.currentData() or ""),
                     event_id=str(self.library_event_filter.currentData() or ""),
                     tag_id=str(self.library_tag_filter.currentData() or ""),
@@ -1697,6 +1698,7 @@ if QT_AVAILABLE:
                     folder_prefix=collection_filter.folder_prefix or base_query.folder_prefix,
                     media_type=base_query.media_type,
                     favourite_only=base_query.favourite_only or collection_filter.favourite_only,
+                    recently_added=base_query.recently_added,
                     captured_month=collection_filter.captured_month,
                     asset_ids=collection_filter.asset_ids,
                     source_id=base_query.source_id,
@@ -1740,6 +1742,11 @@ if QT_AVAILABLE:
                 self.library_result.setText(f"Library query failed: {type(exc).__name__}: {exc}")
 
         def _reset_library_page(self) -> None:
+            self._library_offset = 0
+            self._refresh_library()
+
+        def _toggle_recently_added(self, enabled: bool) -> None:
+            self._library_recently_added = bool(enabled)
             self._library_offset = 0
             self._refresh_library()
 
@@ -2198,6 +2205,11 @@ if QT_AVAILABLE:
                 self.library_review_filter.setCurrentIndex(index)
             if not status:
                 self.library_include_rejected.setChecked(False)
+            if hasattr(self, "library_recent_button"):
+                self.library_recent_button.blockSignals(True)
+                self.library_recent_button.setChecked(False)
+                self.library_recent_button.blockSignals(False)
+            self._library_recently_added = False
             self._refresh_library()
             if hasattr(self, "review_result"):
                 self.review_result.setText("Review queue opened in Library. Select items and apply a catalog-only decision.")

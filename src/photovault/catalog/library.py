@@ -11,6 +11,7 @@ class LibraryQuery:
     folder_prefix: str = ""
     media_type: str = "ALL"
     favourite_only: bool = False
+    recently_added: bool = False
     captured_from: str = ""
     captured_to: str = ""
     captured_month: str = ""
@@ -61,6 +62,8 @@ def _where_for_query(query: LibraryQuery) -> tuple[list[str], list[object]]:
         params.append(query.media_type)
     if query.favourite_only:
         where.append("EXISTS (SELECT 1 FROM asset_favourites f WHERE f.asset_id=al.asset_id)")
+    if query.recently_added:
+        where.append("a.created_at >= datetime('now', '-30 days')")
     if query.captured_from:
         where.append("COALESCE(mm.capture_datetime, al.capture_date) >= ?")
         params.append(query.captured_from)

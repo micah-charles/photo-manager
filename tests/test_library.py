@@ -65,3 +65,17 @@ class LibraryTests(unittest.TestCase):
             self.assertEqual(list_library_items(connection, LibraryQuery(review_status="REJECTED", include_rejected=True))[0]["filename"], "phone.jpg")
             self.assertEqual(count_library_items(connection, LibraryQuery(review_status="REJECTED", include_rejected=True)), 1)
             connection.close()
+
+    def test_recently_added_uses_catalog_time_not_capture_time(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "media"; root.mkdir()
+            (root / "old-capture.jpg").write_bytes(b"old")
+            connection = connect(Path(directory) / "catalog.db")
+            volume_id = register_volume(connection, root, FixedProvider())
+            scan_volume(connection, volume_id, root)
+            asset_id = connection.execute("SELECT asset_id FROM asset_locations LIMIT 1").fetchone()[0]
+            connection.execute("UPDATE media_metadata SET capture_datetime=? WHERE asset_id=?", ("2010-01-01T00:00:00", asset_id))
+            connection.commit()
+            rows = list_library_items(connection, LibraryQuery(recently_added=True))
+            self.assertEqual([row["filename"] for row in rows], ["old-capture.jpg"])
+            connection.close()
