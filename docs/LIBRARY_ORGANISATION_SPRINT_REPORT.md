@@ -29,6 +29,7 @@ The desktop UI currently exposes:
 - source-aware unified Timeline display time while retaining raw capture time.
 - Timeline day grouping and a cross-source filter for chronological browsing.
 - Timeline date-range filtering and direct row-to-Viewer navigation.
+- Event Detail source filtering and direct member-to-Viewer navigation.
 - Paginated Library and Timeline browsing, with explicit page-size and
   Previous/Next controls so large catalogs are not truncated to the first page.
 - Manual Places table with select-to-edit, update, delete, and Library assignment.

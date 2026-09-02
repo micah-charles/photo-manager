@@ -13,7 +13,7 @@ source changes tracked on the same branch).
 | Library thumbnail browsing | `PhotoGrid`, cached previews, pagination, filters, sorting, selection count, viewer and context actions; external 6,674-item catalog capture | Verified locally |
 | Viewer and inspector | `photo_viewer_page.py`, metadata/location/protection details, previous/next navigation | Verified locally |
 | Collections and albums | Live folder/album cards, cached covers, click/double-click/keyboard routing to Library; UI regression coverage | Verified locally |
-| Event detail and review dashboard | Contextual Event Detail thumbnails/metadata/membership actions; Review queue counts and catalog-only decisions | Verified locally |
+| Event detail and review dashboard | Contextual Event Detail thumbnails/metadata/membership actions, source filter and direct Viewer routing; Review queue counts and catalog-only decisions | Verified locally |
 | Favourites | Library smart-view handoff and persistent catalog annotation tests | Verified locally |
 | People, Places, Categories, duplicates | Manual People CRUD/assignment plus imported groups; manual Places; advisory category/duplicate views with analysis controls in Settings and browse routing | Verified locally; enrichment remains data-dependent |
 | Android connection and folder selection | Wi-Fi Companion discovery worker, persistent identity, live folder picker, media filter, advanced settings disclosure | Verified by Qt smoke tests; live phone UI capture pending |
