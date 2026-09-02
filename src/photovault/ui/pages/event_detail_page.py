@@ -42,4 +42,5 @@ def build_event_detail_page(owner: object, layout: object) -> None:
     configure_tile_grid(owner.event_detail_grid, "EventDetailGrid", icon_size=(170, 130), grid_size=(205, 165))
     owner.event_detail_grid.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
     owner.event_detail_grid.setAccessibleName("Event detail photo grid")
+    owner.event_detail_grid.itemDoubleClicked.connect(owner._open_event_detail_item)
     layout.addWidget(owner.event_detail_grid, 1)

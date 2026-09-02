@@ -2313,6 +2313,23 @@ if QT_AVAILABLE:
                 self.library_event_filter.setCurrentIndex(index)
             self._refresh_library()
 
+        def _open_event_detail_item(self, item: QListWidgetItem) -> None:
+            """Open an Event member in the normal Photo Viewer workflow."""
+            asset_id = item.data(Qt.ItemDataRole.UserRole)
+            if not asset_id:
+                return
+            from photovault.catalog.library import LibraryQuery, list_library_items
+
+            rows = list_library_items(
+                self.connection,
+                LibraryQuery(asset_ids=[str(asset_id)], include_rejected=True, limit=1),
+            )
+            if not rows:
+                self.event_detail_result.setText("This Event member is no longer available in the catalog.")
+                return
+            self._populate_library_grid(rows)
+            self._open_library_item(self.library_grid.item(0))
+
         def _edit_event_from_detail(self) -> None:
             event_id = str(getattr(self, "_event_detail_id", "") or "")
             if not event_id:
