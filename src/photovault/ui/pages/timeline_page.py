@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QTabl
 def build_timeline_page(owner: object, layout: object, tables: dict[str, QTableWidget]) -> None:
     controls = QHBoxLayout()
     owner.timeline_source_filter = QComboBox()
+    owner.timeline_source_filter.setAccessibleName("Timeline source filter")
     owner.timeline_source_filter.addItem("All sources", None)
     owner.timeline_source_filter.currentIndexChanged.connect(owner._reset_timeline_page)
     controls.addWidget(QLabel("Source"))
@@ -16,6 +17,7 @@ def build_timeline_page(owner: object, layout: object, tables: dict[str, QTableW
     controls.addWidget(button)
     controls.addWidget(QLabel("Page size"))
     owner.timeline_page_size = QComboBox()
+    owner.timeline_page_size.setAccessibleName("Timeline page size")
     for size in (100, 500, 1000):
         owner.timeline_page_size.addItem(str(size), size)
     owner.timeline_page_size.setCurrentIndex(1)

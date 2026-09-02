@@ -468,6 +468,7 @@ if QT_AVAILABLE:
             shell_layout.setContentsMargins(0, 0, 0, 0)
             self.navigation = QListWidget()
             self.navigation.setObjectName("PhotoVaultNavigation")
+            self.navigation.setAccessibleName("PhotoVault page navigation")
             self._navigation_page_rows: dict[int, int] = {}
             navigation_icons = {
                 "Dashboard": QStyle.StandardPixmap.SP_DirHomeIcon,

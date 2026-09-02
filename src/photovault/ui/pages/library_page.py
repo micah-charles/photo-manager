@@ -20,6 +20,7 @@ def build_library_page(owner: object, layout: object, tables: dict[str, QTableWi
     """Build the visual library while leaving query and safety policy to owner."""
     header = QHBoxLayout()
     owner.library_search = QLineEdit()
+    owner.library_search.setAccessibleName("Search library")
     owner.library_search.setPlaceholderText("Search photos by filename or path…")
     header.addWidget(owner.library_search, 1)
     refresh_button = QPushButton("Refresh")
@@ -29,6 +30,7 @@ def build_library_page(owner: object, layout: object, tables: dict[str, QTableWi
 
     filters = QHBoxLayout()
     owner.library_folder = QLineEdit()
+    owner.library_folder.setAccessibleName("Filter by folder")
     owner.library_folder.setPlaceholderText("Folder prefix")
     filters.addWidget(owner.library_folder, 2)
     owner.library_media_type = QComboBox()
@@ -194,6 +196,7 @@ def build_library_page(owner: object, layout: object, tables: dict[str, QTableWi
 
     browser_layout = QHBoxLayout()
     owner.library_grid = PhotoGrid(object_name="PhotoGrid")
+    owner.library_grid.setAccessibleName("Photo library thumbnail grid")
     owner.library_grid.itemSelectionChanged.connect(owner._library_selection_changed)
     owner.library_grid.itemDoubleClicked.connect(owner._open_library_item)
     owner.library_grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -203,6 +206,7 @@ def build_library_page(owner: object, layout: object, tables: dict[str, QTableWi
 
     preview_layout = QVBoxLayout()
     owner.library_preview = QLabel("Select a catalogued item to preview its cached thumbnail.")
+    owner.library_preview.setAccessibleName("Selected photo preview")
     owner.library_preview.setWordWrap(True)
     owner.library_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
     owner.library_preview.setMinimumSize(260, 220)

@@ -27,6 +27,7 @@ class PhotoGrid(QListWidget):
     ) -> None:
         super().__init__()
         self.setObjectName(object_name)
+        self.setAccessibleName("Photo thumbnail grid")
         self.setViewMode(QListWidget.ViewMode.IconMode)
         self.setResizeMode(QListWidget.ResizeMode.Adjust)
         self.setIconSize(QSize(*icon_size))

@@ -66,6 +66,25 @@ class UIFoundationTests(unittest.TestCase):
             window.close()
             connection.close()
 
+    def test_primary_browse_controls_have_accessible_names(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            self.assertEqual(window.navigation.accessibleName(), "PhotoVault page navigation")
+            self.assertEqual(window.library_search.accessibleName(), "Search library")
+            self.assertEqual(window.library_grid.accessibleName(), "Photo library thumbnail grid")
+            window._select_page("Timeline")
+            self.assertEqual(window.timeline_source_filter.accessibleName(), "Timeline source filter")
+            window.close()
+            connection.close()
+
     def test_gui_module_has_clear_optional_dependency_behavior(self) -> None:
         from photovault.ui import main_window
 
