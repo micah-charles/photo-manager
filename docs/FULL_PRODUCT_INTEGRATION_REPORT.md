@@ -137,7 +137,7 @@ Automated test command:
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-Current result: **120 passed**. PySide6 is available in the project environment; the UI foundation subset is 26/26.
+Current result: **121 passed**. PySide6 is available in the project environment; the UI foundation subset is 27/27.
 Core tests cover volume identity,
 catalog migrations, verified copy safety, source import, Android Wi-Fi paging,
 stable device identity, range resume, profiles/snapshots, favourites, metadata,
