@@ -15,6 +15,9 @@ The desktop UI currently exposes:
 - batch review status, rating, Event, Tag, and Place actions;
 - Review queues with keyboard shortcuts in the Viewer (`P`, `R`, `H`, and arrows);
 - Event and Tag creation and filter navigation;
+- contextual Event Detail view with date/place/People/Tags summary, thumbnails,
+  Library handoff, and catalog-only membership removal;
+- Review dashboard counts for Unreviewed, Picked, Rejected, and Hidden queues;
 - Event type/default-place fields and inclusive date-range membership when both
   event dates are supplied;
 - catalog-only manual People creation, rename/delete, assignment/removal, and
@@ -30,6 +33,8 @@ The desktop UI currently exposes:
 - Manual Places table with select-to-edit, update, delete, and Library assignment.
 - Durable import-batch history with per-run source/destination identity,
   lifecycle status, verified counters, byte totals, and Activity-page display.
+- Native destination folder picker for Android backups, with manual path input
+  retained as a fallback.
 
 All organisation actions are catalog-only. They do not move, rename, delete, or
 rewrite original media. Existing verified import and backup safety boundaries are
@@ -41,7 +46,7 @@ unchanged.
 PYTHONUNBUFFERED=1 PYTHONWARNINGS=ignore QT_QPA_PLATFORM=offscreen \
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 
-Ran 108 tests
+Ran 110 tests
 OK
 ```
 

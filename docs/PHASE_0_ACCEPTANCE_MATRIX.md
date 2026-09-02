@@ -12,10 +12,11 @@ source changes tracked on the same branch).
 | Library thumbnail browsing | `PhotoGrid`, cached previews, pagination, filters, sorting, selection count, viewer and context actions; external 6,674-item catalog capture | Verified locally |
 | Viewer and inspector | `photo_viewer_page.py`, metadata/location/protection details, previous/next navigation | Verified locally |
 | Collections and albums | Live folder/album cards, cached covers, click/double-click/keyboard routing to Library; UI regression coverage | Verified locally |
+| Event detail and review dashboard | Contextual Event Detail thumbnails/metadata/membership actions; Review queue counts and catalog-only decisions | Verified locally |
 | Favourites | Library smart-view handoff and persistent catalog annotation tests | Verified locally |
 | People, Places, Categories, duplicates | Manual People CRUD/assignment plus imported groups; manual Places; advisory category/duplicate views and browse routing | Verified locally; enrichment remains data-dependent |
 | Android connection and folder selection | Wi-Fi Companion discovery worker, persistent identity, live folder picker, media filter, advanced settings disclosure | Verified by Qt smoke tests; live phone UI capture pending |
-| Android transfer progress and completion | Background worker, atomic verified import, durable import-batch history, batch fsync, cancellation/resume messaging, progress/speed/ETA tests, completion actions | Verified by source/Qt tests; live transfer regression pending |
+| Android transfer progress and completion | Background worker, atomic verified import, durable import-batch history, native destination picker, batch fsync, cancellation/resume messaging, progress/speed/ETA tests, completion actions | Verified by source/Qt tests; live transfer regression pending |
 | Metadata preservation | Verified destination is parsed after size/SHA verification; EXIF dimensions/date/GPS remain catalog data and originals are untouched | Verified by regression test |
 | Backup safety | Partial-file import, hash/size verification, atomic rename, conflict rejection, no source deletion propagation, reversible quarantine | Verified by source-import/copy/quarantine tests |
 | Storage and backup health | Live drive cards, backup-set health summary, advanced technical tables | Verified locally |
@@ -24,7 +25,7 @@ source changes tracked on the same branch).
 | Windows packaging | Cross-platform provider, CI matrix, Windows package smoke test and artifact upload are defined | Awaiting Windows runner result |
 | Visual review deliverables | `scripts/capture_ui_review.py`, 16 external screenshots, and source/package artifacts | Verified locally |
 
-The current local verification total is 108/108 tests. The latest deterministic
+The current local verification total is 110/110 tests. The latest deterministic
 Qt capture contains 16 pages. The corresponding external-drive delivery files are
 `/Volumes/ExtremePro/PhotoVault-UI-Review-20260901/photovault-source-50de0da.zip`
 and
