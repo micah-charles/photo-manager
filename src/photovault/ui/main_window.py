@@ -1808,6 +1808,18 @@ if QT_AVAILABLE:
             if hasattr(self, "timeline_next"):
                 self.timeline_next.setEnabled(len(rows) == page_size)
 
+        def _create_event_from_timeline_dates(self) -> None:
+            """Carry the current Timeline range into the Event form."""
+            start = self.timeline_start_date.text().strip()
+            end = self.timeline_end_date.text().strip()
+            if not start and not end:
+                self.timeline_summary.setText("Enter a start date or end date before creating an event from Timeline.")
+                return
+            self._select_page("Events")
+            self.event_start.setText(start)
+            self.event_end.setText(end)
+            self.events_result.setText("Timeline dates copied into the Event form. Add a name and press Create event.")
+
         def _reset_timeline_page(self) -> None:
             self._timeline_offset = 0
             self._refresh_timeline()

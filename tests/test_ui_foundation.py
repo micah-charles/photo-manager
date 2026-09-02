@@ -85,6 +85,12 @@ class UIFoundationTests(unittest.TestCase):
             self.assertEqual(window.timeline_source_filter.accessibleName(), "Timeline source filter")
             self.assertEqual(window.timeline_start_date.accessibleName(), "Timeline start date")
             self.assertEqual(window.timeline_end_date.accessibleName(), "Timeline end date")
+            window.timeline_start_date.setText("2026-08-22")
+            window.timeline_end_date.setText("2026-08-26")
+            window._create_event_from_timeline_dates()
+            self.assertEqual(window.event_start.text(), "2026-08-22")
+            self.assertEqual(window.event_end.text(), "2026-08-26")
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Events"))
             window.close()
             connection.close()
 
