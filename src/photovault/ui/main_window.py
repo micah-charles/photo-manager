@@ -1964,9 +1964,26 @@ if QT_AVAILABLE:
             place = next((item for item in list_places(self.connection) if item.id == event.default_place_id), None)
             date_text = " – ".join(value for value in (event.start_datetime, event.end_datetime) if value) or "No date range"
             place_text = place.name if place else "No default place"
+            tag_names = [str(row[0]) for row in self.connection.execute(
+                """SELECT DISTINCT t.name FROM tags t
+                   JOIN asset_tags at ON at.tag_id=t.id
+                   JOIN event_assets ea ON ea.asset_id=at.asset_id
+                   WHERE ea.event_id=? ORDER BY lower(t.name) LIMIT 8""",
+                (event_id,),
+            )]
+            people_names = [str(row[0]) for row in self.connection.execute(
+                """SELECT DISTINCT COALESCE(p.display_name, p.id) FROM people p
+                   JOIN person_members pm ON pm.person_id=p.id
+                   JOIN event_assets ea ON ea.asset_id=pm.asset_id
+                   WHERE ea.event_id=? ORDER BY lower(COALESCE(p.display_name, p.id)) LIMIT 8""",
+                (event_id,),
+            )]
+            tags_text = ", ".join(tag_names) if tag_names else "None yet"
+            people_text = ", ".join(people_names) if people_names else "None yet"
             self.event_detail_summary.setText(
                 f"{event.name}\n{date_text} · {event.event_type.title()}\n"
                 f"{place_text} · {event.item_count:,} item(s)\n"
+                f"People: {people_text}\nTags: {tags_text}\n"
                 f"Membership includes manual, date-range, and suggested items; originals are never changed."
             )
             rows = list_library_items(self.connection, LibraryQuery(event_id=event_id, limit=200))
