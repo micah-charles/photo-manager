@@ -87,6 +87,10 @@ def build_library_page(owner: object, layout: object, tables: dict[str, QTableWi
     owner.library_person_filter.setMinimumWidth(130)
     owner.library_person_filter.setToolTip("Person")
     organisation.addWidget(owner.library_person_filter)
+    owner.library_category_filter = QComboBox()
+    owner.library_category_filter.setMinimumWidth(140)
+    owner.library_category_filter.setToolTip("AI-derived category; user Tags remain separate")
+    organisation.addWidget(owner.library_category_filter)
     owner.library_review_filter = QComboBox()
     owner.library_review_filter.addItem("Any review status", "")
     owner.library_review_filter.addItem("Unreviewed", "UNREVIEWED")
@@ -110,7 +114,7 @@ def build_library_page(owner: object, layout: object, tables: dict[str, QTableWi
     for combo in (
         owner.library_source_filter, owner.library_event_filter, owner.library_tag_filter,
         owner.library_place_filter, owner.library_review_filter, owner.library_rating_filter,
-        owner.library_person_filter,
+        owner.library_person_filter, owner.library_category_filter,
     ):
         combo.currentIndexChanged.connect(owner._reset_library_page)
     owner.library_include_rejected.toggled.connect(owner._reset_library_page)

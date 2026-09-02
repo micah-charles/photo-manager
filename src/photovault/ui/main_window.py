@@ -1888,6 +1888,7 @@ if QT_AVAILABLE:
                     tag_id=str(self.library_tag_filter.currentData() or ""),
                     place_id=str(self.library_place_filter.currentData() or ""),
                     person_id=str(self.library_person_filter.currentData() or ""),
+                    category=str(self.library_category_filter.currentData() or ""),
                     import_batch_id=str(getattr(self, "_library_import_batch_id", "") or ""),
                     review_status=str(self.library_review_filter.currentData() or ""),
                     min_rating=self.library_rating_filter.currentData(),
@@ -2003,6 +2004,19 @@ if QT_AVAILABLE:
             self._replace_library_filter(self.library_tag_filter, "Any tag", tags, lambda row: f"{row.name} ({row.item_count:,})")
             self._replace_library_filter(self.library_place_filter, "Any place", places, lambda row: f"{row.name} ({row.item_count:,})")
             self._replace_library_filter(self.library_person_filter, "Any person", people, lambda row: f"{row.display_name or row.id} ({row.item_count:,})")
+            category_previous = self.library_category_filter.currentData()
+            categories = list(self.connection.execute(
+                """SELECT model, label, COUNT(DISTINCT asset_id) AS item_count
+                   FROM image_categories GROUP BY model, label
+                   ORDER BY lower(label), model"""
+            ))
+            self.library_category_filter.blockSignals(True)
+            self.library_category_filter.clear()
+            self.library_category_filter.addItem("Any category", None)
+            for row in categories:
+                self.library_category_filter.addItem(f"{row['label']} ({row['item_count']:,})", f"{row['model']}:{row['label']}")
+            self.library_category_filter.setCurrentIndex(max(0, self.library_category_filter.findData(category_previous)))
+            self.library_category_filter.blockSignals(False)
             self._replace_library_filter(self.library_assign_event, "Select event…", events, lambda row: f"{row.name} ({row.item_count:,})")
             self._replace_library_filter(self.library_assign_tag, "Select tag…", tags, lambda row: f"{row.name} ({row.item_count:,})")
             self._replace_library_filter(self.library_assign_place, "Select place…", places, lambda row: f"{row.name} ({row.item_count:,})")
@@ -2014,7 +2028,7 @@ if QT_AVAILABLE:
 
         def _clear_library_organisation_filters(self) -> None:
             for combo in (self.library_source_filter, self.library_event_filter, self.library_tag_filter, self.library_place_filter,
-                          self.library_person_filter, self.library_review_filter, self.library_rating_filter):
+                          self.library_person_filter, self.library_category_filter, self.library_review_filter, self.library_rating_filter):
                 combo.blockSignals(True)
                 combo.setCurrentIndex(0)
                 combo.blockSignals(False)

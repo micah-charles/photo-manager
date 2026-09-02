@@ -80,6 +80,7 @@ class UIFoundationTests(unittest.TestCase):
             self.assertEqual(window.navigation.accessibleName(), "PhotoVault page navigation")
             self.assertEqual(window.library_search.accessibleName(), "Search library")
             self.assertEqual(window.library_grid.accessibleName(), "Photo library thumbnail grid")
+            self.assertTrue(window.library_category_filter.toolTip())
             window._select_page("Timeline")
             self.assertEqual(window.timeline_source_filter.accessibleName(), "Timeline source filter")
             window.close()
