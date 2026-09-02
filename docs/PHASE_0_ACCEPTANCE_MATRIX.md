@@ -30,7 +30,7 @@ The current local verification total is 121/121 tests. The latest deterministic
 Qt capture contains 20 pages, including Timeline, Import, Event Detail and Settings. The corresponding external-drive delivery files are
 `/Volumes/ExtremePro/PhotoVault-UI-Review-20260901/photovault-source-e7e2890.zip`
 and
-`/Volumes/ExtremePro/PhotoVault-UI-Review-20260901/photovault-ui-review-e7e2890.zip`.
+`/Volumes/ExtremePro/PhotoVault-UI-Review-20260901/photovault-ui-review-e7e2890-accessibility.zip`.
 
 ## Remaining gates
 
