@@ -5,6 +5,7 @@ NAVIGATION_ITEMS: tuple[str, ...] = (
     "Library",
     "Review",
     "Events",
+    "Event Detail",
     "Tags",
     "Sources",
     "Photo Viewer",
@@ -46,5 +47,5 @@ NAVIGATION_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 ADVANCED_PAGE_ITEMS: tuple[str, ...] = (
     "Scan", "Redundancy Audit", "Reconciliation", "Folder Safety Audit",
-    "Copy Plans", "Quarantine", "Catalog Recovery", "Backup Sets", "Timeline",
+    "Copy Plans", "Quarantine", "Catalog Recovery", "Backup Sets", "Timeline", "Event Detail",
 )

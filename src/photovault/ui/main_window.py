@@ -599,6 +599,10 @@ if QT_AVAILABLE:
                 from .pages.events_page import build_events_page
 
                 build_events_page(self, layout, self._tables)
+            elif label == "Event Detail":
+                from .pages.event_detail_page import build_event_detail_page
+
+                build_event_detail_page(self, layout)
             elif label == "Tags":
                 from .pages.tags_page import build_tags_page
 
@@ -1917,11 +1921,92 @@ if QT_AVAILABLE:
         def _open_event_row(self, row: int, _column: int) -> None:
             event_id = self._tables["Events"].item(row, 0).data(Qt.ItemDataRole.UserRole)
             if event_id:
-                self._select_page("Library")
-                index = self.library_event_filter.findData(event_id)
-                if index >= 0:
-                    self.library_event_filter.setCurrentIndex(index)
-                self._refresh_library()
+                self._event_detail_id = str(event_id)
+                self._refresh_event_detail()
+                self._select_page("Event Detail")
+
+        def _open_selected_event_detail(self) -> None:
+            """Open the selected Events row in the contextual detail page."""
+            selected = self._tables["Events"].selectedItems()
+            if not selected:
+                self.events_result.setText("Select an event first, then open its detail view.")
+                return
+            self._open_event_row(selected[0].row(), 0)
+
+        def _refresh_event_detail(self) -> None:
+            """Populate the contextual Event view from catalog metadata only."""
+            event_id = str(getattr(self, "_event_detail_id", "") or "")
+            if not event_id or not hasattr(self, "event_detail_grid"):
+                return
+            from photovault.catalog.organization import list_events, list_places
+            from photovault.catalog.library import LibraryQuery, list_library_items
+
+            event = next((item for item in list_events(self.connection) if item.id == event_id), None)
+            if event is None:
+                self.event_detail_summary.setText("Event no longer exists in this catalog.")
+                self.event_detail_grid.clear()
+                return
+            place = next((item for item in list_places(self.connection) if item.id == event.default_place_id), None)
+            date_text = " – ".join(value for value in (event.start_datetime, event.end_datetime) if value) or "No date range"
+            place_text = place.name if place else "No default place"
+            self.event_detail_summary.setText(
+                f"{event.name}\n{date_text} · {event.event_type.title()}\n"
+                f"{place_text} · {event.item_count:,} item(s)\n"
+                f"Membership includes manual, date-range, and suggested items; originals are never changed."
+            )
+            rows = list_library_items(self.connection, LibraryQuery(event_id=event_id, limit=200))
+            self.event_detail_grid.clear()
+            for row in rows:
+                item = QListWidgetItem(str(row["filename"]))
+                thumbnail = row["thumbnail_path"]
+                if thumbnail and Path(str(thumbnail)).is_file():
+                    item.setIcon(QIcon(str(thumbnail)))
+                item.setToolTip(f"{row['relative_path']}\nCaptured: {row['captured'] or 'unknown'}")
+                item.setData(Qt.ItemDataRole.UserRole, str(row["asset_id"]))
+                self.event_detail_grid.addItem(item)
+            if not rows:
+                self.event_detail_grid.addItem("No catalogued items in this event")
+            self.event_detail_result.setText(f"Showing {len(rows):,} event item(s). Select items to remove them from this Event.")
+
+        def _open_event_detail_in_library(self) -> None:
+            event_id = str(getattr(self, "_event_detail_id", "") or "")
+            if not event_id:
+                self.event_detail_result.setText("Select an event first.")
+                return
+            self._select_page("Library")
+            index = self.library_event_filter.findData(event_id)
+            if index >= 0:
+                self.library_event_filter.setCurrentIndex(index)
+            self._refresh_library()
+
+        def _edit_event_from_detail(self) -> None:
+            event_id = str(getattr(self, "_event_detail_id", "") or "")
+            if not event_id:
+                return
+            from photovault.catalog.organization import list_events
+
+            self._select_page("Events")
+            events = list_events(self.connection)
+            row = next((index for index, event in enumerate(events) if event.id == event_id), -1)
+            if row >= 0:
+                self._load_event_row(row, 0)
+                self._tables["Events"].selectRow(row)
+
+        def _remove_event_detail_selection(self) -> None:
+            event_id = str(getattr(self, "_event_detail_id", "") or "")
+            selected = [str(item.data(Qt.ItemDataRole.UserRole)) for item in self.event_detail_grid.selectedItems() if item.data(Qt.ItemDataRole.UserRole)]
+            if not event_id or not selected:
+                self.event_detail_result.setText("Select one or more event items first.")
+                return
+            try:
+                from photovault.catalog.organization import remove_assets_from_event
+
+                changed = remove_assets_from_event(self.connection, event_id, selected)
+                self._refresh_event_detail()
+                self.event_detail_result.setText(f"Removed {changed} item(s) from the Event. Original files were not changed.")
+                self._refresh_events()
+            except Exception as exc:
+                self.event_detail_result.setText(f"Could not remove event items: {type(exc).__name__}: {exc}")
 
         def _create_tag(self) -> None:
             try:

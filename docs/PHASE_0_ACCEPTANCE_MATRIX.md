@@ -24,7 +24,7 @@ source changes tracked on the same branch).
 | Windows packaging | Cross-platform provider, CI matrix, Windows package smoke test and artifact upload are defined | Awaiting Windows runner result |
 | Visual review deliverables | `scripts/capture_ui_review.py`, 16 external screenshots, and source/package artifacts | Verified locally |
 
-The current local verification total is 106/106 tests. The latest deterministic
+The current local verification total is 108/108 tests. The latest deterministic
 Qt capture contains 16 pages. The corresponding external-drive delivery files are
 `/Volumes/ExtremePro/PhotoVault-UI-Review-20260901/photovault-source-50de0da.zip`
 and

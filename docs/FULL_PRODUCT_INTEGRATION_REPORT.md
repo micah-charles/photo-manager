@@ -60,7 +60,7 @@ move or a change to verification truth.
 | Resume | **COMPLETE — core** | Range-capable source rehashes a retained partial then resumes; mismatch removes partial; interruption keeps it. |
 | Incremental backup profiles | **COMPLETE — core/UI creation** | Migration 11 persists source/folder/filter/destination-volume profiles and completed/cancelled/failed snapshots. Profile picker/history UI remains next. |
 | Thumbnails | **COMPLETE — catalog + basic UI** | Existing thumbnail generation, cached previews, Library grid, selection and viewer routing are available; richer video preview remains future work. |
-| Browse and preview | **COMPLETE — basic catalog UI** | Library provides catalog-backed filters, sorting, pagination, selection, cached preview and viewer routing; live visual runtime inspection remains pending. |
+| Browse and preview | **COMPLETE — basic catalog UI** | Library provides catalog-backed filters, sorting, pagination, selection, cached preview and viewer routing; Events also has a contextual detail view with thumbnails and catalog-only membership removal. |
 | Favourites | **COMPLETE — catalog + basic UI** | Migration 12 stores non-destructive favourites and notes; Favourites page lists/edits them and safely imports matched legacy gallery JSON entries. Visual star controls remain next. |
 | Places | **PARTIAL — manual + clustering UI** | Offline GPS clustering and manual place creation/assignment/editing work; reverse-geocoding cache remains next. |
 | Visual duplicates | **COMPLETE — catalog service / basic UI** | dHash/pHash + BK-tree candidate grouping works; visual review workflow remains next. |
@@ -131,7 +131,7 @@ Automated test command:
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-Current result: **106 passed**. PySide6 is available in the project environment.
+Current result: **108 passed**. PySide6 is available in the project environment; the UI foundation subset is 18/18.
 Core tests cover volume identity,
 catalog migrations, verified copy safety, source import, Android Wi-Fi paging,
 stable device identity, range resume, profiles/snapshots, favourites, metadata,

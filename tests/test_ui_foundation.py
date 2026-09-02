@@ -35,7 +35,7 @@ class UIFoundationTests(unittest.TestCase):
         self.assertEqual(
             NAVIGATION_ITEMS,
             (
-                "Dashboard", "Library", "Review", "Events", "Tags", "Sources", "Photo Viewer", "Collections", "People", "Disks", "Android Devices", "Backup Profiles", "Backup Sets", "Scan", "Redundancy Audit",
+                "Dashboard", "Library", "Review", "Events", "Event Detail", "Tags", "Sources", "Photo Viewer", "Collections", "People", "Disks", "Android Devices", "Backup Profiles", "Backup Sets", "Scan", "Redundancy Audit",
                 "Reconciliation", "Folder Safety Audit", "Copy Plans", "Quarantine", "Operations",
                 "Catalog Recovery", "Timeline", "Favourites", "Visual Duplicates", "Places", "Categories", "Backup Health", "Advanced Tools", "Settings",
             ),
@@ -210,7 +210,7 @@ class UIFoundationTests(unittest.TestCase):
             connection = connect(Path(temp) / "catalog.db")
             app = QApplication.instance() or QApplication([])
             window = main_window.MainWindow(connection)
-            for page in ("Dashboard", "Library", "Review", "Events", "Tags", "Sources", "Photo Viewer", "Collections", "People", "Places", "Categories", "Visual Duplicates", "Android Devices", "Backup Profiles", "Backup Health", "Operations", "Settings", "Advanced Tools"):
+            for page in ("Dashboard", "Library", "Review", "Events", "Event Detail", "Tags", "Sources", "Photo Viewer", "Collections", "People", "Places", "Categories", "Visual Duplicates", "Android Devices", "Backup Profiles", "Backup Health", "Operations", "Settings", "Advanced Tools"):
                 window._select_page(page)
                 self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index(page))
             self.assertIn("No photos indexed yet", [window.dashboard_recent_grid.item(i).text() for i in range(window.dashboard_recent_grid.count())])
@@ -306,6 +306,44 @@ class UIFoundationTests(unittest.TestCase):
             window = main_window.MainWindow(connection)
             window._open_collection_tile(window.collections_grid.item(0))
             self.assertIn("no smart collections", window.collections_result.text().lower())
+            window.close()
+            connection.close()
+
+    def test_event_detail_shows_members_and_removes_only_membership(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+        from photovault.catalog.organization import add_assets_to_event, create_event
+        from photovault.catalog.scanner import scan_volume
+
+        class FixedProvider:
+            def identify(self, path: Path) -> VolumeIdentity:
+                return VolumeIdentity("event-ui", "event-ui-disk", "Event UI disk")
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "photos"
+            root.mkdir()
+            original = root / "event.jpg"
+            original.write_bytes(b"event-photo")
+            connection = connect(Path(temp) / "catalog.db")
+            volume_id = register_volume(connection, root, FixedProvider())
+            scan_volume(connection, volume_id, root)
+            asset_id = str(connection.execute("SELECT id FROM assets LIMIT 1").fetchone()[0])
+            event_id = create_event(connection, "Event detail test", event_type="trip")
+            self.assertEqual(add_assets_to_event(connection, event_id, [asset_id]), 1)
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._refresh_events()
+            window._open_event_row(0, 0)
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Event Detail"))
+            self.assertEqual(window.event_detail_grid.count(), 1)
+            window.event_detail_grid.item(0).setSelected(True)
+            window._remove_event_detail_selection()
+            self.assertIn("Removed 1", window.event_detail_result.text())
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM event_assets").fetchone()[0], 0)
+            self.assertTrue(original.exists())
             window.close()
             connection.close()
 
