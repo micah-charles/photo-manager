@@ -301,6 +301,7 @@ class UIFoundationTests(unittest.TestCase):
                 window._select_page(page)
                 self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index(page))
             self.assertIn("No photos indexed yet", [window.dashboard_recent_grid.item(i).text() for i in range(window.dashboard_recent_grid.count())])
+            self.assertTrue(any(button.text() == "View Timeline" for button in window.findChildren(main_window.QPushButton)))
             self.assertIn("Choose a queue", window.review_result.text())
             self.assertIn("reviewable item(s)", window.review_summary.text())
             self.assertEqual(window.review_queue_buttons["UNREVIEWED"].text(), "Needs review (0)")

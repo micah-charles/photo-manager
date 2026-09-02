@@ -36,6 +36,7 @@ def build_home_page(owner: object, layout: object, tables: dict[str, QTableWidge
     quick_actions = QHBoxLayout()
     for action_name, target in (
         ("Backup now", "Android Devices"), ("Browse Library", "Library"),
+        ("View Timeline", "Timeline"),
         ("View People", "People"), ("View Places", "Places"),
     ):
         action = QPushButton(action_name)
