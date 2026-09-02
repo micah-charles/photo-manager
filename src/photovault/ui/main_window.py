@@ -1817,6 +1817,26 @@ if QT_AVAILABLE:
             self._timeline_offset = int(getattr(self, "_timeline_offset", 0)) + page_size
             self._refresh_timeline()
 
+        def _open_timeline_row(self, row: int, _column: int) -> None:
+            """Open a timeline row in the same viewer used by Library."""
+            table = self._tables.get("Timeline")
+            if table is None or table.item(row, 1) is None:
+                return
+            asset_id = table.item(row, 1).text().strip()
+            if not asset_id:
+                return
+            from photovault.catalog.library import LibraryQuery, list_library_items
+
+            matches = list_library_items(
+                self.connection,
+                LibraryQuery(asset_ids=[asset_id], include_rejected=True, limit=1),
+            )
+            if not matches:
+                self.timeline_summary.setText("That timeline item is no longer available in the catalog.")
+                return
+            self._populate_library_grid(matches)
+            self._open_library_item(self.library_grid.item(0))
+
         def _refresh_dashboard(self) -> None:
             from photovault.catalog.dashboard import dashboard_metrics
 

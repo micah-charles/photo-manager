@@ -86,6 +86,35 @@ class UIFoundationTests(unittest.TestCase):
             window.close()
             connection.close()
 
+    def test_timeline_row_opens_photo_viewer(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+        from photovault.catalog.scanner import scan_volume
+
+        class FixedProvider:
+            def identify(self, path: Path) -> VolumeIdentity:
+                return VolumeIdentity("timeline-ui", "timeline-ui-disk", "Timeline UI disk")
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "photos"
+            root.mkdir()
+            (root / "timeline.jpg").write_bytes(b"timeline-photo")
+            connection = connect(Path(temp) / "catalog.db")
+            volume_id = register_volume(connection, root, FixedProvider())
+            scan_volume(connection, volume_id, root)
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._select_page("Timeline")
+            self.assertEqual(window._tables["Timeline"].rowCount(), 1)
+            window._open_timeline_row(0, 0)
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Photo Viewer"))
+            self.assertIn("timeline.jpg", window.viewer_details.text())
+            window.close()
+            connection.close()
+
     def test_gui_module_has_clear_optional_dependency_behavior(self) -> None:
         from photovault.ui import main_window
 

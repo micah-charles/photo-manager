@@ -1,7 +1,7 @@
 """Timeline page construction."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QTableWidget
+from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QLabel, QPushButton, QTableWidget
 
 
 def build_timeline_page(owner: object, layout: object, tables: dict[str, QTableWidget]) -> None:
@@ -35,5 +35,8 @@ def build_timeline_page(owner: object, layout: object, tables: dict[str, QTableW
     owner.timeline_summary.setWordWrap(True)
     layout.addWidget(owner.timeline_summary)
     table = QTableWidget()
+    table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+    table.setToolTip("Double-click a row to open the photo in Viewer")
+    table.cellDoubleClicked.connect(owner._open_timeline_row)
     tables["Timeline"] = table
     layout.addWidget(table)
