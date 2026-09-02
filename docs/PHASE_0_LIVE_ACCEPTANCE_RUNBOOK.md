@@ -61,3 +61,20 @@ connected/offline state without changing the source folder.
 The deterministic local evidence remains in
 `/Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA/screenshots` and does not
 replace these live checks.
+
+## Safe deterministic UI capture
+
+Do not point the capture harness directly at the protected Round 1 catalog:
+SQLite WAL setup needs a writable catalog directory. Copy the database to the
+external QA workspace first, then capture from that copy:
+
+```bash
+cp /Volumes/ExtremePro/PhotoVault-CameraRound1-Fresh/round1-fresh-workers5.db \
+  /Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA/latest-source-audit.db
+QT_QPA_PLATFORM=offscreen PYTHONPATH=src .venv/bin/python scripts/capture_ui_review.py \
+  /Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA/latest-source-audit.db \
+  /Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA/latest-offscreen-audit
+```
+
+This produces deterministic page screenshots without opening the protected
+catalog in write mode.
