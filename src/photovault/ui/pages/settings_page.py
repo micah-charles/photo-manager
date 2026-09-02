@@ -1,7 +1,7 @@
 """Settings landing page construction."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QSpinBox
+from PySide6.QtWidgets import QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QSpinBox
 
 
 def build_settings_page(owner: object, layout: object) -> None:
@@ -62,6 +62,32 @@ def build_settings_page(owner: object, layout: object) -> None:
     owner.category_progress.setValue(0)
     owner.category_progress.setFormat("Ready")
     layout.addWidget(owner.category_progress)
+    duplicate_heading = QLabel("Visual duplicate analysis")
+    duplicate_heading.setObjectName("SubsectionHeading")
+    layout.addWidget(duplicate_heading)
+    duplicate_help = QLabel(
+        "Similarity groups are advisory only. Exact SHA-256 and backup protection remain separate safety decisions."
+    )
+    duplicate_help.setWordWrap(True)
+    layout.addWidget(duplicate_help)
+    duplicate_form = QFormLayout()
+    owner.duplicate_algorithm = QComboBox()
+    owner.duplicate_algorithm.addItem("Perceptual hash (pHash)", "phash64")
+    owner.duplicate_algorithm.addItem("Difference hash (dHash)", "dhash64")
+    owner.duplicate_threshold = QSpinBox()
+    owner.duplicate_threshold.setRange(0, 64)
+    owner.duplicate_threshold.setValue(8)
+    duplicate_form.addRow("Similarity method", owner.duplicate_algorithm)
+    duplicate_form.addRow("Similarity threshold", owner.duplicate_threshold)
+    layout.addLayout(duplicate_form)
+    duplicate_actions = QHBoxLayout()
+    run_duplicates = QPushButton("Find advisory groups")
+    run_duplicates.clicked.connect(lambda: owner._visual_duplicates(owner.duplicate_algorithm, owner.duplicate_threshold))
+    duplicate_actions.addWidget(run_duplicates)
+    open_duplicates = QPushButton("Open Visual Duplicates")
+    open_duplicates.clicked.connect(lambda: owner._select_page("Visual Duplicates"))
+    duplicate_actions.addWidget(open_duplicates)
+    layout.addLayout(duplicate_actions)
     for button_text, target in (("Open Advanced Tools", "Advanced Tools"), ("Open Catalog Recovery", "Catalog Recovery")):
         button = QPushButton(button_text)
         button.clicked.connect(lambda _checked=False, page=target: owner._select_page(page))

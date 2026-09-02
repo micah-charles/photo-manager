@@ -14,7 +14,7 @@ source changes tracked on the same branch).
 | Collections and albums | Live folder/album cards, cached covers, click/double-click/keyboard routing to Library; UI regression coverage | Verified locally |
 | Event detail and review dashboard | Contextual Event Detail thumbnails/metadata/membership actions; Review queue counts and catalog-only decisions | Verified locally |
 | Favourites | Library smart-view handoff and persistent catalog annotation tests | Verified locally |
-| People, Places, Categories, duplicates | Manual People CRUD/assignment plus imported groups; manual Places; advisory category/duplicate views and browse routing | Verified locally; enrichment remains data-dependent |
+| People, Places, Categories, duplicates | Manual People CRUD/assignment plus imported groups; manual Places; advisory category/duplicate views with analysis controls in Settings and browse routing | Verified locally; enrichment remains data-dependent |
 | Android connection and folder selection | Wi-Fi Companion discovery worker, persistent identity, live folder picker, media filter, advanced settings disclosure | Verified by Qt smoke tests; live phone UI capture pending |
 | Android transfer progress and completion | Background worker, atomic verified import, durable import-batch history, native destination picker, batch fsync, cancellation/resume messaging, progress/speed/ETA tests, completion actions | Verified by source/Qt tests; live transfer regression pending |
 | Metadata preservation | Verified destination is parsed after size/SHA verification; EXIF dimensions/date/GPS remain catalog data and originals are untouched | Verified by regression test |

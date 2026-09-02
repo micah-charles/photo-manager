@@ -35,6 +35,9 @@ The desktop UI currently exposes:
   lifecycle status, verified counters, byte totals, and Activity-page display.
 - Native destination folder picker for Android backups, with manual path input
   retained as a fallback.
+- Visual duplicate analysis controls are kept in Settings; the normal duplicate
+  page is an advisory review entry point and never presents algorithm details as
+  a destructive action.
 
 All organisation actions are catalog-only. They do not move, rename, delete, or
 rewrite original media. Existing verified import and backup safety boundaries are
