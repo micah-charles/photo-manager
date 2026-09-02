@@ -52,7 +52,7 @@ def _require_qt() -> None:
 
 if QT_AVAILABLE:
 
-    from .components import add_tile, clear_tile_grid, configure_tile_grid
+    from .components import PhotoGrid, add_tile, clear_tile_grid, configure_tile_grid
 
     @dataclass(frozen=True)
     class UndoQuarantineRequest:
@@ -1984,6 +1984,7 @@ if QT_AVAILABLE:
                     review_status=str(self.library_review_filter.currentData() or ""),
                     min_rating=self.library_rating_filter.currentData(),
                     include_rejected=self.library_include_rejected.isChecked(),
+                    captured_month=str(getattr(self, "_library_month", "") or ""),
                     sort=str(self.library_sort.currentData()), limit=limit, offset=offset,
                 )
                 collection_filter = collection_query(self.connection, self._library_collection_id, limit=limit) if self._library_collection_id else LibraryQuery(limit=limit)
@@ -1993,7 +1994,7 @@ if QT_AVAILABLE:
                     media_type=base_query.media_type,
                     favourite_only=base_query.favourite_only or collection_filter.favourite_only,
                     recently_added=base_query.recently_added,
-                    captured_month=collection_filter.captured_month,
+                    captured_month=collection_filter.captured_month or base_query.captured_month,
                     asset_ids=collection_filter.asset_ids,
                     source_id=base_query.source_id,
                     event_id=base_query.event_id,
@@ -2485,7 +2486,61 @@ if QT_AVAILABLE:
                 self._results["Places"].setText(f"Place update failed: {type(exc).__name__}: {exc}")
 
         def _selected_library_asset_ids(self) -> list[str]:
-            return [str(item.data(Qt.ItemDataRole.UserRole)["asset_id"]) for item in self.library_grid.selectedItems()]
+            return [str(item.data(Qt.ItemDataRole.UserRole)["asset_id"]) for item in self._library_selected_items()]
+
+        def _library_selected_items(self) -> list[QListWidgetItem]:
+            """Return selections across the visible day grids."""
+            grids = getattr(self, "_library_day_grids", [])
+            if grids:
+                selected: list[QListWidgetItem] = []
+                for grid in grids:
+                    selected.extend(grid.selectedItems())
+                return selected
+            return self.library_grid.selectedItems()
+
+        def _library_month_changed(self, _row: int) -> None:
+            item = self.library_months.currentItem() if hasattr(self, "library_months") else None
+            month = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+            if month:
+                self._library_month = str(month)
+                self._library_offset = 0
+                self._refresh_library()
+
+        def _show_library_sort_menu(self) -> None:
+            menu = QMenu(self)
+            choices = (
+                ("Newest first", "captured_desc"),
+                ("Oldest first", "captured_asc"),
+                ("Filename", "name_asc"),
+                ("Largest first", "size_desc"),
+            )
+            for label, value in choices:
+                action = menu.addAction(label)
+                action.triggered.connect(lambda _checked=False, selected=value: self._set_library_sort(selected))
+            menu.exec(self.library_sort_button.mapToGlobal(self.library_sort_button.rect().bottomLeft()))
+
+        def _set_library_sort(self, value: str) -> None:
+            index = self.library_sort.findData(value)
+            if index >= 0:
+                self.library_sort.setCurrentIndex(index)
+                self._reset_library_page()
+
+        def _create_topic_from_selection(self) -> None:
+            """Open the existing Event form with selected media's date range."""
+            selected = self._library_selected_items()
+            if not selected:
+                self.library_result.setText("Select one or more photos before creating a Topic.")
+                return
+            dates = sorted(
+                str(item.data(Qt.ItemDataRole.UserRole).get("captured") or "")[:10]
+                for item in selected
+                if item.data(Qt.ItemDataRole.UserRole).get("captured")
+            )
+            self._select_page("Events")
+            if dates:
+                self.event_start.setText(dates[0])
+                self.event_end.setText(dates[-1])
+            self.events_result.setText("Selected media range copied into Topic/Event. Add a name and create it.")
 
         def _assign_selected_event(self) -> None:
             asset_ids = self._selected_library_asset_ids()
@@ -2711,7 +2766,7 @@ if QT_AVAILABLE:
             )
 
         def _apply_selected_review(self) -> None:
-            selected = self.library_grid.selectedItems()
+            selected = self._library_selected_items()
             if not selected:
                 self.library_result.setText("Select one or more items before applying a review decision.")
                 return
@@ -2752,7 +2807,7 @@ if QT_AVAILABLE:
                 self.library_result.setText(f"Quarantine plan could not be prepared: {type(exc).__name__}: {exc}")
 
         def _apply_selected_rating(self) -> None:
-            selected = self.library_grid.selectedItems()
+            selected = self._library_selected_items()
             rating = self.library_rating_action.currentData()
             if not selected or rating is None:
                 self.library_result.setText("Select items and choose a rating first.")
@@ -2846,7 +2901,7 @@ if QT_AVAILABLE:
             self._open_collection_in_library(str(collection_id), self.collections_result)
 
         def _add_selected_to_collection(self) -> None:
-            selected = self.library_grid.selectedItems()
+            selected = self._library_selected_items()
             collection_id = self.library_collection_target.currentData()
             if not selected:
                 self.library_result.setText("Select one or more photos first.")
@@ -3319,6 +3374,59 @@ if QT_AVAILABLE:
                 self.library_grid.addItem(item)
                 self._viewer_items.append(details)
 
+            # Render the same rows as a chronological stream: day heading then
+            # a compact thumbnail strip. The hidden aggregate grid above keeps
+            # existing controller APIs and tests compatible.
+            if hasattr(self, "library_timeline_layout"):
+                while self.library_timeline_layout.count():
+                    child = self.library_timeline_layout.takeAt(0)
+                    if child.widget() is not None:
+                        child.widget().deleteLater()
+                self._library_day_grids = []
+                grouped: dict[str, list[sqlite3.Row]] = {}
+                months: list[str] = []
+                for row in rows:
+                    captured = row["display_captured"] or row["captured"]
+                    day = str(captured or "Undated")[:10]
+                    grouped.setdefault(day, []).append(row)
+                    month = day[:7] if len(day) >= 7 and day[4:5] == "-" else "Undated"
+                    if month not in months:
+                        months.append(month)
+                self.library_months.blockSignals(True)
+                self.library_months.clear()
+                for month in months:
+                    month_item = QListWidgetItem(month.replace("-", " / "))
+                    month_item.setData(Qt.ItemDataRole.UserRole, month)
+                    self.library_months.addItem(month_item)
+                self.library_months.blockSignals(False)
+                for day, day_rows in grouped.items():
+                    heading = QLabel(day if day == "Undated" else f"{day[8:10]} {day[5:7]} {day[:4]}")
+                    heading.setObjectName("TimelineDayHeader")
+                    self.library_timeline_layout.addWidget(heading)
+                    grid = PhotoGrid(object_name=f"PhotoGrid_{day}", icon_size=(130, 90), grid_size=(150, 120))
+                    grid.setAccessibleName(f"Photos for {day}")
+                    grid.setWrapping(True)
+                    grid.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+                    grid.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+                    grid.itemSelectionChanged.connect(self._library_selection_changed)
+                    grid.itemDoubleClicked.connect(self._open_library_item)
+                    for row in day_rows:
+                        captured = row["display_captured"] or row["captured"]
+                        time_label = str(captured)[:16].replace("T", " ") if captured else "Undated"
+                        tile = QListWidgetItem(f"{row['filename']}\n{row['media_type']} · {time_label}")
+                        thumbnail = str(row["thumbnail_path"] or "")
+                        if thumbnail and Path(thumbnail).is_file():
+                            tile.setIcon(QIcon(thumbnail))
+                        tile.setData(Qt.ItemDataRole.UserRole, next(d for d in self._viewer_items if d["asset_id"] == row["asset_id"]))
+                        grid.addItem(tile)
+                    # Five columns matches the normal desktop content width;
+                    # rows expand vertically so every record remains visible.
+                    rows_needed = max(1, (len(day_rows) + 4) // 5)
+                    grid.setFixedHeight(25 + rows_needed * 120)
+                    self.library_timeline_layout.addWidget(grid)
+                    self._library_day_grids.append(grid)
+                self.library_timeline_scroll.verticalScrollBar().setValue(0)
+
         def _set_library_technical_visible(self, visible: bool) -> None:
             self._tables["Library"].setVisible(visible)
 
@@ -3587,8 +3695,9 @@ if QT_AVAILABLE:
             )
 
         def _library_selection_changed(self) -> None:
-            selected = self.library_grid.selectedItems()
+            selected = self._library_selected_items()
             self.library_selection_count.setText(f"{len(selected)} selected")
+            self.library_action_panel.setVisible(bool(selected))
             if not selected:
                 return
             if len(selected) > 1:
@@ -3612,7 +3721,7 @@ if QT_AVAILABLE:
             self.library_preview_details.setText(self._format_library_details(details) + f"\n\n{availability}")
 
         def _toggle_selected_library_favourites(self) -> None:
-            selected = self.library_grid.selectedItems()
+            selected = self._library_selected_items()
             if not selected:
                 self.library_result.setText("Select one or more items in the thumbnail grid first.")
                 return

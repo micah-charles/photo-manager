@@ -551,6 +551,48 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         """,
     ),
+    (
+        21,
+        """
+        CREATE TABLE thumbnail_failures (
+            asset_id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+            reason TEXT NOT NULL,
+            failed_at TEXT NOT NULL
+        );
+        """,
+    ),
+    (
+        22,
+        """
+        CREATE TABLE asset_locations_v22 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            volume_id TEXT NOT NULL REFERENCES volumes(id) ON DELETE CASCADE,
+            relative_path TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            modified_ns INTEGER NOT NULL,
+            capture_date TEXT,
+            scan_session_id TEXT,
+            missing_since TEXT,
+            source_id TEXT REFERENCES source_profiles(source_id) ON DELETE SET NULL,
+            UNIQUE(volume_id, relative_path, source_id)
+        );
+        INSERT INTO asset_locations_v22(
+            id, asset_id, volume_id, relative_path, filename, size_bytes,
+            modified_ns, capture_date, scan_session_id, missing_since, source_id
+        )
+        SELECT id, asset_id, volume_id, relative_path, filename, size_bytes,
+               modified_ns, capture_date, scan_session_id, missing_since, source_id
+        FROM asset_locations;
+        DROP TABLE asset_locations;
+        ALTER TABLE asset_locations_v22 RENAME TO asset_locations;
+        CREATE INDEX idx_asset_locations_volume ON asset_locations(volume_id);
+        CREATE INDEX idx_asset_locations_asset ON asset_locations(asset_id);
+        CREATE INDEX idx_asset_locations_size ON asset_locations(size_bytes);
+        CREATE INDEX idx_asset_locations_source ON asset_locations(source_id);
+        """,
+    ),
 ]
 
 

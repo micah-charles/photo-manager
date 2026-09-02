@@ -103,6 +103,23 @@ class LibraryTests(unittest.TestCase):
             self.assertEqual([row["filename"] for row in rows], ["old-capture.jpg"])
             connection.close()
 
+    def test_month_filter_uses_display_time_fallback_when_capture_metadata_is_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "media"; root.mkdir()
+            (root / "july.jpg").write_bytes(b"july")
+            connection = connect(Path(directory) / "catalog.db")
+            volume_id = register_volume(connection, root, FixedProvider())
+            scan_volume(connection, volume_id, root)
+            connection.execute(
+                "UPDATE asset_locations SET modified_ns=? WHERE filename='july.jpg'",
+                (int(1784073600 * 1_000_000_000),),  # 2026-07-15 UTC
+            )
+            connection.commit()
+            rows = list_library_items(connection, LibraryQuery(captured_month="2026-07", limit=10))
+            self.assertEqual([row["filename"] for row in rows], ["july.jpg"])
+            self.assertEqual(count_library_items(connection, LibraryQuery(captured_month="2026-07")), 1)
+            connection.close()
+
     def test_recently_added_orders_by_catalog_time(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "media"; root.mkdir()

@@ -157,9 +157,11 @@ def scan_volume(
                 stat = path.stat()
                 relative = path.relative_to(root).as_posix()
                 existing = connection.execute(
-                    "SELECT al.asset_id, al.size_bytes, al.modified_ns, eh.sha256 "
+                    "SELECT al.asset_id, al.size_bytes, al.modified_ns, eh.sha256, al.source_id "
                     "FROM asset_locations al LEFT JOIN exact_hashes eh ON eh.asset_id=al.asset_id "
-                    "WHERE al.volume_id=? AND al.relative_path=?",
+                    "WHERE al.volume_id=? AND al.relative_path=? "
+                    "ORDER BY CASE WHEN al.source_id LIKE 'folder:%' OR al.source_id IS NULL THEN 1 ELSE 0 END "
+                    "LIMIT 1",
                     (volume_id, relative),
                 ).fetchone()
                 asset_id = existing[0] if existing else "asset_" + uuid.uuid4().hex
@@ -192,7 +194,7 @@ def scan_volume(
                     INSERT INTO asset_locations(asset_id, volume_id, relative_path, filename,
                                                 size_bytes, modified_ns, capture_date, scan_session_id, source_id)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(volume_id, relative_path) DO UPDATE SET
+                    ON CONFLICT(volume_id, relative_path, source_id) DO UPDATE SET
                       asset_id=excluded.asset_id,
                       size_bytes=excluded.size_bytes, modified_ns=excluded.modified_ns,
                       filename=excluded.filename, capture_date=excluded.capture_date,
@@ -201,7 +203,8 @@ def scan_volume(
                       missing_since=NULL
                     """,
                     (asset_id, volume_id, relative, path.name, stat.st_size, stat.st_mtime_ns,
-                     metadata.capture_datetime[:10] if metadata.capture_datetime else None, session_id, source_id),
+                     metadata.capture_datetime[:10] if metadata.capture_datetime else None, session_id,
+                     existing[4] if existing and existing[4] else source_id),
                 )
                 if obsolete_asset_id:
                     remaining = connection.execute(

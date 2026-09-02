@@ -149,6 +149,40 @@ class UIFoundationTests(unittest.TestCase):
             window.close()
             connection.close()
 
+    def test_library_is_timeline_first_and_reveals_actions_on_selection(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+        from photovault.catalog.scanner import scan_volume
+
+        class FixedProvider:
+            def identify(self, path: Path) -> VolumeIdentity:
+                return VolumeIdentity("library-ui", "library-ui-disk", "Library UI disk")
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "photos"
+            root.mkdir()
+            (root / "one.jpg").write_bytes(b"library-photo")
+            connection = connect(Path(temp) / "catalog.db")
+            volume_id = register_volume(connection, root, FixedProvider())
+            scan_volume(connection, volume_id, root)
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window.show()
+            window._select_page("Library")
+            self.assertFalse(window.library_filter_panel.isVisible())
+            self.assertEqual(window.library_months.count(), 1)
+            self.assertEqual(len(window._library_day_grids), 1)
+            self.assertFalse(window.library_action_panel.isVisible())
+            window._library_day_grids[0].setCurrentRow(0)
+            app.processEvents()
+            self.assertTrue(window.library_action_panel.isVisible())
+            self.assertEqual(window.library_selection_count.text(), "1 selected")
+            window.close()
+            connection.close()
+
     def test_gui_module_has_clear_optional_dependency_behavior(self) -> None:
         from photovault.ui import main_window
 
