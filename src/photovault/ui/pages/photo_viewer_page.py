@@ -35,6 +35,9 @@ def build_photo_viewer_page(owner: object, layout: object) -> None:
     rate_button = QPushButton("Rate")
     rate_button.clicked.connect(owner._apply_viewer_rating)
     toolbar.addWidget(rate_button)
+    owner.viewer_favourite_button = QPushButton("Toggle favourite")
+    owner.viewer_favourite_button.clicked.connect(owner._toggle_viewer_favourite)
+    toolbar.addWidget(owner.viewer_favourite_button)
     toolbar.addStretch(1)
     layout.addLayout(toolbar)
 

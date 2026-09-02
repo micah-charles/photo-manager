@@ -3135,6 +3135,8 @@ if QT_AVAILABLE:
                     "No cached thumbnail is available. The catalog entry is still intact; return to Library for details."
                 )
             self.viewer_details.setText(self._format_library_details(details))
+            if hasattr(self, "viewer_favourite_button"):
+                self.viewer_favourite_button.setText("Remove favourite" if details.get("is_favourite") else "Add favourite")
             self.viewer_previous.setEnabled(self._viewer_index > 0)
             self.viewer_next.setEnabled(self._viewer_index < len(self._viewer_items) - 1)
 
@@ -3216,6 +3218,27 @@ if QT_AVAILABLE:
             except Exception as exc:
                 self.viewer_details.setText(f"Album update failed: {type(exc).__name__}: {exc}")
 
+        def _toggle_viewer_favourite(self) -> None:
+            asset_id = self._current_viewer_asset_id()
+            if not asset_id:
+                return
+            try:
+                from photovault.catalog.favourites import remove_favourite, set_favourite
+
+                details = self._viewer_items[self._viewer_index]
+                if details.get("is_favourite"):
+                    remove_favourite(self.connection, asset_id)
+                    details["is_favourite"] = False
+                    message = "Favourite removed."
+                else:
+                    set_favourite(self.connection, asset_id)
+                    details["is_favourite"] = True
+                    message = "Favourite added."
+                self.viewer_favourite_button.setText("Remove favourite" if details["is_favourite"] else "Add favourite")
+                self._viewer_organisation_result(f"{message} Original media was not changed.")
+            except Exception as exc:
+                self.viewer_details.setText(f"Favourite update failed: {type(exc).__name__}: {exc}")
+
         def _apply_viewer_review(self) -> None:
             if not self._viewer_items or self._viewer_index < 0:
                 return
@@ -3265,16 +3288,7 @@ if QT_AVAILABLE:
                     self._apply_viewer_review()
                     return
                 if key == Qt.Key.Key_F:
-                    from photovault.catalog.favourites import remove_favourite, set_favourite
-
-                    details = self._viewer_items[self._viewer_index]
-                    if details.get("is_favourite"):
-                        remove_favourite(self.connection, str(details["asset_id"]))
-                        details["is_favourite"] = False
-                    else:
-                        set_favourite(self.connection, str(details["asset_id"]))
-                        details["is_favourite"] = True
-                    self.viewer_details.setText(self._format_library_details(details))
+                    self._toggle_viewer_favourite()
                     return
                 if Qt.Key.Key_0 <= key <= Qt.Key.Key_5:
                     rating = key - Qt.Key.Key_0

@@ -37,6 +37,8 @@ The desktop UI currently exposes:
   retained as a fallback.
 - The Photo Viewer now provides direct catalog-only Event, Tag, Place, Person,
   and Album assignment controls without leaving the viewer.
+- Favourite can be toggled from a visible Viewer button or the `F` shortcut;
+  both paths update the same catalog-only annotation.
 - Visual duplicate analysis controls are kept in Settings; the normal duplicate
   page is an advisory review entry point and never presents algorithm details as
   a destructive action.
