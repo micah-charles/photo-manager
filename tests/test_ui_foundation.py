@@ -375,6 +375,61 @@ class UIFoundationTests(unittest.TestCase):
             window.close()
             connection.close()
 
+    def test_viewer_can_assign_logical_metadata_without_leaving(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+        from photovault.catalog.collections import add_to_user_collection, create_user_collection
+        from photovault.catalog.organization import create_event, create_place, create_tag
+        from photovault.catalog.people import create_person
+        from photovault.catalog.scanner import scan_volume
+
+        class FixedProvider:
+            def identify(self, path: Path) -> VolumeIdentity:
+                return VolumeIdentity("viewer-ui", "viewer-ui-disk", "Viewer UI disk")
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "photos"
+            root.mkdir()
+            (root / "viewer.jpg").write_bytes(b"viewer-photo")
+            connection = connect(Path(temp) / "catalog.db")
+            volume_id = register_volume(connection, root, FixedProvider())
+            scan_volume(connection, volume_id, root)
+            asset_id = str(connection.execute("SELECT id FROM assets LIMIT 1").fetchone()[0])
+            event_id = create_event(connection, "Viewer event")
+            tag_id = create_tag(connection, "Viewer tag")
+            place_id = create_place(connection, "Viewer place")
+            person_id = create_person(connection, "Viewer person")
+            collection_id = create_user_collection(connection, "Viewer album")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._select_page("Library")
+            item = window.library_grid.item(0)
+            window._open_library_item(item)
+            for combo, value in (
+                (window.viewer_event_action, event_id),
+                (window.viewer_tag_action, tag_id),
+                (window.viewer_place_action, place_id),
+                (window.viewer_person_action, person_id),
+                (window.viewer_collection_action, collection_id),
+            ):
+                combo.setCurrentIndex(combo.findData(value))
+            window._assign_viewer_event()
+            window._assign_viewer_tag()
+            window._assign_viewer_place()
+            window._assign_viewer_person()
+            window._add_viewer_to_collection()
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM event_assets WHERE event_id=? AND asset_id=?", (event_id, asset_id)).fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM asset_tags WHERE tag_id=? AND asset_id=?", (tag_id, asset_id)).fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM asset_places WHERE place_id=? AND asset_id=?", (place_id, asset_id)).fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM person_members WHERE person_id=? AND asset_id=?", (person_id, asset_id)).fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM user_collection_members WHERE collection_id=? AND asset_id=?", (collection_id[5:], asset_id)).fetchone()[0], 1)
+            self.assertEqual(window.pages.currentIndex(), main_window.NAVIGATION_ITEMS.index("Photo Viewer"))
+            window.close()
+            connection.close()
+
     def test_event_detail_shows_members_and_removes_only_membership(self) -> None:
         from photovault.ui import main_window
 

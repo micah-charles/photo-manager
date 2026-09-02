@@ -1899,6 +1899,10 @@ if QT_AVAILABLE:
             self._replace_library_filter(self.library_assign_tag, "Select tag…", tags, lambda row: f"{row.name} ({row.item_count:,})")
             self._replace_library_filter(self.library_assign_place, "Select place…", places, lambda row: f"{row.name} ({row.item_count:,})")
             self._replace_library_filter(self.library_assign_person, "Select person…", people, lambda row: f"{row.display_name or row.id} ({row.item_count:,})")
+            self._replace_library_filter(self.viewer_event_action, "Add to event…", events, lambda row: f"{row.name} ({row.item_count:,})")
+            self._replace_library_filter(self.viewer_tag_action, "Add tag…", tags, lambda row: f"{row.name} ({row.item_count:,})")
+            self._replace_library_filter(self.viewer_place_action, "Set place…", places, lambda row: f"{row.name} ({row.item_count:,})")
+            self._replace_library_filter(self.viewer_person_action, "Assign person…", people, lambda row: f"{row.display_name or row.id} ({row.item_count:,})")
 
         def _clear_library_organisation_filters(self) -> None:
             for combo in (self.library_source_filter, self.library_event_filter, self.library_tag_filter, self.library_place_filter,
@@ -2509,6 +2513,14 @@ if QT_AVAILABLE:
                         if item.kind == "ALBUM":
                             self.library_collection_target.addItem(f"{item.title} ({item.item_count})", item.id)
                     self.library_collection_target.blockSignals(False)
+                if hasattr(self, "viewer_collection_action"):
+                    self.viewer_collection_action.blockSignals(True)
+                    self.viewer_collection_action.clear()
+                    self.viewer_collection_action.addItem("Add to album…", None)
+                    for item in collections:
+                        if item.kind == "ALBUM":
+                            self.viewer_collection_action.addItem(f"{item.title} ({item.item_count})", item.id)
+                    self.viewer_collection_action.blockSignals(False)
             except Exception as exc:
                 self.collections_result.setText(f"Collection query failed: {type(exc).__name__}: {exc}")
 
@@ -3073,6 +3085,84 @@ if QT_AVAILABLE:
             self.viewer_details.setText(self._format_library_details(details))
             self.viewer_previous.setEnabled(self._viewer_index > 0)
             self.viewer_next.setEnabled(self._viewer_index < len(self._viewer_items) - 1)
+
+        def _current_viewer_asset_id(self) -> str | None:
+            if not self._viewer_items or self._viewer_index < 0:
+                return None
+            return str(self._viewer_items[self._viewer_index]["asset_id"])
+
+        def _viewer_organisation_result(self, message: str) -> None:
+            self.viewer_details.setText(f"{self._format_library_details(self._viewer_items[self._viewer_index])}\n\n{message}")
+
+        def _assign_viewer_event(self) -> None:
+            asset_id = self._current_viewer_asset_id()
+            event_id = self.viewer_event_action.currentData()
+            if not asset_id or not event_id:
+                return
+            try:
+                from photovault.catalog.organization import add_assets_to_event
+
+                add_assets_to_event(self.connection, str(event_id), [asset_id])
+                self._viewer_organisation_result("Event updated. Original media was not changed.")
+                self._refresh_library_organisation_filters()
+            except Exception as exc:
+                self.viewer_details.setText(f"Event update failed: {type(exc).__name__}: {exc}")
+
+        def _assign_viewer_tag(self) -> None:
+            asset_id = self._current_viewer_asset_id()
+            tag_id = self.viewer_tag_action.currentData()
+            if not asset_id or not tag_id:
+                return
+            try:
+                from photovault.catalog.organization import assign_tags
+
+                assign_tags(self.connection, [asset_id], [str(tag_id)])
+                self._viewer_organisation_result("Tag updated. Original media was not changed.")
+                self._refresh_library_organisation_filters()
+            except Exception as exc:
+                self.viewer_details.setText(f"Tag update failed: {type(exc).__name__}: {exc}")
+
+        def _assign_viewer_place(self) -> None:
+            asset_id = self._current_viewer_asset_id()
+            place_id = self.viewer_place_action.currentData()
+            if not asset_id or not place_id:
+                return
+            try:
+                from photovault.catalog.organization import assign_place
+
+                assign_place(self.connection, [asset_id], str(place_id))
+                self._viewer_organisation_result("Place updated. Embedded metadata and original media were not changed.")
+                self._refresh_library_organisation_filters()
+            except Exception as exc:
+                self.viewer_details.setText(f"Place update failed: {type(exc).__name__}: {exc}")
+
+        def _assign_viewer_person(self) -> None:
+            asset_id = self._current_viewer_asset_id()
+            person_id = self.viewer_person_action.currentData()
+            if not asset_id or not person_id:
+                return
+            try:
+                from photovault.catalog.people import assign_person
+
+                assign_person(self.connection, [asset_id], str(person_id))
+                self._viewer_organisation_result("Person assignment updated. Original media was not changed.")
+                self._refresh_library_organisation_filters()
+            except Exception as exc:
+                self.viewer_details.setText(f"Person update failed: {type(exc).__name__}: {exc}")
+
+        def _add_viewer_to_collection(self) -> None:
+            asset_id = self._current_viewer_asset_id()
+            collection_id = self.viewer_collection_action.currentData()
+            if not asset_id or not collection_id:
+                return
+            try:
+                from photovault.catalog.collections import add_to_user_collection
+
+                add_to_user_collection(self.connection, str(collection_id), [asset_id])
+                self._viewer_organisation_result("Album membership updated. Original media was not changed.")
+                self._refresh_collections()
+            except Exception as exc:
+                self.viewer_details.setText(f"Album update failed: {type(exc).__name__}: {exc}")
 
         def _apply_viewer_review(self) -> None:
             if not self._viewer_items or self._viewer_index < 0:

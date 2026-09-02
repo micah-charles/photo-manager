@@ -35,6 +35,8 @@ The desktop UI currently exposes:
   lifecycle status, verified counters, byte totals, and Activity-page display.
 - Native destination folder picker for Android backups, with manual path input
   retained as a fallback.
+- The Photo Viewer now provides direct catalog-only Event, Tag, Place, Person,
+  and Album assignment controls without leaving the viewer.
 - Visual duplicate analysis controls are kept in Settings; the normal duplicate
   page is an advisory review entry point and never presents algorithm details as
   a destructive action.
@@ -49,7 +51,7 @@ unchanged.
 PYTHONUNBUFFERED=1 PYTHONWARNINGS=ignore QT_QPA_PLATFORM=offscreen \
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 
-Ran 113 tests
+Ran 114 tests
 OK
 ```
 
