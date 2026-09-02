@@ -2590,6 +2590,31 @@ if QT_AVAILABLE:
             except Exception as exc:
                 self.library_result.setText(f"Review update failed: {type(exc).__name__}: {exc}")
 
+        def _plan_selected_rejected_quarantine(self) -> None:
+            """Prepare, but never execute, a reversible quarantine plan from rejected Library items."""
+            asset_ids = self._selected_library_asset_ids()
+            if not asset_ids:
+                self.library_result.setText("Select rejected media first.")
+                return
+            try:
+                rows = self.connection.execute(
+                    """SELECT al.asset_id, v.current_mount_path, al.relative_path,
+                              COALESCE(ar.review_status, 'UNREVIEWED')
+                       FROM asset_locations al JOIN volumes v ON v.id=al.volume_id
+                       LEFT JOIN asset_reviews ar ON ar.asset_id=al.asset_id
+                       WHERE al.asset_id IN (""" + ",".join("?" for _ in asset_ids) + ") AND al.missing_since IS NULL",
+                    asset_ids,
+                ).fetchall()
+                if not rows or any(str(row[3]) != "REJECTED" for row in rows):
+                    raise ValueError("every selected item must have Reject status")
+                paths = [str(Path(str(row[1])) / str(row[2])) for row in rows]
+                self.quarantine_paths.setPlainText("\n".join(paths))
+                self.quarantine_reason.setText("rejected during Library review")
+                self._select_page("Quarantine")
+                self._build_quarantine_plan()
+            except Exception as exc:
+                self.library_result.setText(f"Quarantine plan could not be prepared: {type(exc).__name__}: {exc}")
+
         def _apply_selected_rating(self) -> None:
             selected = self.library_grid.selectedItems()
             rating = self.library_rating_action.currentData()
