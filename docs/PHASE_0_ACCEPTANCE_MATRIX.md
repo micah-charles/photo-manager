@@ -9,6 +9,7 @@ source changes tracked on the same branch).
 | Area | Current evidence | Status |
 | --- | --- | --- |
 | Photo-first Home and grouped navigation | `src/photovault/ui/spec.py`, live dashboard screenshot, native Qt sidebar icons | Verified locally |
+| Timeline browsing | Primary Photos navigation, source filter, date range, day grouping, pagination, and double-click to Viewer | Verified locally |
 | Library thumbnail browsing | `PhotoGrid`, cached previews, pagination, filters, sorting, selection count, viewer and context actions; external 6,674-item catalog capture | Verified locally |
 | Viewer and inspector | `photo_viewer_page.py`, metadata/location/protection details, previous/next navigation | Verified locally |
 | Collections and albums | Live folder/album cards, cached covers, click/double-click/keyboard routing to Library; UI regression coverage | Verified locally |
@@ -25,7 +26,7 @@ source changes tracked on the same branch).
 | Windows packaging | Cross-platform provider, CI matrix, Windows package smoke test and artifact upload are defined | Awaiting Windows runner result |
 | Visual review deliverables | `scripts/capture_ui_review.py`, 19 external screenshots, and source/package artifacts | Verified locally |
 
-The current local verification total is 119/119 tests. The latest deterministic
+The current local verification total is 120/120 tests. The latest deterministic
 Qt capture contains 19 pages, including Import, Event Detail and Settings. The corresponding external-drive delivery files are
 `/Volumes/ExtremePro/PhotoVault-UI-Review-20260901/photovault-source-50de0da.zip`
 and

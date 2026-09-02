@@ -28,6 +28,7 @@ The desktop UI currently exposes:
 - Viewer organisation metadata inspection;
 - source-aware unified Timeline display time while retaining raw capture time.
 - Timeline day grouping and a cross-source filter for chronological browsing.
+- Timeline date-range filtering and direct row-to-Viewer navigation.
 - Paginated Library and Timeline browsing, with explicit page-size and
   Previous/Next controls so large catalogs are not truncated to the first page.
 - Manual Places table with select-to-edit, update, delete, and Library assignment.
@@ -58,7 +59,7 @@ are documented in `docs/LIBRARY_ORGANISATION_ARCHITECTURE.md`.
 PYTHONUNBUFFERED=1 PYTHONWARNINGS=ignore QT_QPA_PLATFORM=offscreen \
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 
-Ran 119 tests
+Ran 120 tests
 OK
 ```
 
