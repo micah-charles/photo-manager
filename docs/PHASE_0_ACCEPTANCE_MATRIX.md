@@ -3,7 +3,7 @@
 This matrix records the current implementation against the supplied Phase 0
 brief. “Verified” means there is a local automated or rendered check; it does
 not imply that an external device or operating system has been tested.
-The latest local evidence is from commit `216aa22` (with subsequent local
+The latest local evidence is from commit `7fc439f` (with subsequent local
 source changes tracked on the same branch).
 
 | Area | Current evidence | Status |
