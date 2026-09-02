@@ -18,6 +18,7 @@ class LibraryQuery:
     event_id: str = ""
     tag_id: str = ""
     place_id: str = ""
+    person_id: str = ""
     category: str = ""
     review_status: str = ""
     min_rating: int | None = None
@@ -81,6 +82,9 @@ def _where_for_query(query: LibraryQuery) -> tuple[list[str], list[object]]:
     if query.place_id:
         where.append("EXISTS (SELECT 1 FROM asset_places ap WHERE ap.asset_id=al.asset_id AND ap.place_id=? )")
         params.append(query.place_id)
+    if query.person_id:
+        where.append("EXISTS (SELECT 1 FROM person_members pm WHERE pm.asset_id=al.asset_id AND pm.person_id=? )")
+        params.append(query.person_id)
     if query.category:
         if ":" in query.category:
             model, label = query.category.split(":", 1)
@@ -130,6 +134,8 @@ def list_library_items(connection: sqlite3.Connection, query: LibraryQuery = Lib
                 JOIN tags t ON t.id=at.tag_id WHERE at.asset_id=al.asset_id) AS tag_names,
                (SELECT group_concat(p.name, ', ') FROM asset_places ap
                 JOIN places p ON p.id=ap.place_id WHERE ap.asset_id=al.asset_id) AS place_names
+               ,(SELECT group_concat(COALESCE(p.display_name, p.external_key), ', ') FROM person_members pm
+                 JOIN people p ON p.id=pm.person_id WHERE pm.asset_id=al.asset_id) AS person_names
         FROM asset_locations al
         JOIN assets a ON a.id=al.asset_id
         JOIN volumes v ON v.id=al.volume_id

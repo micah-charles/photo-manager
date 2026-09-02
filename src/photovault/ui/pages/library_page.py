@@ -77,6 +77,10 @@ def build_library_page(owner: object, layout: object, tables: dict[str, QTableWi
     owner.library_place_filter.setMinimumWidth(130)
     owner.library_place_filter.setToolTip("Manual or embedded place")
     organisation.addWidget(owner.library_place_filter)
+    owner.library_person_filter = QComboBox()
+    owner.library_person_filter.setMinimumWidth(130)
+    owner.library_person_filter.setToolTip("Person")
+    organisation.addWidget(owner.library_person_filter)
     owner.library_review_filter = QComboBox()
     owner.library_review_filter.addItem("Any review status", "")
     owner.library_review_filter.addItem("Unreviewed", "UNREVIEWED")
@@ -100,6 +104,7 @@ def build_library_page(owner: object, layout: object, tables: dict[str, QTableWi
     for combo in (
         owner.library_source_filter, owner.library_event_filter, owner.library_tag_filter,
         owner.library_place_filter, owner.library_review_filter, owner.library_rating_filter,
+        owner.library_person_filter,
     ):
         combo.currentIndexChanged.connect(owner._reset_library_page)
     owner.library_include_rejected.toggled.connect(owner._reset_library_page)
@@ -172,6 +177,15 @@ def build_library_page(owner: object, layout: object, tables: dict[str, QTableWi
     assign_place_button = QPushButton("Place")
     assign_place_button.clicked.connect(owner._assign_selected_place)
     metadata_actions.addWidget(assign_place_button)
+    owner.library_assign_person = QComboBox()
+    owner.library_assign_person.setMinimumWidth(120)
+    metadata_actions.addWidget(owner.library_assign_person)
+    assign_person_button = QPushButton("Person")
+    assign_person_button.clicked.connect(owner._assign_selected_person)
+    metadata_actions.addWidget(assign_person_button)
+    remove_person_button = QPushButton("Remove Person")
+    remove_person_button.clicked.connect(owner._remove_selected_person)
+    metadata_actions.addWidget(remove_person_button)
     remove_event_button = QPushButton("Remove Event")
     remove_event_button.clicked.connect(owner._remove_selected_event)
     metadata_actions.addWidget(remove_event_button)

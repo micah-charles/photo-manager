@@ -17,6 +17,8 @@ The desktop UI currently exposes:
 - Event and Tag creation and filter navigation;
 - Event type/default-place fields and inclusive date-range membership when both
   event dates are supplied;
+- catalog-only manual People creation, rename/delete, assignment/removal, and
+  Library filtering alongside imported face groups;
 - manual Place creation;
 - Source listing, local folder/SD registration, background scan, and display-only
   time-offset editing;
@@ -39,7 +41,7 @@ unchanged.
 PYTHONUNBUFFERED=1 PYTHONWARNINGS=ignore QT_QPA_PLATFORM=offscreen \
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 
-Ran 105 tests
+Ran 106 tests
 OK
 ```
 

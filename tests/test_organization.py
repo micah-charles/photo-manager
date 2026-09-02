@@ -23,6 +23,7 @@ from photovault.catalog.organization import (
     set_review,
     suggest_events_from_dates,
 )
+from photovault.catalog.people import assign_person, create_person, delete_person, list_people, remove_person, rename_person
 from photovault.catalog.scanner import register_volume, scan_volume
 from photovault.database.connection import connect
 from photovault.platform.base import VolumeIdentity
@@ -112,6 +113,22 @@ class OrganisationTests(unittest.TestCase):
                 set_review(db, [asset_id], status="DELETE")
             with self.assertRaises(ValueError):
                 set_review(db, [asset_id], rating=6)
+            db.close()
+
+    def test_manual_person_assignment_is_catalog_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            db = self._catalog(temp)
+            assets = [row[0] for row in db.execute("SELECT id FROM assets ORDER BY id")]
+            person_id = create_person(db, "Charles")
+            self.assertEqual(assign_person(db, assets, person_id), 2)
+            self.assertEqual(list_people(db)[0].item_count, 2)
+            rename_person(db, person_id, "Charles Tan")
+            self.assertEqual(list_people(db)[0].display_name, "Charles Tan")
+            self.assertEqual(remove_person(db, [assets[0]], person_id), 1)
+            self.assertEqual(list_people(db)[0].item_count, 1)
+            delete_person(db, person_id)
+            self.assertEqual(list_people(db), [])
+            self.assertTrue((Path(temp) / "photos" / "one.jpg").exists())
             db.close()
 
     def test_date_event_suggestions_are_repeatable_and_marked(self) -> None:

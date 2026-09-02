@@ -1685,6 +1685,7 @@ if QT_AVAILABLE:
                     event_id=str(self.library_event_filter.currentData() or ""),
                     tag_id=str(self.library_tag_filter.currentData() or ""),
                     place_id=str(self.library_place_filter.currentData() or ""),
+                    person_id=str(self.library_person_filter.currentData() or ""),
                     review_status=str(self.library_review_filter.currentData() or ""),
                     min_rating=self.library_rating_filter.currentData(),
                     include_rejected=self.library_include_rejected.isChecked(),
@@ -1702,6 +1703,7 @@ if QT_AVAILABLE:
                     event_id=base_query.event_id,
                     tag_id=base_query.tag_id,
                     place_id=base_query.place_id,
+                    person_id=base_query.person_id,
                     category=base_query.category,
                     review_status=base_query.review_status,
                     min_rating=base_query.min_rating,
@@ -1771,11 +1773,13 @@ if QT_AVAILABLE:
         def _refresh_library_organisation_filters(self) -> None:
             """Populate human-readable organisation filters from catalog metadata."""
             from photovault.catalog.organization import list_events, list_places, list_sources, list_tags
+            from photovault.catalog.people import list_people
 
             sources = list_sources(self.connection)
             events = list_events(self.connection)
             tags = list_tags(self.connection)
             places = list_places(self.connection)
+            people = list_people(self.connection)
             source_previous = self.library_source_filter.currentData()
             self.library_source_filter.blockSignals(True)
             self.library_source_filter.clear()
@@ -1788,13 +1792,15 @@ if QT_AVAILABLE:
             self._replace_library_filter(self.library_event_filter, "Any event", events, lambda row: f"{row.name} ({row.item_count:,})")
             self._replace_library_filter(self.library_tag_filter, "Any tag", tags, lambda row: f"{row.name} ({row.item_count:,})")
             self._replace_library_filter(self.library_place_filter, "Any place", places, lambda row: f"{row.name} ({row.item_count:,})")
+            self._replace_library_filter(self.library_person_filter, "Any person", people, lambda row: f"{row.display_name or row.id} ({row.item_count:,})")
             self._replace_library_filter(self.library_assign_event, "Select event…", events, lambda row: f"{row.name} ({row.item_count:,})")
             self._replace_library_filter(self.library_assign_tag, "Select tag…", tags, lambda row: f"{row.name} ({row.item_count:,})")
             self._replace_library_filter(self.library_assign_place, "Select place…", places, lambda row: f"{row.name} ({row.item_count:,})")
+            self._replace_library_filter(self.library_assign_person, "Select person…", people, lambda row: f"{row.display_name or row.id} ({row.item_count:,})")
 
         def _clear_library_organisation_filters(self) -> None:
             for combo in (self.library_source_filter, self.library_event_filter, self.library_tag_filter, self.library_place_filter,
-                          self.library_review_filter, self.library_rating_filter):
+                          self.library_person_filter, self.library_review_filter, self.library_rating_filter):
                 combo.blockSignals(True)
                 combo.setCurrentIndex(0)
                 combo.blockSignals(False)
@@ -2051,6 +2057,21 @@ if QT_AVAILABLE:
                 self.refresh()
             except Exception as exc:
                 self.library_result.setText(f"Place assignment failed: {type(exc).__name__}: {exc}")
+
+        def _assign_selected_person(self) -> None:
+            asset_ids = self._selected_library_asset_ids()
+            person_id = self.library_assign_person.currentData()
+            if not asset_ids or not person_id:
+                self.library_result.setText("Select media and a person first.")
+                return
+            try:
+                from photovault.catalog.people import assign_person
+
+                changed = assign_person(self.connection, asset_ids, str(person_id))
+                self.library_result.setText(f"Assigned person to {changed} selected item(s). Originals were not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.library_result.setText(f"Person assignment failed: {type(exc).__name__}: {exc}")
 
         def _remove_selected_event(self) -> None:
             asset_ids = self._selected_library_asset_ids()
@@ -2609,6 +2630,69 @@ if QT_AVAILABLE:
             except Exception as exc:
                 self.people_result.setText(f"People import failed: {type(exc).__name__}: {exc}")
 
+        def _selected_person_id(self) -> str | None:
+            selected = self._tables["People"].selectedItems()
+            return str(self._tables["People"].item(selected[0].row(), 0).data(Qt.ItemDataRole.UserRole)) if selected else None
+
+        def _create_person(self) -> None:
+            try:
+                from photovault.catalog.people import create_person
+
+                create_person(self.connection, self.person_name.text())
+                self.person_name.clear()
+                self.people_result.setText("Person created. Select media in Library to assign this person.")
+                self.refresh()
+            except Exception as exc:
+                self.people_result.setText(f"Person creation failed: {type(exc).__name__}: {exc}")
+
+        def _load_person_row(self, row: int, _column: int) -> None:
+            person_id = self._tables["People"].item(row, 0).data(Qt.ItemDataRole.UserRole)
+            if person_id:
+                name = self._tables["People"].item(row, 1)
+                self.person_name.setText(name.text() if name else "")
+
+        def _rename_person(self) -> None:
+            try:
+                from photovault.catalog.people import rename_person
+
+                person_id = self._selected_person_id()
+                if not person_id:
+                    raise ValueError("select a person first")
+                rename_person(self.connection, person_id, self.person_name.text())
+                self.people_result.setText("Person renamed. Original media was not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.people_result.setText(f"Person rename failed: {type(exc).__name__}: {exc}")
+
+        def _delete_person(self) -> None:
+            try:
+                from photovault.catalog.people import delete_person
+
+                person_id = self._selected_person_id()
+                if not person_id:
+                    raise ValueError("select a person first")
+                delete_person(self.connection, person_id)
+                self.person_name.clear()
+                self.people_result.setText("Person and its catalog assignments were deleted; original media was not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.people_result.setText(f"Person deletion failed: {type(exc).__name__}: {exc}")
+
+        def _remove_selected_person(self) -> None:
+            asset_ids = self._selected_library_asset_ids()
+            person_id = self.library_assign_person.currentData()
+            if not asset_ids or not person_id:
+                self.library_result.setText("Select media and a person first.")
+                return
+            try:
+                from photovault.catalog.people import remove_person
+
+                changed = remove_person(self.connection, asset_ids, str(person_id))
+                self.library_result.setText(f"Removed person assignment from {changed} selected item(s). Originals were not changed.")
+                self.refresh()
+            except Exception as exc:
+                self.library_result.setText(f"Person removal failed: {type(exc).__name__}: {exc}")
+
         def _populate_library_grid(self, rows: list[sqlite3.Row]) -> None:
             if not rows:
                 self.library_grid.show_empty_state("No photos indexed yet")
@@ -2647,6 +2731,7 @@ if QT_AVAILABLE:
                     "source_name": row["source_name"], "review_status": row["review_status"],
                     "rating": row["rating"], "event_names": row["event_names"],
                     "tag_names": row["tag_names"], "place_names": row["place_names"],
+                    "person_names": row["person_names"],
                 }
                 item.setData(Qt.ItemDataRole.UserRole, details)
                 self.library_grid.addItem(item)
@@ -2817,7 +2902,8 @@ if QT_AVAILABLE:
                 f"Review: {details.get('review_status', 'UNREVIEWED').title()}{rating}\n"
                 f"Event: {details.get('event_names') or '—'}\n"
                 f"Tags: {details.get('tag_names') or '—'}\n"
-                f"Place: {details.get('place_names') or '—'}\n\n"
+                f"Place: {details.get('place_names') or '—'}\n"
+                f"People: {details.get('person_names') or '—'}\n\n"
                 f"File\n{details['relative_path']}\n{details['volume_name']} — {details['volume_status']}\n\n"
                 f"Backup protection\n{protection}"
             )

@@ -64,7 +64,7 @@ move or a change to verification truth.
 | Favourites | **COMPLETE — catalog + basic UI** | Migration 12 stores non-destructive favourites and notes; Favourites page lists/edits them and safely imports matched legacy gallery JSON entries. Visual star controls remain next. |
 | Places | **PARTIAL — manual + clustering UI** | Offline GPS clustering and manual place creation/assignment/editing work; reverse-geocoding cache remains next. |
 | Visual duplicates | **COMPLETE — catalog service / basic UI** | dHash/pHash + BK-tree candidate grouping works; visual review workflow remains next. |
-| Faces / people | **PARTIAL — imported groups** | Person-group persistence and macOS Vision JSON import/browse are available; manual person CRUD and Windows ONNX face backend remain next. |
+| Faces / people | **PARTIAL — manual + imported groups** | Person-group persistence, macOS Vision JSON import/browse, manual Person CRUD, and catalog-only assignment are available; Windows ONNX face backend remains next. |
 | Semantic classification/search | **IN PROGRESS** | ONNX embedding index/search exists; labels, generated collections and UI search need integration. |
 | Catalog backup / recovery | **PARTIAL** | `catalog-backup` uses SQLite online backup API and verifies its new output; `catalog-check` is read-only. Explicit restore UI remains outstanding. |
 | macOS/Windows packaging | **PARTIAL** | macOS arm64 package and smoke test pass; Windows packaging/runtime/removable-drive validation remains outstanding. |
@@ -131,7 +131,7 @@ Automated test command:
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-Current result: **105 passed**. PySide6 is available in the project environment.
+Current result: **106 passed**. PySide6 is available in the project environment.
 Core tests cover volume identity,
 catalog migrations, verified copy safety, source import, Android Wi-Fi paging,
 stable device identity, range resume, profiles/snapshots, favourites, metadata,
