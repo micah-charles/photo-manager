@@ -50,6 +50,10 @@ def build_categories_page(owner: object, layout: object, tables: dict[str, QTabl
     open_button = QPushButton("Open selected category")
     open_button.clicked.connect(owner._open_selected_category)
     actions.addWidget(open_button)
+    accept_button = QPushButton("Accept category as Tag")
+    accept_button.setToolTip("Copy the current advisory category into a user tag; the AI category remains separate.")
+    accept_button.clicked.connect(owner._accept_selected_category)
+    actions.addWidget(accept_button)
     layout.addLayout(actions)
     layout.addWidget(QLabel("Browse categories"))
     owner.category_grid = PhotoGrid(

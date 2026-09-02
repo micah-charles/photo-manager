@@ -2545,6 +2545,32 @@ if QT_AVAILABLE:
             category_id = table.item(selected[0].row(), 0).data(Qt.ItemDataRole.UserRole)
             self._open_collection_in_library(str(category_id), self.categories_result)
 
+        def _accept_selected_category(self) -> None:
+            table = self._tables["Categories"]
+            selected = table.selectedItems()
+            if not selected:
+                self.categories_result.setText("Select one category first.")
+                return
+            category_id = str(table.item(selected[0].row(), 0).data(Qt.ItemDataRole.UserRole) or "")
+            try:
+                from photovault.catalog.category_taxonomy import normalize_label
+                from photovault.catalog.organization import assign_tags, create_tag
+
+                _, model, raw_label = category_id.split(":", 2)
+                tag_name = normalize_label(raw_label)
+                rows = self.connection.execute(
+                    "SELECT asset_id FROM image_categories WHERE model=? AND (label=? OR label=?)",
+                    (model, raw_label, tag_name),
+                ).fetchall()
+                tag_id = create_tag(self.connection, tag_name)
+                changed = assign_tags(self.connection, [str(row[0]) for row in rows], [tag_id], source="ai_accepted")
+                self.categories_result.setText(
+                    f"Accepted {tag_name} as a user Tag for {changed:,} item(s). The original AI category remains separate."
+                )
+                self.refresh()
+            except Exception as exc:
+                self.categories_result.setText(f"Could not accept category as Tag: {type(exc).__name__}: {exc}")
+
         def _open_category_row(self, row: int, _column: int) -> None:
             table = self._tables["Categories"]
             table.selectRow(row)
