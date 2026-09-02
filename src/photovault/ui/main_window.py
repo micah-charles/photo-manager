@@ -2299,6 +2299,27 @@ if QT_AVAILABLE:
             if hasattr(self, "review_result"):
                 self.review_result.setText("Review queue opened in Library. Select items and apply a catalog-only decision.")
 
+        def _refresh_review_summary(self) -> None:
+            """Show review queue counts without rescanning or mutating media."""
+            if not hasattr(self, "review_summary"):
+                return
+            rows = self.connection.execute(
+                """SELECT COALESCE(ar.review_status, 'UNREVIEWED') AS status, COUNT(DISTINCT al.asset_id)
+                   FROM asset_locations al
+                   LEFT JOIN asset_reviews ar ON ar.asset_id=al.asset_id
+                   WHERE al.missing_since IS NULL
+                   GROUP BY status"""
+            ).fetchall()
+            counts = {str(row[0]): int(row[1]) for row in rows}
+            total = sum(counts.values())
+            self.review_summary.setText(
+                f"{total:,} reviewable item(s) · "
+                f"Unreviewed {counts.get('UNREVIEWED', 0):,} · "
+                f"Picked {counts.get('PICKED', 0):,} · "
+                f"Rejected {counts.get('REJECTED', 0):,} · "
+                f"Hidden {counts.get('HIDDEN', 0):,}"
+            )
+
         def _apply_selected_review(self) -> None:
             selected = self.library_grid.selectedItems()
             if not selected:
@@ -3236,6 +3257,7 @@ if QT_AVAILABLE:
                 self._fill_table(self._tables["Backup Sets"], ["ID", "Name", "Required copies", "Scope", "Updated"], [tuple(row) for row in rows])
             if "Events" in self._tables:
                 self._refresh_events()
+            self._refresh_review_summary()
             if "Tags" in self._tables:
                 self._refresh_tags()
             if "Sources" in self._tables:

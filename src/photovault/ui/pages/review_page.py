@@ -11,6 +11,13 @@ def build_review_page(owner: object, layout: object) -> None:
     )
     intro.setWordWrap(True)
     layout.addWidget(intro)
+    owner.review_summary = QLabel("Review counts are calculated from the current catalog.")
+    owner.review_summary.setObjectName("StatusSummary")
+    owner.review_summary.setWordWrap(True)
+    layout.addWidget(owner.review_summary)
+    refresh = QPushButton("Refresh review counts")
+    refresh.clicked.connect(owner._refresh_review_summary)
+    layout.addWidget(refresh)
     actions = QHBoxLayout()
     for label, status in (("Needs review", "UNREVIEWED"), ("Picked", "PICKED"), ("Rejected", "REJECTED"), ("Hidden", "HIDDEN")):
         button = QPushButton(label)
