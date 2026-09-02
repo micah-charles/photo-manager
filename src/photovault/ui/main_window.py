@@ -2327,6 +2327,14 @@ if QT_AVAILABLE:
             ).fetchall()
             counts = {str(row[0]): int(row[1]) for row in rows}
             total = sum(counts.values())
+            labels = {
+                "UNREVIEWED": "Needs review",
+                "PICKED": "Picked",
+                "REJECTED": "Rejected",
+                "HIDDEN": "Hidden",
+            }
+            for status, button in getattr(self, "review_queue_buttons", {}).items():
+                button.setText(f"{labels[status]} ({counts.get(status, 0):,})")
             self.review_summary.setText(
                 f"{total:,} reviewable item(s) · "
                 f"Unreviewed {counts.get('UNREVIEWED', 0):,} · "

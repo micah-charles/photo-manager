@@ -236,6 +236,7 @@ class UIFoundationTests(unittest.TestCase):
             self.assertIn("No photos indexed yet", [window.dashboard_recent_grid.item(i).text() for i in range(window.dashboard_recent_grid.count())])
             self.assertIn("Choose a queue", window.review_result.text())
             self.assertIn("reviewable item(s)", window.review_summary.text())
+            self.assertEqual(window.review_queue_buttons["UNREVIEWED"].text(), "Needs review (0)")
             self.assertIn("event(s)", window.events_result.text())
             self.assertIn("tag(s)", window.tags_result.text())
             self.assertIn("source(s)", window.sources_result.text())

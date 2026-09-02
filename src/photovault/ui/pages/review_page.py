@@ -19,9 +19,11 @@ def build_review_page(owner: object, layout: object) -> None:
     refresh.clicked.connect(owner._refresh_review_summary)
     layout.addWidget(refresh)
     actions = QHBoxLayout()
+    owner.review_queue_buttons = {}
     for label, status in (("Needs review", "UNREVIEWED"), ("Picked", "PICKED"), ("Rejected", "REJECTED"), ("Hidden", "HIDDEN")):
         button = QPushButton(label)
         button.clicked.connect(lambda _checked=False, value=status: owner._open_review_queue(value))
+        owner.review_queue_buttons[status] = button
         actions.addWidget(button)
     layout.addLayout(actions)
     all_button = QPushButton("Open all reviewable media")
