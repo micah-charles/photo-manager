@@ -918,6 +918,27 @@ if QT_AVAILABLE:
                     f"Destination selected: {selected}. Review the folder and profile before starting."
                 )
 
+        def _choose_source_folder(self) -> None:
+            """Choose a folder or mounted SD card for catalog-in-place scanning."""
+            current = self.source_folder_path.text().strip()
+            selected = QFileDialog.getExistingDirectory(
+                self,
+                "Choose folder or mounted camera card",
+                current if Path(current).is_dir() else str(Path.home()),
+            )
+            if selected:
+                self.source_folder_path.setText(selected)
+                self.sources_result.setText(
+                    f"Source selected: {selected}. Choose Catalog in Place or a reviewed Managed Copy workflow."
+                )
+
+        def _open_source_managed_copy(self) -> None:
+            """Route managed folder copies to the existing reviewed copy workflow."""
+            self._select_page("Copy Plans")
+            self.copy_result.setText(
+                "Managed Copy requires a reviewed backup set/copy plan. The Sources scan is Catalog in Place only and does not copy files."
+            )
+
         def _start_thumbnail_generation(self) -> None:
             if self._catalog_path is None:
                 self.library_thumbnail_status.setText("Thumbnail generation requires a file-backed catalog.")

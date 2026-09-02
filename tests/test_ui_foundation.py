@@ -132,6 +132,29 @@ class UIFoundationTests(unittest.TestCase):
             window.close()
             connection.close()
 
+    def test_source_folder_picker_is_explicitly_catalog_in_place(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            source = str(Path(temp) / "camera")
+            Path(source).mkdir()
+            with patch("photovault.ui.main_window.QFileDialog.getExistingDirectory", return_value=source):
+                window._choose_source_folder()
+            self.assertEqual(window.source_folder_path.text(), source)
+            self.assertIn("Catalog in Place", window.sources_result.text())
+            window._open_source_managed_copy()
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Copy Plans"))
+            self.assertIn("reviewed backup set/copy plan", window.copy_result.text())
+            window.close()
+            connection.close()
+
     def test_android_backup_terminal_states_have_explicit_safe_summary(self) -> None:
         from photovault.ui import main_window
 
