@@ -50,6 +50,25 @@ Open the app with a catalog on a removable destination, register a folder,
 scan it, browse thumbnails, and confirm the Windows volume provider reports
 connected/offline state without changing the source folder.
 
+## Desktop organisation smoke test
+
+With the macOS app open and the external regression catalog selected:
+
+1. Open **Collections**. Single-click an album to select it; double-click the
+   album (or press Enter) and confirm PhotoVault opens **Library** filtered to
+   that album. An empty album should still open Library and show an explanatory
+   empty-state message.
+2. Double-click a Library thumbnail and confirm **Photo Viewer** opens.
+3. In **Timeline**, apply a date range and source filter, then open an item in
+   Viewer. Create an Event from the selected dates and confirm its members
+   appear in Event Detail.
+4. In Library, select multiple items and test Add Tag, Set Place, Add Person,
+   Add to Collection, Pick/Reject, Favourite, and rating. Confirm the result
+   appears in the relevant filter without changing the original files.
+5. Open **Review**, **People**, **Places**, **Tags**, **Categories**, **Sources**,
+   and **Advanced Tools** and confirm each page loads and its primary action is
+   visible.
+
 ## Evidence to retain
 
 - command output and timestamps;
