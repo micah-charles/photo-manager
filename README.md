@@ -1,6 +1,6 @@
-# PhotoVault
+# Photo Manager
 
-PhotoVault is a local-first desktop project for verifying photo/video backups across removable disks. It is being built separately from the legacy prototype at `/Volumes/ExtremePro/project/photos`.
+Photo Manager is a local-first desktop project for verifying photo/video backups across removable disks. The internal Python package remains `photovault` for compatibility.
 
 Phase 1–3 provide a read-only SQLite catalog foundation, SHA-256 exact identity, stable-volume provider boundary and CLI. It does not copy, move, rename, quarantine, or delete media.
 
@@ -17,6 +17,24 @@ Phase 9 adds the optional PySide6 GUI foundation. Install with `pip install -e '
 Phase 10 adds metadata/timeline/gallery commands, for example `photovault scan <volume-id> <root> --thumbnail-root ~/.photovault/thumbnails`, `photovault timeline`, and `photovault gallery ./gallery/index.html`.
 
 Phase 11 adds persistent `dhash64`/`phash64` indexes and scalable BK-tree visual-similarity grouping. Install `pip install -e '.[photo-intelligence]'`, then run `perceptual-index` before `visual-duplicates`; these groups are advisory candidates only and never establish backup verification or permission to delete.
+
+## JPEG/RAW consolidation
+
+`consolidate-pairs` is a safe, repeatable photo-management operation for cameras
+that write JPEG and RAW files to separate folders. It pairs files by filename
+stem, reports unmatched files, includes videos, chooses the embedded capture
+date (falling back to filesystem modified date), and plans date-folder moves without changing
+file bytes, names, or metadata. Run it once without `--move` to review; use
+`--move` only after reviewing the conflict/unmatched counts:
+
+```sh
+PYTHONPATH=src python -m photovault --catalog /path/to/catalog.db \
+  consolidate-pairs /path/to/jpeg-folder /path/to/raw-folder \
+  --destination /path/to/organized
+```
+
+The operation refuses destination conflicts and is safe to repeat after an
+interruption. Files already in the correct date folder are skipped.
 
 Phase 12 adds offline-safe GPS place clustering via `photovault places` and backend contracts for future macOS Vision/ONNX face detection. No geocoder network call or face analysis runs implicitly.
 
@@ -45,6 +63,28 @@ PYTHONPATH=src python3 -m photovault.cli --catalog /tmp/photovault.db volume-ref
 ```
 
 The catalog is metadata only. Originals remain ordinary filesystem files.
+
+In the web Library, click a Topic to open its photos, click `Edit` to change
+its name or date range, and use `Create Topic` for a new one. Photo cards can
+be dragged onto a Topic card; alternatively select several cards and choose a
+Topic from the selection bar. These actions update only event membership and
+catalog metadata.
+
+## Local web Library
+
+The Timeline-first Library is also available as a loopback-only web UI. It
+reads the selected SQLite catalog, serves cached thumbnails, and never exposes
+original media or binds to the LAN by default:
+
+```bash
+PYTHONPATH=src python3 -m photovault.cli \
+  --catalog /Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA/round1-workers5-copy.db \
+  web
+```
+
+Open `http://127.0.0.1:8765`. The first web slice includes month navigation,
+day-grouped thumbnails, filter drawer, selection state, and the metadata
+inspector. The same Python catalog and safety rules remain the source of truth.
 
 Optional macOS Android support is integrated as a PhotoSource provider, not a
 separate application. The native IOUSBHost helper supports device, storage,

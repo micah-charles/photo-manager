@@ -120,6 +120,11 @@ def parser() -> argparse.ArgumentParser:
     execute.add_argument("--backup-volume")
     folder = sub.add_parser("audit-folder", help="audit whether a folder is redundant")
     folder.add_argument("path", type=Path)
+    consolidate = sub.add_parser("consolidate-pairs", help="pair JPEG/RAW files and consolidate them by capture date")
+    consolidate.add_argument("source_folders", nargs="+", type=Path)
+    consolidate.add_argument("--destination", type=Path, required=True)
+    consolidate.add_argument("--report", type=Path, help="write the completion report to this text file")
+    consolidate.add_argument("--move", action="store_true", help="execute the reviewed move; default is a dry-run plan")
     quarantine = sub.add_parser("quarantine", help="move selected catalogued files to reversible quarantine")
     quarantine.add_argument("paths", nargs="+", type=Path)
     quarantine.add_argument("--reason", default="user-requested quarantine")
@@ -197,6 +202,11 @@ def parser() -> argparse.ArgumentParser:
     wifi_copy.add_argument("--batch-files", type=int, default=25)
     wifi_copy.add_argument("--workers", type=int, default=1, help="concurrent read-only Android downloads; catalog writes remain serialized")
     wifi_copy.add_argument("--confirm-copy", action="store_true", help="perform the reviewed copy; omission is a read-only plan")
+    web = sub.add_parser("web", help="serve the local PhotoVault web UI")
+    web.add_argument("--host", default="127.0.0.1", help="bind address; loopback is the safe default")
+    web.add_argument("--port", type=int, default=8765)
+    mcp = sub.add_parser("mcp-server", help="serve PhotoVault semantic tools over MCP stdio")
+    mcp.add_argument("--catalog", type=Path, dest="mcp_catalog", required=True)
     sub.add_parser("gui", help="launch the optional PySide6 desktop UI")
     return p
 
@@ -211,6 +221,16 @@ def main() -> int:
             connection.close()
     if args.command == "android-wifi" and args.wifi_command != "copy-folder":
         return _dispatch(args, None)
+    if args.command == "web":
+        from photovault.web.server import serve
+
+        serve(args.catalog.expanduser().resolve(), host=args.host, port=args.port)
+        return 0
+    if args.command == "mcp-server":
+        from photovault.agent.mcp_server import run
+
+        run(args.mcp_catalog)
+        return 0
     connection = connect(args.catalog)
 
     try:
@@ -220,6 +240,28 @@ def main() -> int:
 
 
 def _dispatch(args: argparse.Namespace, connection) -> int:
+    if args.command == "consolidate-pairs":
+        from photovault.catalog.consolidation import build_consolidation_plan, execute_consolidation, write_consolidation_report
+
+        plan = build_consolidation_plan(args.source_folders, args.destination)
+        print(
+            f"CONSOLIDATION_PLAN\tpairs={len(plan.pairs)}\tmoves={len(plan.moves)}\t"
+            f"already_present={len(plan.already_present)}\tunpaired_jpegs={len(plan.unpaired_jpegs)}\t"
+            f"unpaired_raw={len(plan.unpaired_raw)}\tconflicts={len(plan.conflicts)}"
+        )
+        for warning in plan.warnings:
+            print(f"WARNING\t{warning}")
+        if plan.conflicts:
+            print("CONSOLIDATION_NOT_STARTED\tResolve destination conflicts first.")
+            return 2
+        if not args.move:
+            print("MOVE_NOT_STARTED\tReview the plan, then repeat with --move; no files were changed.")
+            return 0
+        result = execute_consolidation(plan)
+        report = write_consolidation_report(plan, args.report or (plan.destination / "photo-manager-consolidation-report.txt"), result)
+        print("CONSOLIDATION_COMPLETE\t" + "\t".join(f"{key}={value}" for key, value in result.items()))
+        print(f"REPORT_WRITTEN\t{report}")
+        return 0
     if args.command == "android-wifi":
         import os
         import time

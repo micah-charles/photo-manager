@@ -29,14 +29,44 @@ class LibraryQuery:
     sort: str = "captured_desc"
     limit: int = 200
     offset: int = 0
+    after_captured: str = ""
+    after_asset_id: str = ""
 
 
 _SORTS = {
     "captured_desc": "display_captured IS NULL, display_captured DESC, al.relative_path",
+    "captured_desc_id": "display_captured IS NULL, display_captured DESC, al.asset_id",
     "captured_asc": "display_captured IS NULL, display_captured ASC, al.relative_path",
     "name_asc": "lower(al.filename), al.relative_path",
     "size_desc": "al.size_bytes DESC, al.relative_path",
 }
+
+
+def library_facets(connection: sqlite3.Connection, query: LibraryQuery = LibraryQuery()) -> list[dict[str, object]]:
+    """Return complete month navigation facets, independent of page size/cursor."""
+    facet_query = LibraryQuery(**{
+        **query.__dict__,
+        "captured_month": "",
+        "captured_from": "",
+        "captured_to": "",
+        "after_captured": "",
+        "after_asset_id": "",
+        "limit": 1,
+        "offset": 0,
+    })
+    where, params = _where_for_query(facet_query)
+    captured_expr = "COALESCE(mm.capture_datetime, al.capture_date, datetime(al.modified_ns / 1000000000, 'unixepoch'))"
+    rows = connection.execute(
+        f"""SELECT substr({captured_expr}, 1, 7) AS month, COUNT(DISTINCT al.asset_id) AS item_count
+            FROM asset_locations al
+            JOIN assets a ON a.id=al.asset_id
+            LEFT JOIN media_metadata mm ON mm.asset_id=al.asset_id
+            LEFT JOIN asset_reviews ar ON ar.asset_id=al.asset_id
+            WHERE {' AND '.join(where)} AND {captured_expr} IS NOT NULL
+            GROUP BY 1 ORDER BY 1 DESC""",
+        params,
+    ).fetchall()
+    return [{"key": str(row[0]), "label": str(row[0]).replace("-", " / "), "item_count": int(row[1])} for row in rows]
 
 
 def _where_for_query(query: LibraryQuery) -> tuple[list[str], list[object]]:
@@ -85,17 +115,28 @@ def _where_for_query(query: LibraryQuery) -> tuple[list[str], list[object]]:
     if query.recently_added:
         where.append("a.created_at >= datetime('now', '-30 days')")
     if query.captured_from:
-        where.append("COALESCE(mm.capture_datetime, al.capture_date) >= ?")
+        where.append("COALESCE(mm.capture_datetime, al.capture_date, datetime(al.modified_ns / 1000000000, 'unixepoch')) >= ?")
         params.append(query.captured_from)
     if query.captured_to:
-        where.append("COALESCE(mm.capture_datetime, al.capture_date) <= ?")
+        where.append("COALESCE(mm.capture_datetime, al.capture_date, datetime(al.modified_ns / 1000000000, 'unixepoch')) <= ?")
         params.append(query.captured_to)
     if query.captured_month:
-        where.append("substr(COALESCE(mm.capture_datetime, al.capture_date), 1, 7) = ?")
+        # Library displays modified time when embedded capture time is absent.
+        # Apply the same fallback to month navigation, otherwise the month
+        # rail can show a month whose selection returns no rows.
+        where.append(
+            "substr(COALESCE(mm.capture_datetime, al.capture_date, "
+            "datetime(al.modified_ns / 1000000000, 'unixepoch')), 1, 7) = ?"
+        )
         params.append(query.captured_month)
     if query.source_id:
-        where.append("al.source_id=?")
-        params.append(query.source_id)
+        source_ids = tuple(source for source in query.source_id.split(",") if source)
+        if len(source_ids) == 1:
+            where.append("al.source_id=?")
+            params.append(source_ids[0])
+        elif source_ids:
+            where.append("al.source_id IN (" + ",".join("?" for _ in source_ids) + ")")
+            params.extend(source_ids)
     if query.event_id:
         where.append("EXISTS (SELECT 1 FROM event_assets ea WHERE ea.asset_id=al.asset_id AND ea.event_id=? )")
         params.append(query.event_id)
@@ -128,6 +169,14 @@ def _where_for_query(query: LibraryQuery) -> tuple[list[str], list[object]]:
     if query.asset_ids:
         where.append("al.asset_id IN (" + ",".join("?" for _ in query.asset_ids) + ")")
         params.extend(query.asset_ids)
+    if query.after_asset_id:
+        captured_expr = "COALESCE(mm.capture_datetime, al.capture_date, datetime(al.modified_ns / 1000000000, 'unixepoch'))"
+        if query.after_captured:
+            where.append(f"(({captured_expr} IS NULL) OR {captured_expr} < ? OR ({captured_expr} = ? AND al.asset_id > ?))")
+            params.extend((query.after_captured, query.after_captured, query.after_asset_id))
+        else:
+            where.append(f"{captured_expr} IS NULL AND al.asset_id > ?")
+            params.append(query.after_asset_id)
     return where, params
 
 

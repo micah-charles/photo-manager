@@ -1,0 +1,20 @@
+Photo Manager — JPEG/RAW Consolidation Report
+
+Source: /Volumes/Seagate Desktop Drive/2026
+Organized files: /Volumes/Seagate Desktop Drive/2026/YYYY-MM-DD/
+
+JPEG files without a matching NEF: 75
+
+By capture date:
+- 2026-07-10: 1 — DSC_7051.JPG
+- 2026-07-23: 10 — DSC_7234.JPG, DSC_7235.JPG, DSC_7247.JPG–DSC_7252.JPG, DSC_7359.JPG, DSC_7362.JPG
+- 2026-08-01: 3 — DSC_7991.JPG, DSC_8025.JPG, DSC_8026.JPG
+- 2026-08-12: 60 — DSC_8106.JPG, DSC_8107.JPG, DSC_8113.JPG–DSC_8116.JPG, DSC_8118.JPG–DSC_8172.JPG
+- 2026-08-22: 1 — DSC_8498.JPG
+
+Total: 75 JPEG files
+RAW without a matching JPEG: 0
+
+The files remain at their date-folder paths. JPEG/RAW pairing uses the
+filename stem; consolidation does not rename, re-encode, or modify file
+metadata.
