@@ -547,6 +547,7 @@ class UIFoundationTests(unittest.TestCase):
             window._refresh_events()
             window._open_event_row(0, 0)
             self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Event Detail"))
+            self.assertEqual(window.event_detail_source_filter.accessibleName(), "Event detail source filter")
             self.assertEqual(window.event_detail_grid.count(), 1)
             self.assertIn("Tags: Family", window.event_detail_summary.text())
             window.event_detail_grid.item(0).setSelected(True)

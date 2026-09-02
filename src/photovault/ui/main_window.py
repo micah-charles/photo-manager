@@ -2150,7 +2150,7 @@ if QT_AVAILABLE:
                 self.events_result.setText(f"Event deletion failed: {type(exc).__name__}: {exc}")
 
         def _refresh_events(self) -> None:
-            from photovault.catalog.organization import list_events, list_places
+            from photovault.catalog.organization import list_events, list_places, list_sources
 
             events = list_events(self.connection)
             self._fill_table(
@@ -2241,7 +2241,7 @@ if QT_AVAILABLE:
             event_id = str(getattr(self, "_event_detail_id", "") or "")
             if not event_id or not hasattr(self, "event_detail_grid"):
                 return
-            from photovault.catalog.organization import list_events, list_places
+            from photovault.catalog.organization import list_events, list_places, list_sources
             from photovault.catalog.library import LibraryQuery, list_library_items
 
             event = next((item for item in list_events(self.connection) if item.id == event_id), None)
@@ -2274,7 +2274,20 @@ if QT_AVAILABLE:
                 f"People: {people_text}\nTags: {tags_text}\n"
                 f"Membership includes manual, date-range, and suggested items; originals are never changed."
             )
-            rows = list_library_items(self.connection, LibraryQuery(event_id=event_id, limit=200))
+            source_filter = self.event_detail_source_filter
+            previous_source = source_filter.currentData()
+            source_filter.blockSignals(True)
+            source_filter.clear()
+            source_filter.addItem("All sources", None)
+            for source in list_sources(self.connection):
+                source_filter.addItem(str(source["display_name"]), str(source["source_id"]))
+            restored_index = source_filter.findData(previous_source)
+            source_filter.setCurrentIndex(restored_index if restored_index >= 0 else 0)
+            source_filter.blockSignals(False)
+            rows = list_library_items(
+                self.connection,
+                LibraryQuery(event_id=event_id, source_id=str(source_filter.currentData() or ""), limit=200),
+            )
             self.event_detail_grid.clear()
             for row in rows:
                 item = QListWidgetItem(str(row["filename"]))
@@ -2286,7 +2299,8 @@ if QT_AVAILABLE:
                 self.event_detail_grid.addItem(item)
             if not rows:
                 self.event_detail_grid.addItem("No catalogued items in this event")
-            self.event_detail_result.setText(f"Showing {len(rows):,} event item(s). Select items to remove them from this Event.")
+            selected_source = source_filter.currentText() if source_filter.currentData() else "all sources"
+            self.event_detail_result.setText(f"Showing {len(rows):,} event item(s) from {selected_source}. Select items to remove them from this Event.")
 
         def _open_event_detail_in_library(self) -> None:
             event_id = str(getattr(self, "_event_detail_id", "") or "")
