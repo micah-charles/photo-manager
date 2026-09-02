@@ -454,6 +454,7 @@ if QT_AVAILABLE:
             self._android_transfer_started = 0.0
             self._android_transfer_checkpoint = 0.0
             self._android_transfer_checkpoint_bytes = 0
+            self._android_last_batch_id: str | None = None
             self._operation_thread: QThread | None = None
             self._operation_worker: OperationWorker | None = None
             self._operation_kind: str | None = None
@@ -1240,6 +1241,9 @@ if QT_AVAILABLE:
             self.android_device_card.setText("Android Companion\nConnected · latest backup completed successfully")
             self.android_view_photos_button.setEnabled(True)
             self.android_view_details_button.setEnabled(True)
+            self.android_create_event_button.setEnabled(bool(result.get("batch_id")))
+            self.android_review_button.setEnabled(bool(result.get("batch_id")))
+            self._android_last_batch_id = str(result.get("batch_id") or "") or None
             self.android_backup_summary.setText(
                 f"Imported {result['imported']:,} new files; {result['already_imported']:,} were already verified."
             )
@@ -1262,6 +1266,44 @@ if QT_AVAILABLE:
             self._refresh_android_backup_profiles()
             self.android_profile_history_label.setVisible(True)
             self.android_profile_history.setVisible(True)
+
+        def _batch_asset_ids(self, batch_id: str) -> list[str]:
+            rows = self.connection.execute(
+                """SELECT DISTINCT eh.asset_id
+                   FROM source_imports si JOIN exact_hashes eh ON eh.sha256=si.sha256
+                   WHERE si.batch_id=? ORDER BY eh.asset_id""",
+                (batch_id,),
+            ).fetchall()
+            return [str(row[0]) for row in rows]
+
+        def _create_event_from_android_batch(self) -> None:
+            batch_id = str(getattr(self, "_android_last_batch_id", "") or "")
+            if not batch_id:
+                self.android_backup_completion.setText("No completed import batch is available for Event creation.")
+                return
+            try:
+                from photovault.catalog.organization import add_assets_to_event, create_event
+
+                asset_ids = self._batch_asset_ids(batch_id)
+                if not asset_ids:
+                    raise ValueError("the latest batch contains no catalogued assets")
+                event_id = create_event(self.connection, "Android backup import", event_type="other")
+                added = add_assets_to_event(self.connection, event_id, asset_ids, membership_source="import")
+                self.android_backup_completion.setText(
+                    f"Created Event 'Android backup import' with {added:,} imported item(s). Original files were not changed."
+                )
+                self.refresh()
+            except Exception as exc:
+                self.android_backup_completion.setText(f"Could not create Event from import: {type(exc).__name__}: {exc}")
+
+        def _review_android_batch(self) -> None:
+            """Open the safe Review workflow after a completed Android import."""
+            self._select_page("Review")
+            if hasattr(self, "review_result"):
+                self.review_result.setText(
+                    "Review the latest Android import in Library. Review decisions update catalog metadata only."
+                )
+            self._open_review_queue("UNREVIEWED")
 
         def _android_transfer_cancelled(self, message: str) -> None:
             self.android_backup_status.setText("Backup cancelled")

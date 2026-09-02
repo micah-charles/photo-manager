@@ -54,6 +54,14 @@ def build_android_backup_page(owner: object, layout: object, tables: dict[str, Q
     owner.android_view_details_button.setEnabled(False)
     owner.android_view_details_button.clicked.connect(owner._view_android_backup_details)
     completion_actions.addWidget(owner.android_view_details_button)
+    owner.android_create_event_button = QPushButton("Create Event")
+    owner.android_create_event_button.setEnabled(False)
+    owner.android_create_event_button.clicked.connect(owner._create_event_from_android_batch)
+    completion_actions.addWidget(owner.android_create_event_button)
+    owner.android_review_button = QPushButton("Review Photos")
+    owner.android_review_button.setEnabled(False)
+    owner.android_review_button.clicked.connect(owner._review_android_batch)
+    completion_actions.addWidget(owner.android_review_button)
     layout.addLayout(completion_actions)
 
     from photovault.cli.main import _default_android_helper

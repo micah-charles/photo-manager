@@ -176,6 +176,8 @@ class UIFoundationTests(unittest.TestCase):
             self.assertIn("3 copied", window.android_backup_completion.text())
             self.assertTrue(window.android_view_photos_button.isEnabled())
             self.assertTrue(window.android_view_details_button.isEnabled())
+            self.assertFalse(window.android_create_event_button.isEnabled())
+            self.assertFalse(window.android_review_button.isEnabled())
             window._android_transfer_cancelled("user requested")
             self.assertIn("cancelled safely", window.android_backup_completion.text())
             window._android_transfer_failed("destination unavailable")
