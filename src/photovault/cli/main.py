@@ -156,6 +156,10 @@ def parser() -> argparse.ArgumentParser:
     import_folder.add_argument("destination_root", type=Path)
     import_folder.add_argument("--destination-volume", required=True)
     import_folder.add_argument("--helper", type=Path, default=_default_android_helper())
+    batches = android_sub.add_parser("import-batches", help="show recent verified Android import batches")
+    batches.add_argument("--source-id")
+    batches.add_argument("--destination-volume")
+    batches.add_argument("--limit", type=int, default=20)
     wifi = sub.add_parser("android-wifi", help="inspect the Android Companion Wi-Fi POC")
     wifi.add_argument("--url", required=True)
     wifi.add_argument("--token", required=True)
@@ -308,6 +312,21 @@ def _dispatch(args: argparse.Namespace, connection) -> int:
     if args.command == "android":
         from photovault.sources.android import AndroidMacMtpSource, AndroidSourceUnavailable, stream_test_folder
         from photovault.catalog.sources import record_source_items, register_source
+        if args.android_command == "import-batches":
+            from photovault.backup.source_import import list_import_batches
+
+            for row in list_import_batches(
+                connection,
+                source_id=args.source_id,
+                destination_volume_id=args.destination_volume,
+                limit=args.limit,
+            ):
+                print("BATCH\t" + "\t".join(str(row[key] if row[key] is not None else "") for key in (
+                    "id", "source_name", "destination_volume_name", "status", "started_at",
+                    "completed_at", "planned_items", "imported_items", "already_imported_items",
+                    "failed_items", "imported_bytes",
+                )))
+            return 0
 
         if args.android_command == "stream-test":
             import os
