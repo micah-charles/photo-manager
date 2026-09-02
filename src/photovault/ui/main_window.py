@@ -1709,8 +1709,10 @@ if QT_AVAILABLE:
                 )
                 rows = list_library_items(self.connection, query)
                 total = count_library_items(self.connection, query)
+                day_groups = len({str(row["display_captured"] or row["captured"] or "Undated")[:10] for row in rows})
                 self.library_result.setText(
                     f"Showing {offset + 1 if rows else 0}–{offset + len(rows)} of {total} catalogued location(s). "
+                    f"{day_groups:,} day group(s) on this page. "
                     "OFFLINE rows retain metadata and cached thumbnails; originals are not removed."
                 )
                 self.library_collection_result.setText(
@@ -2542,14 +2544,20 @@ if QT_AVAILABLE:
             self.library_preview.setText("Select a catalogued item to preview its cached thumbnail.")
             self.library_preview_details.setText("Original availability appears here.")
             for row in rows:
-                title = f"{'★ ' if row['is_favourite'] else ''}{row['filename']}\n{row['media_type']}"
+                display_time = row["display_captured"] or row["captured"]
+                time_label = str(display_time)[:16].replace("T", " ") if display_time else "Undated"
+                title = f"{'★ ' if row['is_favourite'] else ''}{row['filename']}\n{row['media_type']} · {time_label}"
                 item = QListWidgetItem(title)
                 thumbnail = str(row["thumbnail_path"] or "")
                 if thumbnail and Path(thumbnail).is_file():
                     item.setIcon(QIcon(thumbnail))
                 elif row["media_type"] == "VIDEO":
                     item.setText(title + "\n(video; no poster cached)")
-                item.setToolTip(f"{row['relative_path']}\n{row['volume_name']} ({row['volume_status']})")
+                item.setToolTip(
+                    f"{row['relative_path']}\n{row['volume_name']} ({row['volume_status']})\n"
+                    f"Capture: {row['captured'] or 'unknown'}\n"
+                    f"Display: {row['display_captured'] or 'unknown'}"
+                )
                 details = {
                     "asset_id": row["asset_id"], "filename": row["filename"],
                     "relative_path": row["relative_path"], "volume_name": row["volume_name"],
