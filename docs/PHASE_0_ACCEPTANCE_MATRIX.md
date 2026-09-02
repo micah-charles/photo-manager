@@ -26,7 +26,7 @@ source changes tracked on the same branch).
 | Visual review deliverables | `scripts/capture_ui_review.py`, 16 external screenshots, and source/package artifacts | Verified locally |
 
 The current local verification total is 114/114 tests. The latest deterministic
-Qt capture contains 16 pages. The corresponding external-drive delivery files are
+Qt capture contains 18 pages, including Event Detail and Settings. The corresponding external-drive delivery files are
 `/Volumes/ExtremePro/PhotoVault-UI-Review-20260901/photovault-source-50de0da.zip`
 and
 `/Volumes/ExtremePro/PhotoVault-UI-Review-20260901/photovault-ui-review-50de0da.zip`.

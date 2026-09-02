@@ -58,7 +58,8 @@ Ran 114 tests
 OK
 ```
 
-The deterministic Qt capture harness covers 16 pages. The existing screenshots
+The deterministic Qt capture harness covers 18 pages, including Event Detail and
+Settings. The existing screenshots
 are stored outside the repository at:
 
 `/Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA/screenshots`
