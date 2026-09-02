@@ -329,6 +329,13 @@ class UIFoundationTests(unittest.TestCase):
             self.assertEqual(window.import_mode.itemData(0), "catalog")
             self.assertEqual(window.import_mode.itemData(1), "managed")
             self.assertTrue(window.import_folder_path.accessibleName())
+            source = Path(temp) / "source"
+            source.mkdir()
+            (source / "sample.jpg").write_bytes(b"test image")
+            (source / "sample.mp4").write_bytes(b"test video")
+            window.import_folder_path.setText(str(source))
+            window._preview_import_folder()
+            self.assertIn("1 images, 1 videos", window.import_result.text())
             window.close()
             connection.close()
 
