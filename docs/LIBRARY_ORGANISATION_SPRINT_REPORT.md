@@ -42,6 +42,8 @@ The desktop UI currently exposes:
 - Visual duplicate analysis controls are kept in Settings; the normal duplicate
   page is an advisory review entry point and never presents algorithm details as
   a destructive action.
+- Android transfer worker count is now an advanced transfer setting; the normal
+  setup focuses on source folders, media type, destination, and verified backup.
 
 All organisation actions are catalog-only. They do not move, rename, delete, or
 rewrite original media. Existing verified import and backup safety boundaries are

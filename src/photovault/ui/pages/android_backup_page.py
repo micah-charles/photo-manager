@@ -108,7 +108,6 @@ def build_android_backup_page(owner: object, layout: object, tables: dict[str, Q
     owner.android_transfer_media_filter.addItem("Images only", "IMAGE")
     owner.android_transfer_media_filter.addItem("Videos only", "VIDEO")
     owner.android_transfer_destination = QLineEdit()
-    owner.android_transfer_workers = QLineEdit("5")
     transfer_layout.addWidget(QLabel("Phone folders"))
     owner.android_folder_selector = QListWidget()
     owner.android_folder_selector.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
@@ -125,8 +124,18 @@ def build_android_backup_page(owner: object, layout: object, tables: dict[str, Q
     owner.android_destination_browse.clicked.connect(owner._choose_android_destination)
     destination_row.addWidget(owner.android_destination_browse)
     transfer_form.addRow("Destination directory", destination_row)
-    transfer_form.addRow("Concurrent workers", owner.android_transfer_workers)
     transfer_layout.addLayout(transfer_form)
+
+    transfer_advanced_toggle = QCheckBox("Show advanced transfer settings")
+    transfer_advanced_body = QWidget()
+    transfer_advanced_body.setVisible(False)
+    transfer_advanced_form = QFormLayout(transfer_advanced_body)
+    owner.android_transfer_workers = QLineEdit("5")
+    transfer_advanced_form.addRow("Concurrent workers", owner.android_transfer_workers)
+    transfer_advanced_toggle.toggled.connect(transfer_advanced_body.setVisible)
+    transfer_layout.addWidget(transfer_advanced_toggle)
+    transfer_layout.addWidget(transfer_advanced_body)
+    owner.android_transfer_advanced_body = transfer_advanced_body
 
     profile_actions = QHBoxLayout()
     owner.android_saved_profile = QComboBox()
