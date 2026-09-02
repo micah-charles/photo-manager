@@ -9,17 +9,22 @@ def list_timeline(
     limit: int = 100,
     source_id: str | None = None,
     offset: int = 0,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ):
     if limit < 1:
         raise ValueError("limit must be positive")
     if offset < 0:
         raise ValueError("offset must not be negative")
+    display_expression = (
+        "datetime(COALESCE(mm.capture_datetime, al.capture_date), "
+        "printf('%+d seconds', COALESCE(sp.time_offset_seconds, 0)))"
+    )
     query = (
         "SELECT al.asset_id, al.filename, al.relative_path, al.volume_id, "
         "COALESCE(mm.capture_datetime, al.capture_date) AS captured, "
         "CASE WHEN COALESCE(mm.capture_datetime, al.capture_date) IS NOT NULL "
-        "THEN datetime(COALESCE(mm.capture_datetime, al.capture_date), "
-        "printf('%+d seconds', COALESCE(sp.time_offset_seconds, 0))) "
+        f"THEN {display_expression} "
         "ELSE NULL END AS display_captured, "
         "mm.camera_make, mm.camera_model, mm.width, mm.height, gm.latitude, gm.longitude, "
         "sp.display_name AS source_name, th.path "
@@ -36,6 +41,12 @@ def list_timeline(
     if source_id:
         query += " AND al.source_id=?"
         params.append(source_id)
+    if start_date:
+        query += f" AND date({display_expression}) >= date(?)"
+        params.append(start_date)
+    if end_date:
+        query += f" AND date({display_expression}) <= date(?)"
+        params.append(end_date)
     query += " ORDER BY display_captured IS NULL, display_captured DESC, al.relative_path LIMIT ? OFFSET ?"
     params.extend((limit, offset))
     return connection.execute(query, params).fetchall()

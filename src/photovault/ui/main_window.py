@@ -1787,7 +1787,12 @@ if QT_AVAILABLE:
                 source_id = source_filter.currentData()
             page_size = int(self.timeline_page_size.currentData()) if hasattr(self, "timeline_page_size") else 500
             offset = int(getattr(self, "_timeline_offset", 0))
-            rows = list_timeline(self.connection, limit=page_size, source_id=source_id, offset=offset)
+            start_date = self.timeline_start_date.text().strip() or None if hasattr(self, "timeline_start_date") else None
+            end_date = self.timeline_end_date.text().strip() or None if hasattr(self, "timeline_end_date") else None
+            rows = list_timeline(
+                self.connection, limit=page_size, source_id=source_id, offset=offset,
+                start_date=start_date, end_date=end_date,
+            )
             grouped = []
             for row in rows:
                 day = str(row[5] or row[4] or "Undated")[:10]

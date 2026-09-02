@@ -83,6 +83,8 @@ class UIFoundationTests(unittest.TestCase):
             self.assertTrue(window.library_category_filter.toolTip())
             window._select_page("Timeline")
             self.assertEqual(window.timeline_source_filter.accessibleName(), "Timeline source filter")
+            self.assertEqual(window.timeline_start_date.accessibleName(), "Timeline start date")
+            self.assertEqual(window.timeline_end_date.accessibleName(), "Timeline end date")
             window.close()
             connection.close()
 

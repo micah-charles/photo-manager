@@ -1,7 +1,7 @@
 """Timeline page construction."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QLabel, QPushButton, QTableWidget
+from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTableWidget
 
 
 def build_timeline_page(owner: object, layout: object, tables: dict[str, QTableWidget]) -> None:
@@ -12,6 +12,14 @@ def build_timeline_page(owner: object, layout: object, tables: dict[str, QTableW
     owner.timeline_source_filter.currentIndexChanged.connect(owner._reset_timeline_page)
     controls.addWidget(QLabel("Source"))
     controls.addWidget(owner.timeline_source_filter, 1)
+    owner.timeline_start_date = QLineEdit()
+    owner.timeline_start_date.setAccessibleName("Timeline start date")
+    owner.timeline_start_date.setPlaceholderText("From YYYY-MM-DD")
+    controls.addWidget(owner.timeline_start_date)
+    owner.timeline_end_date = QLineEdit()
+    owner.timeline_end_date.setAccessibleName("Timeline end date")
+    owner.timeline_end_date.setPlaceholderText("To YYYY-MM-DD")
+    controls.addWidget(owner.timeline_end_date)
     button = QPushButton("Refresh timeline")
     button.clicked.connect(owner._refresh_timeline)
     controls.addWidget(button)

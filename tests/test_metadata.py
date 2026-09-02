@@ -79,6 +79,8 @@ class MetadataTests(unittest.TestCase):
             self.assertEqual(timeline[0][1], "photo.jpg")
             self.assertEqual(timeline[0][4], "2024-01-02T03:04:05")
             self.assertEqual(list_timeline(db, volume_id, 1, offset=1), [])
+            self.assertEqual(len(list_timeline(db, volume_id, 10, start_date="2024-01-02", end_date="2024-01-02")), 1)
+            self.assertEqual(len(list_timeline(db, volume_id, 10, start_date="2024-01-03")), 0)
             gallery = write_gallery(db, Path(temp) / "gallery" / "index.html", volume_id)
             self.assertTrue(gallery.exists())
             gallery_html = gallery.read_text(encoding="utf-8")
