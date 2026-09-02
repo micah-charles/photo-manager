@@ -277,6 +277,25 @@ class UIFoundationTests(unittest.TestCase):
             window.close()
             connection.close()
 
+    def test_category_engineering_controls_live_in_settings(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication, QLineEdit, QSpinBox
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            categories_page = window.pages.widget(NAVIGATION_ITEMS.index("Categories"))
+            settings_page = window.pages.widget(NAVIGATION_ITEMS.index("Settings"))
+            self.assertEqual(categories_page.findChildren(QLineEdit), [])
+            self.assertGreaterEqual(len(settings_page.findChildren(QLineEdit)), 2)
+            self.assertGreaterEqual(len(settings_page.findChildren(QSpinBox)), 2)
+            window.close()
+            connection.close()
+
     def test_collections_double_click_opens_library_for_empty_album(self) -> None:
         from photovault.ui import main_window
 

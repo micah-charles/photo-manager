@@ -1,7 +1,7 @@
 """Categories/AI analysis page construction."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QAbstractItemView, QCheckBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QProgressBar, QTableWidget, QWidget
+from PySide6.QtWidgets import QAbstractItemView, QHBoxLayout, QLabel, QPushButton, QTableWidget
 
 from ..components import PhotoGrid
 
@@ -12,37 +12,11 @@ def build_categories_page(owner: object, layout: object, tables: dict[str, QTabl
     )
     owner.categories_result.setWordWrap(True)
     layout.addWidget(owner.categories_result)
-    advanced_toggle = QCheckBox("Show advanced category analysis settings")
-    layout.addWidget(advanced_toggle)
-    advanced_body = QWidget()
-    advanced_body.setVisible(False)
-    analysis_form = QFormLayout(advanced_body)
-    owner.category_model_path = QLineEdit()
-    owner.category_model_path.setPlaceholderText("Path to local ONNX model (stored outside Git)")
-    owner.category_labels_path = QLineEdit()
-    owner.category_labels_path.setPlaceholderText("Path to matching labels.txt")
-    owner.category_limit = QLineEdit("0")
-    owner.category_top_k = QLineEdit("5")
-    analysis_form.addRow("ONNX model", owner.category_model_path)
-    analysis_form.addRow("Labels", owner.category_labels_path)
-    analysis_form.addRow("Limit (0 = all)", owner.category_limit)
-    analysis_form.addRow("Top labels", owner.category_top_k)
-    advanced_toggle.toggled.connect(advanced_body.setVisible)
-    layout.addWidget(advanced_body)
     analysis_actions = QHBoxLayout()
-    owner.category_start_button = QPushButton("Run local category analysis")
-    owner.category_start_button.clicked.connect(owner._start_category_analysis)
-    analysis_actions.addWidget(owner.category_start_button)
-    owner.category_cancel_button = QPushButton("Cancel analysis")
-    owner.category_cancel_button.setEnabled(False)
-    owner.category_cancel_button.clicked.connect(owner._cancel_category_analysis)
-    analysis_actions.addWidget(owner.category_cancel_button)
+    settings_button = QPushButton("Configure analysis in Settings")
+    settings_button.clicked.connect(lambda: owner._select_page("Settings"))
+    analysis_actions.addWidget(settings_button)
     layout.addLayout(analysis_actions)
-    owner.category_progress = QProgressBar()
-    owner.category_progress.setRange(0, 100)
-    owner.category_progress.setValue(0)
-    owner.category_progress.setFormat("Ready")
-    layout.addWidget(owner.category_progress)
     actions = QHBoxLayout()
     refresh_button = QPushButton("Refresh categories")
     refresh_button.clicked.connect(owner._refresh_categories)
