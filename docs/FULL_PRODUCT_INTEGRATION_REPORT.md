@@ -64,7 +64,7 @@ move or a change to verification truth.
 | Favourites | **COMPLETE — catalog + basic UI** | Migration 12 stores non-destructive favourites and notes; Favourites page lists/edits them and safely imports matched legacy gallery JSON entries. Visual star controls remain next. |
 | Places | **PARTIAL — manual + clustering UI** | Offline GPS clustering and manual place creation/assignment/editing work; clustering radius is configured in Settings, while reverse-geocoding cache remains next. |
 | Visual duplicates | **COMPLETE — catalog service / basic review UI** | dHash/pHash + BK-tree candidate grouping works; normal page is review-focused and analysis controls live under Settings. |
-| Faces / people | **PARTIAL — manual + imported groups** | Person-group persistence, macOS Vision JSON import/browse, manual Person CRUD, and catalog-only assignment are available; Windows ONNX face backend remains next. |
+| Faces / people | **PARTIAL — manual + imported groups** | Person-group persistence, macOS Vision JSON import/browse, manual Person CRUD, and catalog-only assignment are available; import configuration is under Settings and Windows ONNX face backend remains next. |
 | Semantic classification/search | **IN PROGRESS** | ONNX embedding index/search exists; labels, generated collections and UI search need integration. |
 | Catalog backup / recovery | **PARTIAL** | `catalog-backup` uses SQLite online backup API and verifies its new output; `catalog-check` is read-only. Explicit restore UI remains outstanding. |
 | macOS/Windows packaging | **PARTIAL** | macOS arm64 package and smoke test pass; Windows packaging/runtime/removable-drive validation remains outstanding. |
