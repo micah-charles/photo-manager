@@ -62,7 +62,7 @@ move or a change to verification truth.
 | Thumbnails | **COMPLETE — catalog + basic UI** | Existing thumbnail generation, cached previews, Library grid, selection and viewer routing are available; richer video preview remains future work. |
 | Browse and preview | **COMPLETE — basic catalog UI** | Library provides catalog-backed filters, sorting, pagination, selection, cached preview and viewer routing; Events also has a contextual detail view with thumbnails and catalog-only membership removal. |
 | Favourites | **COMPLETE — catalog + basic UI** | Migration 12 stores non-destructive favourites and notes; Favourites page lists/edits them and safely imports matched legacy gallery JSON entries. Visual star controls remain next. |
-| Places | **PARTIAL — manual + clustering UI** | Offline GPS clustering and manual place creation/assignment/editing work; reverse-geocoding cache remains next. |
+| Places | **PARTIAL — manual + clustering UI** | Offline GPS clustering and manual place creation/assignment/editing work; clustering radius is configured in Settings, while reverse-geocoding cache remains next. |
 | Visual duplicates | **COMPLETE — catalog service / basic review UI** | dHash/pHash + BK-tree candidate grouping works; normal page is review-focused and analysis controls live under Settings. |
 | Faces / people | **PARTIAL — manual + imported groups** | Person-group persistence, macOS Vision JSON import/browse, manual Person CRUD, and catalog-only assignment are available; Windows ONNX face backend remains next. |
 | Semantic classification/search | **IN PROGRESS** | ONNX embedding index/search exists; labels, generated collections and UI search need integration. |

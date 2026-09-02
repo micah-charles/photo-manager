@@ -1,21 +1,15 @@
 """Places page construction for offline-safe GPS browsing."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QCheckBox, QLabel, QListWidget, QLineEdit, QFormLayout, QPushButton, QTableWidget, QWidget
+from PySide6.QtWidgets import QLabel, QListWidget, QLineEdit, QFormLayout, QPushButton, QTableWidget
 
 from ..components import configure_tile_grid
 
 
 def build_places_page(owner: object, layout: object, tables: dict[str, QTableWidget]) -> None:
-    advanced_toggle = QCheckBox("Show advanced place clustering settings")
-    layout.addWidget(advanced_toggle)
-    advanced_body = QWidget()
-    advanced_body.setVisible(False)
-    form = QFormLayout(advanced_body)
-    radius = QLineEdit("100")
-    form.addRow("Cluster radius (m)", radius)
-    advanced_toggle.toggled.connect(advanced_body.setVisible)
-    layout.addWidget(advanced_body)
+    settings_hint = QLabel("GPS grouping uses the radius configured in Settings → Places. Manual places can be created below.")
+    settings_hint.setWordWrap(True)
+    layout.addWidget(settings_hint)
     manual_form = QFormLayout()
     owner.place_name = QLineEdit()
     owner.place_name.setPlaceholderText("e.g. Edinburgh")
@@ -37,7 +31,7 @@ def build_places_page(owner: object, layout: object, tables: dict[str, QTableWid
     update_place_button.clicked.connect(owner._update_manual_place)
     layout.addWidget(update_place_button)
     button = QPushButton("Cluster GPS places")
-    button.clicked.connect(lambda _checked=False, r=radius: owner._places(r))
+    button.clicked.connect(lambda: owner._places(owner.place_cluster_radius))
     layout.addWidget(button)
     result = QLabel("No network geocoder is used by default.")
     result.setWordWrap(True)
