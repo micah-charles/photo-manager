@@ -365,22 +365,23 @@ if QT_AVAILABLE:
         completed = Signal(object)
         failed = Signal(str)
 
-        def __init__(self, catalog_path: Path, *, destination: Path | None = None):
+        def __init__(self, catalog_path: Path, *, destination: Path | None = None, source_path: Path | None = None):
             super().__init__()
             self.catalog_path = catalog_path
             self.destination = destination
+            self.source_path = source_path
 
         @Slot()
         def run(self) -> None:
             try:
-                from photovault.catalog.recovery import backup_catalog, check_catalog_integrity
+                from photovault.catalog.recovery import backup_catalog, check_catalog_integrity, restore_catalog
 
                 if self.destination is None:
                     self.completed.emit({"kind": "check", "integrity": check_catalog_integrity(self.catalog_path)})
                 else:
-                    result = backup_catalog(self.catalog_path, self.destination)
+                    result = restore_catalog(self.source_path, self.destination) if self.source_path is not None else backup_catalog(self.catalog_path, self.destination)
                     self.completed.emit({
-                        "kind": "backup", "destination": str(result.destination),
+                        "kind": "backup" if self.source_path is None else "restore", "destination": str(result.destination),
                         "bytes_written": result.bytes_written, "integrity": result.integrity,
                     })
             except Exception as exc:
@@ -670,6 +671,28 @@ if QT_AVAILABLE:
                 backup_button = QPushButton("Create verified catalog backup")
                 backup_button.clicked.connect(self._backup_catalog)
                 layout.addWidget(backup_button)
+                restore_form = QFormLayout()
+                self.catalog_restore_source = QLineEdit()
+                self.catalog_restore_source.setPlaceholderText("Existing verified backup catalog on the external drive")
+                restore_source_row = QHBoxLayout()
+                restore_source_row.addWidget(self.catalog_restore_source, 1)
+                restore_source_browse = QPushButton("Browse…")
+                restore_source_browse.clicked.connect(self._choose_catalog_restore_source)
+                restore_source_row.addWidget(restore_source_browse)
+                restore_form.addRow("Restore from backup", restore_source_row)
+                self.catalog_restore_destination = QLineEdit()
+                self.catalog_restore_destination.setPlaceholderText("New working catalog filename (must not already exist)")
+                restore_destination_row = QHBoxLayout()
+                restore_destination_row.addWidget(self.catalog_restore_destination, 1)
+                restore_destination_browse = QPushButton("Browse…")
+                restore_destination_browse.clicked.connect(self._choose_catalog_restore_destination)
+                restore_destination_row.addWidget(restore_destination_browse)
+                restore_form.addRow("New working catalog", restore_destination_row)
+                layout.addLayout(restore_form)
+                restore_button = QPushButton("Restore to new working catalog")
+                restore_button.setToolTip("Creates a verified new catalog; never overwrites the active catalog or the backup.")
+                restore_button.clicked.connect(self._restore_catalog)
+                layout.addWidget(restore_button)
                 self.catalog_recovery_result = QLabel(
                     "Catalog backup uses SQLite's online backup API. It must be a new file; no existing backup or live catalog is overwritten."
                 )
@@ -1025,14 +1048,14 @@ if QT_AVAILABLE:
                 self.android_transfer_cancel_button.setEnabled(False)
                 self.android_transfer_result.setText("Cancellation requested; active network chunks will stop safely.")
 
-        def _start_catalog_recovery(self, destination: Path | None) -> None:
+        def _start_catalog_recovery(self, destination: Path | None, *, source_path: Path | None = None) -> None:
             if self._catalog_path is None:
                 self.catalog_recovery_result.setText("A file-backed catalog is required for recovery actions.")
                 return
             if self._catalog_recovery_thread is not None and self._catalog_recovery_thread.isRunning():
                 return
             self._catalog_recovery_thread = QThread(self)
-            self._catalog_recovery_worker = CatalogRecoveryWorker(self._catalog_path, destination=destination)
+            self._catalog_recovery_worker = CatalogRecoveryWorker(self._catalog_path, destination=destination, source_path=source_path)
             self._catalog_recovery_worker.moveToThread(self._catalog_recovery_thread)
             self._catalog_recovery_thread.started.connect(self._catalog_recovery_worker.run)
             self._catalog_recovery_worker.completed.connect(self._catalog_recovery_completed)
@@ -1058,9 +1081,38 @@ if QT_AVAILABLE:
             self.catalog_recovery_result.setText("Creating a consistent catalog backup in background…")
             self._start_catalog_recovery(destination)
 
+        def _choose_catalog_restore_source(self) -> None:
+            selected, _ = QFileDialog.getOpenFileName(self, "Choose catalog backup", str(Path.home()), "SQLite catalogs (*.db *.sqlite);;All files (*)")
+            if selected:
+                self.catalog_restore_source.setText(selected)
+
+        def _choose_catalog_restore_destination(self) -> None:
+            selected, _ = QFileDialog.getSaveFileName(self, "Choose new working catalog", str(Path.home() / "photovault-restored.db"), "SQLite catalogs (*.db *.sqlite);;All files (*)")
+            if selected:
+                self.catalog_restore_destination.setText(selected)
+
+        def _restore_catalog(self) -> None:
+            source_text = self.catalog_restore_source.text().strip()
+            destination_text = self.catalog_restore_destination.text().strip()
+            if not source_text or not destination_text:
+                self.catalog_recovery_result.setText("Choose an existing backup and a new working catalog filename first.")
+                return
+            source = Path(source_text).expanduser()
+            destination = Path(destination_text).expanduser()
+            if source == destination:
+                self.catalog_recovery_result.setText("Restore destination must be a different new file.")
+                return
+            self.catalog_recovery_result.setText("Restoring a verified working catalog in background; the active catalog remains untouched…")
+            self._start_catalog_recovery(destination, source_path=source)
+
         def _catalog_recovery_completed(self, result: object) -> None:
             if result["kind"] == "check":
                 self.catalog_recovery_result.setText(f"Catalog integrity: {', '.join(result['integrity'])}.")
+            elif result["kind"] == "restore":
+                self.catalog_recovery_result.setText(
+                    f"Verified working catalog restored: {result['destination']} "
+                    f"({self._human_bytes(result['bytes_written'])}); integrity: {', '.join(result['integrity'])}."
+                )
             else:
                 self.catalog_recovery_result.setText(
                     f"Verified catalog backup created: {result['destination']} "

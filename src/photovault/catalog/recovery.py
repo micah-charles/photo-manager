@@ -53,3 +53,8 @@ def backup_catalog(catalog_path: Path, destination_path: Path) -> CatalogBackupR
     if integrity != ("ok",):
         raise RuntimeError(f"catalog backup integrity check failed: {integrity}")
     return CatalogBackupResult(source_path, destination, destination.stat().st_size, integrity)
+
+
+def restore_catalog(backup_path: Path, destination_path: Path) -> CatalogBackupResult:
+    """Create a verified working catalog from a backup without overwriting either file."""
+    return backup_catalog(backup_path, destination_path)

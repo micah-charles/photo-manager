@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from photovault.catalog.recovery import backup_catalog, check_catalog_integrity
+from photovault.catalog.recovery import backup_catalog, check_catalog_integrity, restore_catalog
 from photovault.database.connection import connect
 
 
@@ -27,6 +27,10 @@ class CatalogRecoveryTests(unittest.TestCase):
             restored = connect(destination)
             self.assertEqual(restored.execute("SELECT COUNT(*) FROM volumes").fetchone()[0], 1)
             restored.close()
+            restored_copy = root / "catalog-restored.db"
+            result = restore_catalog(destination, restored_copy)
+            self.assertEqual(result.integrity, ("ok",))
+            self.assertEqual(check_catalog_integrity(restored_copy), ("ok",))
             with self.assertRaises(FileExistsError):
                 backup_catalog(catalog, destination)
             connection.close()
