@@ -69,7 +69,7 @@ move or a change to verification truth.
 | Faces / people | **PARTIAL — manual + imported groups** | Person-group persistence, macOS Vision JSON import/browse, manual Person CRUD, and catalog-only assignment are available; import configuration is under Settings and Windows ONNX face backend remains next. |
 | Semantic classification/search | **IN PROGRESS** | ONNX embedding index/search exists; labels, generated collections and UI search need integration. |
 | Catalog backup / recovery | **COMPLETE — safe working-copy restore** | `catalog-backup` and `restore_catalog` use SQLite online backup API and verify new outputs; the UI restores to a new working catalog and never overwrites the active catalog or source backup. |
-| macOS/Windows packaging | **PARTIAL** | macOS arm64 package and smoke test pass; Windows packaging/runtime/removable-drive validation remains outstanding. |
+| macOS/Windows packaging | **PARTIAL** | macOS arm64 package and smoke test pass; a prior Windows run reached the test job but failed on temporary SQLite file locks, and current-branch Windows packaging/runtime/removable-drive validation remains outstanding. |
 
 ## Legacy migration matrix
 

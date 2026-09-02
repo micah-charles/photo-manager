@@ -23,7 +23,7 @@ source changes tracked on the same branch).
 | Storage and backup health | Live drive cards, backup-set health summary, advanced technical tables | Verified locally |
 | Responsiveness | Scan, Android, transfer, thumbnails, classification, recovery and operations use worker/thread paths | Verified by code and UI tests |
 | macOS packaging | `scripts/build_app.py --clean`, arm64 `dist/PhotoVault.app`, bundled `--help` smoke test | Verified locally |
-| Windows packaging | Cross-platform provider, CI matrix, Windows package smoke test and artifact upload are defined | Awaiting Windows runner result |
+| Windows packaging | Cross-platform provider, CI matrix, Windows package smoke test and artifact upload are defined | External run observed failing on older remote commit; current branch still requires a fresh Windows run |
 | Visual review deliverables | `scripts/capture_ui_review.py`, 20 external screenshots, and source/package artifacts | Verified locally |
 
 The current local verification total is 121/121 tests. The latest deterministic
@@ -34,8 +34,11 @@ and
 
 ## Remaining gates
 
-1. Run the GitHub Actions Windows job and inspect the uploaded executable on a
-   real Windows host.
+1. Run the GitHub Actions Windows job from the current branch and inspect the
+   uploaded executable on a real Windows host. The last observed remote run
+   (`33186919958`, commit `962fd0c`) failed 35 tests with the same Windows
+   `WinError 32` temporary SQLite cleanup/connection-lifetime error; it did not
+   validate the current branch.
 2. Connect the Pixel Companion and capture connected, active-transfer,
    cancellation, and completion UI states against a live transfer.
 3. Replace remaining incremental/card-polish work only after those runtime

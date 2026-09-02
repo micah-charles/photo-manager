@@ -81,6 +81,10 @@ The current macOS release smoke check also passes:
 - the bundle contains the native macOS Android MTP helper;
 - the Windows packaging path remains platform-neutral in Python, but requires
   an actual Windows runner for final executable and removable-drive validation.
+  The last observed remote run (`33186919958`, older commit `962fd0c`) reached
+  the Windows test job but failed 35 tests with repeated `WinError 32` errors
+  while temporary SQLite catalogs were cleaned up; the current branch still
+  needs a fresh runner result.
 
 The user-facing Import page now supports mounted folder/camera-card preview and
 explicit Catalog in Place versus reviewed Managed Copy routing. Event default
