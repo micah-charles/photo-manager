@@ -57,6 +57,7 @@ move or a change to verification truth.
 | USB MTP | **BLOCKED / experimental** | Discovery, inventory and short PTP/MTP operations work; sustained reads fail in macOS IOUSBHost/libusb. It remains an explicitly labelled macOS fallback, never the default. |
 | Cross-platform destination identity | **COMPLETE** | Wi-Fi copy no longer requires `/Volumes`; `register_volume()` selects macOS/Windows platform volume providers. |
 | Verified transfer UI | **PARTIAL — live gate pending** | PySide6 Android page has Companion URL/token, folder totals, destination, all/image/video filter, advanced worker setting, cancel, resume, SHA-256 transfer, live telemetry and durable import-batch history. Needs unlocked live runtime validation. |
+| General folder import | **COMPLETE — catalog-in-place entry point** | Import page previews mounted folder image/video counts and routes explicitly to Catalog in Place or reviewed Managed Copy; source files are never modified by the catalog path. |
 | Resume | **COMPLETE — core** | Range-capable source rehashes a retained partial then resumes; mismatch removes partial; interruption keeps it. |
 | Incremental backup profiles | **COMPLETE — core/UI** | Migration 11 persists source/folder/filter/destination-volume profiles and completed/cancelled/failed snapshots; Android Devices includes profile picker, load/continue actions, and history. |
 | Thumbnails | **COMPLETE — catalog + basic UI** | Existing thumbnail generation, cached previews, Library grid, selection and viewer routing are available; richer video preview remains future work. |
@@ -88,6 +89,7 @@ move or a change to verification truth.
 ```text
 Dashboard
 Library
+Import
 Review
 Events
 Tags

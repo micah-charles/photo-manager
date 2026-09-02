@@ -58,11 +58,11 @@ are documented in `docs/LIBRARY_ORGANISATION_ARCHITECTURE.md`.
 PYTHONUNBUFFERED=1 PYTHONWARNINGS=ignore QT_QPA_PLATFORM=offscreen \
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 
-Ran 116 tests
+Ran 117 tests
 OK
 ```
 
-The deterministic Qt capture harness covers 18 pages, including Event Detail and
+The deterministic Qt capture harness covers 19 pages, including Import, Event Detail and
 Settings. The existing screenshots
 are stored outside the repository at:
 
