@@ -45,6 +45,9 @@ All organisation actions are catalog-only. They do not move, rename, delete, or
 rewrite original media. Existing verified import and backup safety boundaries are
 unchanged.
 
+The full entity model, provenance rules, and physical-versus-logical boundary
+are documented in `docs/LIBRARY_ORGANISATION_ARCHITECTURE.md`.
+
 ## Verification evidence
 
 ```text
