@@ -84,8 +84,8 @@ def _where_for_query(query: LibraryQuery) -> tuple[list[str], list[object]]:
         where.append("EXISTS (SELECT 1 FROM asset_tags at WHERE at.asset_id=al.asset_id AND at.tag_id=? )")
         params.append(query.tag_id)
     if query.place_id:
-        where.append("EXISTS (SELECT 1 FROM asset_places ap WHERE ap.asset_id=al.asset_id AND ap.place_id=? )")
-        params.append(query.place_id)
+        where.append("(EXISTS (SELECT 1 FROM asset_places ap WHERE ap.asset_id=al.asset_id AND ap.place_id=? ) OR EXISTS (SELECT 1 FROM event_assets ea JOIN events e ON e.id=ea.event_id WHERE ea.asset_id=al.asset_id AND e.default_place_id=?))")
+        params.extend((query.place_id, query.place_id))
     if query.person_id:
         where.append("EXISTS (SELECT 1 FROM person_members pm WHERE pm.asset_id=al.asset_id AND pm.person_id=? )")
         params.append(query.person_id)
@@ -143,6 +143,10 @@ def list_library_items(connection: sqlite3.Connection, query: LibraryQuery = Lib
                 JOIN tags t ON t.id=at.tag_id WHERE at.asset_id=al.asset_id) AS tag_names,
                (SELECT group_concat(p.name, ', ') FROM asset_places ap
                 JOIN places p ON p.id=ap.place_id WHERE ap.asset_id=al.asset_id) AS place_names
+               ,(SELECT group_concat(p.name, ', ') FROM event_assets ea
+                 JOIN events e ON e.id=ea.event_id JOIN places p ON p.id=e.default_place_id
+                 WHERE ea.asset_id=al.asset_id
+                   AND NOT EXISTS (SELECT 1 FROM asset_places ap2 WHERE ap2.asset_id=al.asset_id)) AS inherited_place_names
                ,(SELECT group_concat(COALESCE(p.display_name, p.external_key), ', ') FROM person_members pm
                  JOIN people p ON p.id=pm.person_id WHERE pm.asset_id=al.asset_id) AS person_names
         FROM asset_locations al

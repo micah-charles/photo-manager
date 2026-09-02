@@ -6,7 +6,7 @@ from pathlib import Path
 
 from photovault.catalog.favourites import set_favourite
 from photovault.catalog.library import LibraryQuery, count_library_items, list_library_items
-from photovault.catalog.organization import add_assets_to_event, assign_tags, create_event, create_tag, set_asset_source, set_review
+from photovault.catalog.organization import add_assets_to_event, assign_tags, create_event, create_place, create_tag, set_asset_source, set_review
 from photovault.catalog.scanner import register_volume, scan_volume
 from photovault.database.connection import connect
 from photovault.platform.base import VolumeIdentity
@@ -64,6 +64,23 @@ class LibraryTests(unittest.TestCase):
             self.assertEqual(list_library_items(connection, LibraryQuery(tag_id=tag_id, include_rejected=True))[0]["filename"], "phone.jpg")
             self.assertEqual(list_library_items(connection, LibraryQuery(review_status="REJECTED", include_rejected=True))[0]["filename"], "phone.jpg")
             self.assertEqual(count_library_items(connection, LibraryQuery(review_status="REJECTED", include_rejected=True)), 1)
+            connection.close()
+
+    def test_event_default_place_is_explicitly_inherited_without_overwriting_asset_place(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "media"; root.mkdir()
+            (root / "photo.jpg").write_bytes(b"photo")
+            connection = connect(Path(directory) / "catalog.db")
+            volume_id = register_volume(connection, root, FixedProvider())
+            scan_volume(connection, volume_id, root)
+            asset_id = connection.execute("SELECT asset_id FROM asset_locations LIMIT 1").fetchone()[0]
+            place_id = create_place(connection, "Edinburgh")
+            event_id = create_event(connection, "Scotland trip", default_place_id=place_id)
+            add_assets_to_event(connection, event_id, [asset_id])
+            rows = list_library_items(connection, LibraryQuery(event_id=event_id, include_rejected=True))
+            self.assertEqual(rows[0]["inherited_place_names"], "Edinburgh")
+            self.assertIsNone(rows[0]["place_names"])
+            self.assertEqual(count_library_items(connection, LibraryQuery(place_id=place_id, include_rejected=True)), 1)
             connection.close()
 
     def test_recently_added_uses_catalog_time_not_capture_time(self) -> None:

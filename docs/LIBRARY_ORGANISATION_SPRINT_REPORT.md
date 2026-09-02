@@ -81,7 +81,10 @@ The current macOS release smoke check also passes:
   an actual Windows runner for final executable and removable-drive validation.
 
 The user-facing Import page now supports mounted folder/camera-card preview and
-explicit Catalog in Place versus reviewed Managed Copy routing. Settings now
+explicit Catalog in Place versus reviewed Managed Copy routing. Event default
+places are surfaced as explicit inherited context in Library/inspector when no
+asset place overrides them; original embedded metadata remains unchanged.
+Settings now
 persist locally through the desktop user's QSettings store. Category
 analysis paths and limits, duplicate method/threshold, place cluster radius, and
 Vision people JSON path reload after restarting the app; saving them never writes

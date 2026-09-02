@@ -3373,7 +3373,10 @@ if QT_AVAILABLE:
             camera = " ".join(filter(None, (details["camera_make"], details["camera_model"]))) or "Camera unavailable"
             location = (
                 f"{float(details['latitude']):.6f}, {float(details['longitude']):.6f} ({details['date_source'] or 'embedded metadata'})"
-                if details["latitude"] is not None and details["longitude"] is not None else "No embedded location"
+                if details["latitude"] is not None and details["longitude"] is not None else (
+                    f"{details.get('inherited_place_names')} (inherited from Event; original EXIF unchanged)"
+                    if details.get("inherited_place_names") else "No embedded location"
+                )
             )
             verified = self.connection.execute(
                 "SELECT COUNT(DISTINCT path) FROM verification_history WHERE asset_id=? AND result='VERIFIED'",
@@ -3388,7 +3391,8 @@ if QT_AVAILABLE:
                 f"Review: {details.get('review_status', 'UNREVIEWED').title()}{rating}\n"
                 f"Event: {details.get('event_names') or '—'}\n"
                 f"Tags: {details.get('tag_names') or '—'}\n"
-                f"Place: {details.get('place_names') or '—'}\n"
+                f"Place: {details.get('place_names') or details.get('inherited_place_names') or '—'}"
+                f"{' (event inherited)' if not details.get('place_names') and details.get('inherited_place_names') else ''}\n"
                 f"People: {details.get('person_names') or '—'}\n\n"
                 f"File\n{details['relative_path']}\n{details['volume_name']} — {details['volume_status']}\n\n"
                 f"Backup protection\n{protection}"
