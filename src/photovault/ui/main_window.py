@@ -15,6 +15,7 @@ try:
     from PySide6.QtGui import QIcon, QPixmap
     from PySide6.QtWidgets import (
         QAbstractItemView,
+        QAbstractButton,
         QApplication,
         QCheckBox,
         QComboBox,
@@ -518,8 +519,38 @@ if QT_AVAILABLE:
                 self.pages.addWidget(self._build_page(label))
             shell_layout.addWidget(self.pages, 1)
             self.setCentralWidget(shell)
+            self._apply_accessibility_names()
             self.navigation.setCurrentRow(next(iter(self._navigation_page_rows)))
             self.refresh()
+
+        def _apply_accessibility_names(self) -> None:
+            """Give interactive controls a useful fallback name for assistive tech.
+
+            Page builders own their domain-specific names and set them explicitly
+            where a short visible label would be ambiguous.  This pass covers the
+            remaining ordinary controls so newly added pages do not silently ship
+            unnamed buttons, fields, tables, or selectors.
+            """
+            for widget in self.findChildren(QWidget):
+                if widget.accessibleName():
+                    continue
+                name = ""
+                if isinstance(widget, QAbstractButton):
+                    name = widget.text().replace("&", "").strip()
+                elif isinstance(widget, QLineEdit):
+                    name = widget.placeholderText().strip()
+                elif isinstance(widget, QComboBox):
+                    name = widget.toolTip().strip()
+                elif isinstance(widget, (QListWidget, QTableWidget)):
+                    name = widget.objectName().strip()
+                elif isinstance(widget, QProgressBar):
+                    name = widget.objectName().strip() or "Progress"
+                elif isinstance(widget, (QPlainTextEdit,)):
+                    name = widget.objectName().strip() or "Details"
+                if not name and widget.objectName():
+                    name = widget.objectName().replace("_", " ").strip()
+                if name:
+                    widget.setAccessibleName(name)
 
         def _build_page(self, label: str) -> QWidget:
             page = QWidget()

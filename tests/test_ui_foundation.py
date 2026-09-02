@@ -98,6 +98,28 @@ class UIFoundationTests(unittest.TestCase):
             window.close()
             connection.close()
 
+    def test_interactive_controls_have_accessibility_fallbacks(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication, QAbstractButton, QComboBox, QLineEdit, QListWidget, QTableWidget, QWidget
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            unnamed = []
+            control_types = (QAbstractButton, QComboBox, QLineEdit, QListWidget, QTableWidget)
+            for widget in window.findChildren(QWidget):
+                if not isinstance(widget, control_types):
+                    continue
+                if widget.isVisible() and not widget.accessibleName():
+                    unnamed.append(widget.objectName() or widget.__class__.__name__)
+            self.assertEqual(unnamed, [])
+            window.close()
+            connection.close()
+
     def test_timeline_row_opens_photo_viewer(self) -> None:
         from photovault.ui import main_window
 
