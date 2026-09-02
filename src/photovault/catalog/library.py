@@ -66,11 +66,14 @@ def _where_for_query(query: LibraryQuery) -> tuple[list[str], list[object]]:
                            WHERE pm_search.asset_id=al.asset_id AND lower(COALESCE(p_search.display_name, p_search.external_key)) LIKE ?)
                 OR EXISTS (SELECT 1 FROM asset_places ap_search JOIN places pl_search ON pl_search.id=ap_search.place_id
                            WHERE ap_search.asset_id=al.asset_id AND lower(pl_search.name) LIKE ?)
+                OR EXISTS (SELECT 1 FROM event_assets ea_place_search JOIN events e_place_search ON e_place_search.id=ea_place_search.event_id
+                           JOIN places pl_event_search ON pl_event_search.id=e_place_search.default_place_id
+                           WHERE ea_place_search.asset_id=al.asset_id AND lower(pl_event_search.name) LIKE ?)
                 OR EXISTS (SELECT 1 FROM image_categories ic_search
                            WHERE ic_search.asset_id=al.asset_id AND lower(ic_search.label) LIKE ?))"""
         )
         term = "%" + query.search.strip().lower() + "%"
-        params.extend((term,) * 9)
+        params.extend((term,) * 10)
     if query.folder_prefix.strip("/"):
         where.append("al.relative_path LIKE ?")
         params.append(query.folder_prefix.strip("/") + "/%")
