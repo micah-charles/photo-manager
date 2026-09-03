@@ -22,12 +22,53 @@ from photovault.database.connection import connect
 from photovault.pairing.discovery import AndroidDiscoveryService
 from photovault.pairing.trusted import list_trusted_android_devices, record_pairing_session, revoke_android_device, touch_android_device, trust_android_device
 from photovault.sources.android_wifi import AndroidCompanionUnavailable, AndroidCompanionWifiSource
-from photovault.collage.analysis import analyse_photo
+from photovault.collage.analysis import FaceBox, PhotoAnalysis, analyse_photo
 from photovault.collage.poc.runner import run_poc_photos
 from photovault.collage.models import Canvas, Cell, Crop, LayoutCandidate, PhotoInput
 from photovault.collage.render import render_candidate
 
 STATIC_ROOT = Path(__file__).with_name("static")
+
+
+def load_collage_analysis_cache(path: Path) -> tuple[dict[str, PhotoInput], dict[str, dict[str, object]]]:
+    """Load reusable analysis only when its stable asset/file fingerprint is retained."""
+    photos: dict[str, PhotoInput] = {}
+    fingerprints: dict[str, dict[str, object]] = {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, ValueError, TypeError):
+        return photos, fingerprints
+    for asset_id, entry in (payload.items() if isinstance(payload, dict) else ()):
+        if not isinstance(entry, dict) or not isinstance(entry.get("photo"), dict):
+            continue
+        photo = entry["photo"]
+        analysis_data = photo.get("analysis")
+        if not isinstance(analysis_data, dict):
+            continue
+        faces = tuple(FaceBox(**face) for face in analysis_data.get("faces", []) if isinstance(face, dict))
+        analysis = PhotoAnalysis(
+            width=int(analysis_data.get("width", 0)), height=int(analysis_data.get("height", 0)),
+            orientation=analysis_data.get("orientation"), faces=faces,
+            salient_region=tuple(analysis_data.get("salient_region", (0.15, 0.15, 0.85, 0.85))),
+            quality_score=float(analysis_data.get("quality_score", 0.0)),
+            detector=str(analysis_data.get("detector", "none")),
+            detection_ms=float(analysis_data.get("detection_ms", 0.0)),
+        )
+        photos[str(asset_id)] = PhotoInput(
+            photo_id=str(asset_id), path=Path(str(photo.get("path", ""))),
+            width=int(photo.get("width", analysis.width)), height=int(photo.get("height", analysis.height)),
+            capture_datetime=photo.get("capture_datetime"), quality_score=float(photo.get("quality_score", 0.0)), analysis=analysis,
+        )
+        fingerprints[str(asset_id)] = {"path": entry.get("path"), "size_bytes": entry.get("size_bytes"), "modified_ns": entry.get("modified_ns")}
+    return photos, fingerprints
+
+
+def save_collage_analysis_cache(path: Path, photos: dict[str, PhotoInput], fingerprints: dict[str, dict[str, object]]) -> None:
+    payload = {}
+    for asset_id, photo in photos.items():
+        analysis = photo.analysis.to_dict() if photo.analysis is not None else None
+        payload[asset_id] = {"path": fingerprints[asset_id]["path"], "size_bytes": fingerprints[asset_id]["size_bytes"], "modified_ns": fingerprints[asset_id]["modified_ns"], "photo": {"path": str(photo.path), "width": photo.width, "height": photo.height, "capture_datetime": photo.capture_datetime, "quality_score": photo.quality_score, "analysis": analysis}}
+    path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
 
 
 def _row_payload(row) -> dict[str, object]:
@@ -299,12 +340,17 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                         root = Path(str(row[0])).resolve(); path = (root / str(row[1])).resolve()
                         if root not in path.parents or not path.is_file(): raise ValueError(f"photo is unavailable: {asset_id}")
                         cache = getattr(self.server, "collage_analysis_cache")
-                        if asset_id not in cache or cache[asset_id].path != path:
+                        fingerprints = getattr(self.server, "collage_analysis_fingerprints")
+                        stat = path.stat()
+                        fingerprint = {"path": str(path), "size_bytes": stat.st_size, "modified_ns": stat.st_mtime_ns}
+                        if asset_id not in cache or fingerprints.get(asset_id) != fingerprint:
                             # Analysis may use a filename internally, but the
                             # persisted collage document must use PhotoVault's
                             # stable asset ID so duplicate filenames across
                             # sources never collide.
                             cache[asset_id] = replace(analyse_photo(path), photo_id=asset_id)
+                            fingerprints[asset_id] = fingerprint
+                            save_collage_analysis_cache(getattr(self.server, "collage_analysis_cache_path"), cache, fingerprints)
                         photos.append(cache[asset_id])
                 finally: connection.close()
                 run_id = uuid.uuid4().hex
@@ -719,7 +765,8 @@ def serve(catalog: Path, host: str = "127.0.0.1", port: int = 8765) -> None:
     httpd.android_pairings = {}  # type: ignore[attr-defined]
     httpd.android_connection_states = {}  # type: ignore[attr-defined]
     httpd.collage_runs = {}  # type: ignore[attr-defined]
-    httpd.collage_analysis_cache = {}  # type: ignore[attr-defined]
+    httpd.collage_analysis_cache_path = httpd.catalog_path.parent / "collage-analysis-cache.json"  # type: ignore[attr-defined]
+    httpd.collage_analysis_cache, httpd.collage_analysis_fingerprints = load_collage_analysis_cache(httpd.collage_analysis_cache_path)  # type: ignore[attr-defined]
     # Runs are file-backed so a server restart does not erase the candidate
     # gallery or its editable CollageDocuments.
     run_root = httpd.catalog_path.parent / "collage-runs"
