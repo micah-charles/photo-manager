@@ -67,3 +67,31 @@ photobook compositor; cloud judging, ranking, batch planning, blur fill,
 background effects, and locked variations remain later milestones. The
 developer crop toggle and generated comparison sheet are diagnostic views,
 not final print-quality proofs.
+
+## Verification additions
+
+The collage route now has a multi-source selector. It uses stable catalog
+source IDs, so duplicate filenames from the two Pixel devices remain distinct.
+The source-aware endpoint reports the complete matching total while returning a
+maximum of 200 thumbnail records per request; the current repaired catalog
+reports 11,716 `DCIM/Camera` images across both sources. Full-resolution
+originals are not loaded for browsing.
+
+Previous generated runs are listed in the experimental UI and can be reopened
+after a server restart. The run payload and provider-neutral documents remain
+on disk under `collage-runs/<run-id>/`; the rendered preview is derived output.
+The developer crop control now visibly contrasts the naive top-left crop with
+the smart-crop view, and the API also writes a before/after comparison sheet.
+
+The first implementation caches `PhotoAnalysis` by stable asset ID and the
+currently connected source path in the running server. A repeated generation
+therefore reuses analysis during that server session; restarting the server
+currently clears this in-memory analysis cache, while saved documents and runs
+remain persistent. Persistent analysis-cache storage is a later optimisation,
+not required for the Phase 2 editor stop gate.
+
+Focused verification on 2026-09-03: 18 collage/catalog/copy regression tests
+passed; live API verification returned both source IDs, `total=11,716`,
+`loaded=200`, and `has_more=true`. The local detector is optional OpenCV Haar
+(`opencv-python`, Apache-2.0); the no-detector path remains functional and no
+online AI service is required.

@@ -1,4 +1,5 @@
-const $=id=>document.getElementById(id),state={photos:[],selected:new Set(),seed:42,lastRun:null,candidates:[]};
+const $=id=>document.getElementById(id),state={photos:[],selected:new Set(),seed:42,lastRun:null,candidates:[]};window.collageState=state;
+document.addEventListener("collage:render",()=>render());
 document.addEventListener("change",e=>{if(e.target.id==="show-rejected")render()});
 async function api(url,options={}){const r=await fetch(url,{headers:{"Content-Type":"application/json",...(options.headers||{})},...options});const d=await r.json();if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);return d}
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

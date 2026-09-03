@@ -186,6 +186,14 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                     self._json({"total": total, "items": merged[:200], "months": [], "years": [], "days": {}, "next_cursor": None, "has_more": total > 200})
             finally: connection.close()
             return
+        if parsed.path == "/api/collage/runs":
+            runs = []
+            for run_id, run in getattr(self.server, "collage_runs", {}).items():
+                payload = run.get("payload", {})
+                runs.append({"run_id": run_id, "timestamp": payload.get("timestamp"), "seed": payload.get("seed"), "selected_count": len(payload.get("selected_asset_ids", [])), "candidate_count": len(payload.get("candidates", []))})
+            runs.sort(key=lambda item: str(item.get("timestamp") or ""), reverse=True)
+            self._json({"runs": runs})
+            return
         if parsed.path.startswith("/api/collage/runs/"):
             parts = parsed.path.split("/")
             run = getattr(self.server, "collage_runs", {}).get(parts[4])
@@ -270,7 +278,7 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
         try:
             body = target.read_bytes()
             if target.name == "collage_v2.html":
-                body = body.replace(b"</body>", b'<script src="/collage_sources.js?v=20260903-1"></script><script src="/collage_topic.js?v=20260903-1"></script><script src="/collage_topic_refresh.js?v=20260903-1"></script><script src="/collage_topic_guard.js?v=20260903-1"></script></body>')
+                body = body.replace(b"</body>", b'<script src="/collage_sources.js?v=20260903-1"></script><script src="/collage_runs.js?v=20260903-1"></script><script src="/collage_crop_debug.js?v=20260903-1"></script><script src="/collage_topic.js?v=20260903-1"></script><script src="/collage_topic_refresh.js?v=20260903-1"></script><script src="/collage_topic_guard.js?v=20260903-1"></script></body>')
             self._send(body, mimetypes.guess_type(target.name)[0] or "text/plain")
         except FileNotFoundError:
             self._send(b"Not found", "text/plain", 404)
