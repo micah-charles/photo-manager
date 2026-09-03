@@ -170,9 +170,20 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
             finally: connection.close()
             return
         if parsed.path == "/api/collage/photos":
-            params = parse_qs(parsed.query); folder = params.get("folder", [""])[0]; topic = params.get("topic", [""])[0]
+            params = parse_qs(parsed.query); folder = params.get("folder", [""])[0]; topic = params.get("topic", [""])[0]; source_ids = [value for value in params.get("source", []) if value]
             connection = connect(self.catalog_path)
-            try: self._json(library_payload(connection, LibraryQuery(folder_prefix=folder, event_id=topic, media_type="IMAGE", limit=200)))
+            try:
+                if len(source_ids) <= 1:
+                    self._json(library_payload(connection, LibraryQuery(folder_prefix=folder, event_id=topic, source_id=source_ids[0] if source_ids else "", media_type="IMAGE", limit=200)))
+                else:
+                    merged = []
+                    total = 0
+                    for source_id in source_ids:
+                        payload = library_payload(connection, LibraryQuery(folder_prefix=folder, event_id=topic, source_id=source_id, media_type="IMAGE", limit=200))
+                        total += int(payload["total"])
+                        merged.extend(payload["items"])
+                    merged.sort(key=lambda item: (str(item.get("captured") or ""), str(item.get("asset_id") or "")), reverse=True)
+                    self._json({"total": total, "items": merged[:200], "months": [], "years": [], "days": {}, "next_cursor": None, "has_more": total > 200})
             finally: connection.close()
             return
         if parsed.path.startswith("/api/collage/runs/"):
