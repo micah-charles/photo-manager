@@ -18,5 +18,6 @@
   kind.onchange=setVisible;
   const originalLoad=document.getElementById("load").onclick;
   document.getElementById("load").onclick=()=>{if(kind.value==="folder")return originalLoad();const d=document.getElementById("status");fetch(`/api/collage/photos?topic=${encodeURIComponent(folderSelect.value)}`).then(r=>r.json()).then(data=>{window.state=window.state||{};state.photos=data.items||[];state.selected=new Set(state.photos.map(x=>x.asset_id));document.getElementById("photos").innerHTML=state.photos.map(x=>`<article class="photo" data-id="${x.asset_id}"><label><input type="checkbox" checked> ${x.filename}</label>${x.thumbnail?`<img loading="lazy" src="${x.thumbnail}" alt="${x.filename}">`:``}</article>`).join("");document.querySelectorAll(".photo").forEach(x=>x.onclick=e=>{if(e.target.tagName!=="INPUT")x.querySelector("input").checked=!state.selected.has(x.dataset.id);if(x.querySelector("input").checked)state.selected.add(x.dataset.id);else state.selected.delete(x.dataset.id)});d.textContent=`Loaded ${state.photos.length} topic photos.`}).catch(e=>d.textContent=e.message)};
+  folderSelect.dataset.topicSourceReady="true";
   setVisible();
 })().catch(e=>{const s=document.getElementById("status");if(s)s.textContent=e.message});
