@@ -307,8 +307,13 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                 if not isinstance(frames, list) or not frames:
                     raise ValueError("document must contain at least one frame")
                 for frame in frames:
-                    if not isinstance(frame, dict) or not frame.get("photo_id"):
-                        raise ValueError("every frame must reference a photo")
+                    if not isinstance(frame, dict):
+                        raise ValueError("every frame must be an object")
+                original_document_id = document_id
+                if not payload.get("edited"):
+                    document_id = "doc_" + uuid.uuid4().hex
+                    payload["parent_candidate_id"] = original_document_id
+                payload["document_id"] = document_id
                 payload["cells"] = frames
                 payload["edited"] = True
                 payload["modified_at"] = datetime.now(timezone.utc).isoformat()
@@ -333,6 +338,7 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                             width=int(frame["width"]), height=int(frame["height"]),
                             crop=Crop(float(crop_data.get("left", 0)), float(crop_data.get("top", 0)), float(crop_data.get("right", 1)), float(crop_data.get("bottom", 1)), str(crop_data.get("mode", "cover"))),
                             crop_metadata=dict(frame.get("crop_metadata") or {}),
+                            transform=dict(frame.get("transform") or {}),
                         ))
                         row = connection.execute("""SELECT v.current_mount_path, al.relative_path
                             FROM asset_locations al JOIN volumes v ON v.id=al.volume_id
@@ -343,7 +349,7 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                             if path.is_file(): photos[str(frame["photo_id"])] = PhotoInput(str(frame["photo_id"]), path, 1, 1)
                 finally:
                     connection.close()
-                if set(photo.photo_id for photo in photos.values()) != {cell.photo_id for cell in cells}:
+                if set(photo.photo_id for photo in photos.values()) != {cell.photo_id for cell in cells if cell.photo_id}:
                     raise ValueError("one or more document photos are offline")
                 candidate = LayoutCandidate(
                     provider=str(payload.get("provider", "edited")),
@@ -353,9 +359,9 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                     edited=True, document_id=document_id, source_run_id=run_id,
                     modified_at=str(payload["modified_at"]), created_at=payload.get("created_at"),
                 )
-                preview = run["output"] / "previews" / f"{candidate.provider}-{candidate.candidate_number:02d}-seed-{candidate.seed}.jpg"
+                preview = run["output"] / "previews" / f"{candidate.provider}-{candidate.candidate_number:02d}-seed-{candidate.seed}-{document_id}.jpg"
                 render_candidate(candidate, photos, preview)
-                self._json({"ok": True, "document": payload, "preview": f"/api/collage/runs/{run_id}/previews/{preview.name}?v={int(datetime.now().timestamp())}"}); return
+                self._json({"ok": True, "document": payload, "document_url": f"/api/collage/runs/{run_id}/documents/{document_id}", "preview": f"/api/collage/runs/{run_id}/previews/{preview.name}?v={int(datetime.now().timestamp())}", "variant": document_id != original_document_id}); return
             if parsed.path in {"/api/android/pair", "/api/android/reconnect"} or parsed.path.startswith("/api/android/pair/"):
                 if not self._local_origin_allowed():
                     self._json({"error": "pairing requests must originate from the Photo Manager local UI"}, 403)

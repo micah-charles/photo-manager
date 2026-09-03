@@ -45,6 +45,7 @@ class Cell:
     height: int
     crop: Crop
     crop_metadata: dict[str, Any] = field(default_factory=dict)
+    transform: dict[str, Any] = field(default_factory=lambda: {"zoom": 1.0, "pan_x": 0.0, "pan_y": 0.0, "rotation": 0.0})
 
 
 @dataclass

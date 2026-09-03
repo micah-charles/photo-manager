@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .models import LayoutCandidate, PhotoInput
+from .models import Crop, LayoutCandidate, PhotoInput
 
 try:
     from PIL import Image, ImageDraw, ImageOps
@@ -16,14 +16,27 @@ def render_candidate(candidate: LayoutCandidate, photos: dict[str, PhotoInput], 
         raise RuntimeError("Pillow is required for rendering the collage POC")
     canvas = Image.new("RGB", (candidate.canvas.width, candidate.canvas.height), (245, 242, 237))
     for cell in candidate.cells:
+        if not cell.photo_id or cell.photo_id not in photos:
+            continue
         with Image.open(photos[cell.photo_id].path) as source:
             crop = cell.crop
             if not smart_crop and cell.crop_metadata.get("raw_center_crop"):
                 crop = cell.crop_metadata["raw_center_crop"]
             if isinstance(crop, dict):
-                from .models import Crop
                 crop = Crop(**crop)
-            image = ImageOps.fit(source.convert("RGB"), (cell.width, cell.height), method=Image.Resampling.LANCZOS, centering=((crop.left + crop.right) / 2, (crop.top + crop.bottom) / 2))
+            transform = cell.transform or {}
+            zoom = max(0.25, min(8.0, float(transform.get("zoom", 1.0))))
+            pan_x = max(-0.45, min(0.45, float(transform.get("pan_x", 0.0))))
+            pan_y = max(-0.45, min(0.45, float(transform.get("pan_y", 0.0))))
+            center_x = max(0.0, min(1.0, (crop.left + crop.right) / 2 + pan_x / zoom))
+            center_y = max(0.0, min(1.0, (crop.top + crop.bottom) / 2 + pan_y / zoom))
+            span_x = (crop.right - crop.left) / zoom
+            span_y = (crop.bottom - crop.top) / zoom
+            adjusted = Crop(max(0.0, center_x - span_x / 2), max(0.0, center_y - span_y / 2), min(1.0, center_x + span_x / 2), min(1.0, center_y + span_y / 2), crop.mode)
+            image = ImageOps.fit(source.convert("RGB"), (cell.width, cell.height), method=Image.Resampling.LANCZOS, centering=((adjusted.left + adjusted.right) / 2, (adjusted.top + adjusted.bottom) / 2))
+            rotation = float(transform.get("rotation", 0.0))
+            if rotation:
+                image = image.rotate(rotation, expand=False, resample=Image.Resampling.BICUBIC)
             canvas.paste(image, (cell.x, cell.y))
     destination.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(destination, format="JPEG", quality=88, optimize=True)
