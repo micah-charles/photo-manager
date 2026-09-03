@@ -189,6 +189,16 @@ def scan_volume(
                 store_metadata(connection, asset_id, metadata)
                 if thumbnail_root is not None:
                     generate_thumbnail(connection, asset_id, path, thumbnail_root)
+                # Older catalogs predate location provenance and have a NULL
+                # source_id. Upgrade that row in place before the upsert below;
+                # inserting a second row would make the same physical file
+                # appear twice after reindexing.
+                if existing and existing[4] is None:
+                    connection.execute(
+                        "UPDATE asset_locations SET source_id=? "
+                        "WHERE volume_id=? AND relative_path=? AND source_id IS NULL",
+                        (source_id, volume_id, relative),
+                    )
                 connection.execute(
                     """
                     INSERT INTO asset_locations(asset_id, volume_id, relative_path, filename,

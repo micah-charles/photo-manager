@@ -56,6 +56,26 @@ class CatalogPhase1Tests(unittest.TestCase):
             self.assertIsNotNone(missing)
             db.close()
 
+    def test_rescan_upgrades_legacy_null_source_in_place(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "photos"
+            root.mkdir()
+            (root / "one.jpg").write_bytes(b"one")
+            db = connect(Path(temp) / "catalog.db")
+            self.addCleanup(db.close)
+            volume_id = register_volume(db, root)
+            scan_volume(db, volume_id, root)
+            db.execute("UPDATE asset_locations SET source_id=NULL")
+            db.commit()
+
+            scan_volume(db, volume_id, root)
+
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM asset_locations").fetchone()[0], 1)
+            self.assertEqual(
+                db.execute("SELECT source_id FROM asset_locations").fetchone()[0],
+                f"folder:{volume_id}",
+            )
+
     def test_catalog_survives_when_volume_is_not_scanned(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "disk"
