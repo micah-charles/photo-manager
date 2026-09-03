@@ -23,6 +23,8 @@ from photovault.pairing.trusted import list_trusted_android_devices, record_pair
 from photovault.sources.android_wifi import AndroidCompanionUnavailable, AndroidCompanionWifiSource
 from photovault.collage.analysis import analyse_photo
 from photovault.collage.poc.runner import run_poc_photos
+from photovault.collage.models import Canvas, Cell, Crop, LayoutCandidate, PhotoInput
+from photovault.collage.render import render_candidate
 
 STATIC_ROOT = Path(__file__).with_name("static")
 
@@ -314,7 +316,46 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                 if run["output"] not in target.parents: self._json({"error": "invalid document path"}, 400); return
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-                self._json({"ok": True, "document": payload}); return
+                canvas_data = payload.get("canvas") or {}
+                canvas = Canvas(
+                    width=int(canvas_data.get("width", 1200)),
+                    height=int(canvas_data.get("height", 800)),
+                    gutter=int(canvas_data.get("gutter", 12)),
+                )
+                cells = []
+                photos = {}
+                connection = connect(self.catalog_path)
+                try:
+                    for frame in frames:
+                        crop_data = frame.get("crop") or {}
+                        cells.append(Cell(
+                            photo_id=str(frame["photo_id"]), x=int(frame["x"]), y=int(frame["y"]),
+                            width=int(frame["width"]), height=int(frame["height"]),
+                            crop=Crop(float(crop_data.get("left", 0)), float(crop_data.get("top", 0)), float(crop_data.get("right", 1)), float(crop_data.get("bottom", 1)), str(crop_data.get("mode", "cover"))),
+                            crop_metadata=dict(frame.get("crop_metadata") or {}),
+                        ))
+                        row = connection.execute("""SELECT v.current_mount_path, al.relative_path
+                            FROM asset_locations al JOIN volumes v ON v.id=al.volume_id
+                            WHERE al.asset_id=? AND al.missing_since IS NULL AND v.status='CONNECTED'
+                            ORDER BY al.id LIMIT 1""", (str(frame["photo_id"]),)).fetchone()
+                        if row:
+                            path = (Path(str(row[0])) / str(row[1])).resolve()
+                            if path.is_file(): photos[str(frame["photo_id"])] = PhotoInput(str(frame["photo_id"]), path, 1, 1)
+                finally:
+                    connection.close()
+                if set(photo.photo_id for photo in photos.values()) != {cell.photo_id for cell in cells}:
+                    raise ValueError("one or more document photos are offline")
+                candidate = LayoutCandidate(
+                    provider=str(payload.get("provider", "edited")),
+                    candidate_number=int(payload.get("candidate_number", 1)),
+                    seed=int(payload.get("seed", 0)), canvas=canvas, cells=cells,
+                    style=str(payload.get("style", "")), metadata=dict(payload.get("metadata") or {}),
+                    edited=True, document_id=document_id, source_run_id=run_id,
+                    modified_at=str(payload["modified_at"]), created_at=payload.get("created_at"),
+                )
+                preview = run["output"] / "previews" / f"{candidate.provider}-{candidate.candidate_number:02d}-seed-{candidate.seed}.jpg"
+                render_candidate(candidate, photos, preview)
+                self._json({"ok": True, "document": payload, "preview": f"/api/collage/runs/{run_id}/previews/{preview.name}?v={int(datetime.now().timestamp())}"}); return
             if parsed.path in {"/api/android/pair", "/api/android/reconnect"} or parsed.path.startswith("/api/android/pair/"):
                 if not self._local_origin_allowed():
                     self._json({"error": "pairing requests must originate from the Photo Manager local UI"}, 403)
