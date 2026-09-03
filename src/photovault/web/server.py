@@ -6,6 +6,7 @@ import mimetypes
 import base64
 import threading
 import uuid
+from dataclasses import replace
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -280,7 +281,11 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                         if root not in path.parents or not path.is_file(): raise ValueError(f"photo is unavailable: {asset_id}")
                         cache = getattr(self.server, "collage_analysis_cache")
                         if asset_id not in cache or cache[asset_id].path != path:
-                            cache[asset_id] = analyse_photo(path)
+                            # Analysis may use a filename internally, but the
+                            # persisted collage document must use PhotoVault's
+                            # stable asset ID so duplicate filenames across
+                            # sources never collide.
+                            cache[asset_id] = replace(analyse_photo(path), photo_id=asset_id)
                         photos.append(cache[asset_id])
                 finally: connection.close()
                 run_id = uuid.uuid4().hex
