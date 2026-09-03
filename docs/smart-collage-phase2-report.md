@@ -1,0 +1,69 @@
+# Smart Collage Phase 2 status
+
+The Phase 2 crop layer and experimental UI are implemented, but this is a
+review-gated POC result rather than a production feature.
+
+Implemented:
+
+- one reusable `PhotoAnalysis` per source image;
+- optional local OpenCV Haar face detection with confidence and timing;
+- provider-independent largest-cover crop optimisation;
+- face-preservation metadata on every cell;
+- hard candidate rejection reasons (`FACE_EXCLUDED`, `FACE_PARTIAL`);
+- normal previews, before/after crop sheet, `rejected.json` and metrics;
+- loopback web UI at `/experimental/collage` with folder selection, thumbnail
+  selection, generate, regenerate and provider-grouped candidate gallery.
+
+The supplied Sat 08 Aug 2026 attachment is a gallery screenshot rather than
+the original source folder. The web UI will use connected catalog originals;
+the CLI/API refuse offline or missing assets. No unrelated images are silently
+substituted.
+
+## Smoke-run evidence
+
+Using 15 thumbnail crops derived from the supplied screenshot and OpenCV 4.10
+locally, the run produced 30 candidates: 20 survived and 10 were hard
+rejected. Analysis took 280.515ms total; 58 cells changed from centre crop and
+44 potential face-cut cases were avoided. Provider generation times were
+Native 1ms, CEWE Fan 397ms and BSP 1ms. The output is at
+`/Volumes/ExtremePro/AIWorkspace/smart-collage-poc/sat-08-aug-2026-phase2-opencv/`.
+These figures validate the pipeline only; they are not the final full-resolution
+acceptance result.
+
+Install the local detector with:
+
+```bash
+python3 -m pip install -e '.[photo-intelligence]'
+```
+
+Phase 2 must remain at the STOP gate until the exact original 15-photo set is
+available and the before/after sheets show that face-safe crops improve hard
+examples without changing provider geometry.
+
+## Core editor implementation
+
+The accepted Phase 2 document model is now provider-neutral. Each generated
+candidate has a stable `document_id`, `source_run_id`, provider/seed metadata,
+frames, crop state, transform state, and edit timestamps. The rendered JPEG is
+derived output only; documents are stored under `collage-runs/<run>/documents/`.
+
+The experimental UI supports folder selection from the live PhotoVault
+catalog, thumbnail-only browsing, manual selection, Select All/Clear,
+Native/CEWE/BSP generation, rejected-candidate visibility, regeneration,
+candidate persistence across server restart, and opening any candidate in the
+same editor. The editor supports frame selection, drag-to-pan, wheel zoom,
+reset to smart crop, swap, replace, remove, undo/redo, and save. The first save
+creates an edited variant and leaves the generated candidate unchanged; later
+saves update that variant and re-render its preview.
+
+Live smoke evidence on 2026-09-03 used two connected catalog assets. The
+generated document contained stable PhotoVault asset IDs, the edited transform
+saved successfully, the variant reopened after a server restart, and its
+rendered preview returned HTTP 200. Unit coverage for collage, copy, and
+catalog regression tests passed (18 tests in the focused run).
+
+Known Phase 2 limits: the editor is intentionally not a frame-resize or
+photobook compositor; cloud judging, ranking, batch planning, blur fill,
+background effects, and locked variations remain later milestones. The
+developer crop toggle and generated comparison sheet are diagnostic views,
+not final print-quality proofs.
