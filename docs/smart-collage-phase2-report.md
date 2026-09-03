@@ -83,15 +83,17 @@ on disk under `collage-runs/<run-id>/`; the rendered preview is derived output.
 The developer crop control now visibly contrasts the naive top-left crop with
 the smart-crop view, and the API also writes a before/after comparison sheet.
 
-The first implementation caches `PhotoAnalysis` by stable asset ID and the
-currently connected source path in the running server. A repeated generation
-therefore reuses analysis during that server session; restarting the server
-currently clears this in-memory analysis cache, while saved documents and runs
-remain persistent. Persistent analysis-cache storage is a later optimisation,
-not required for the Phase 2 editor stop gate.
+The implementation persists `PhotoAnalysis` by stable asset ID plus the
+connected source path, file size, and modification timestamp in
+`collage-analysis-cache.json`. Repeated generation reuses valid entries during
+the current session and after server restart; a changed or replaced source
+file invalidates its entry before analysis is reused. A live smoke check
+materialised two cache entries and confirmed both carried modification
+fingerprints.
 
-Focused verification on 2026-09-03: 18 collage/catalog/copy regression tests
-passed; live API verification returned both source IDs, `total=11,716`,
-`loaded=200`, and `has_more=true`. The local detector is optional OpenCV Haar
+Focused verification on 2026-09-03: 19 collage/catalog/copy regression tests
+passed, with the full repository suite also run; live API verification
+returned both source IDs, `total=11,716`, `loaded=200`, and `has_more=true`.
+The local detector is optional OpenCV Haar
 (`opencv-python`, Apache-2.0); the no-detector path remains functional and no
 online AI service is required.
