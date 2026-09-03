@@ -701,6 +701,19 @@ def serve(catalog: Path, host: str = "127.0.0.1", port: int = 8765) -> None:
     httpd.android_connection_states = {}  # type: ignore[attr-defined]
     httpd.collage_runs = {}  # type: ignore[attr-defined]
     httpd.collage_analysis_cache = {}  # type: ignore[attr-defined]
+    # Runs are file-backed so a server restart does not erase the candidate
+    # gallery or its editable CollageDocuments.
+    run_root = httpd.catalog_path.parent / "collage-runs"
+    if run_root.is_dir():
+        for run_json in run_root.glob("*/run.json"):
+            try:
+                payload = json.loads(run_json.read_text(encoding="utf-8"))
+                run_id = str(payload.get("run_id") or run_json.parent.name)
+                httpd.collage_runs[run_id] = {"output": run_json.parent, "payload": payload}  # type: ignore[attr-defined]
+            except (OSError, ValueError, TypeError):
+                # A partial run must not prevent the local server from
+                # starting; its directory remains available for inspection.
+                continue
     def reconnect_discovered(change, device) -> None:
         if change == "disappeared":
             httpd.android_connection_states[device.device_id] = "offline"  # type: ignore[attr-defined]
