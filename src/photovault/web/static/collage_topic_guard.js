@@ -1,0 +1,2 @@
+// Do not leave a hidden folder option selected when Topic has no records.
+setInterval(()=>{const kind=document.getElementById("source-kind"),select=document.getElementById("folders");if(!kind||!select||kind.value!=="topic")return;const topics=[...select.options].filter(o=>o.dataset.topic);if(!topics.length){select.innerHTML='<option value="" disabled selected>No topics available in this catalog</option>';const load=document.getElementById("load");if(load)load.disabled=true}else{const load=document.getElementById("load");if(load)load.disabled=false}},300);
