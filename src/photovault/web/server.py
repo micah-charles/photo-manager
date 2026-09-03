@@ -5,6 +5,8 @@ import json
 import mimetypes
 import base64
 import threading
+import uuid
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -16,6 +18,11 @@ from photovault.catalog.collections import list_collections
 from photovault.catalog.thumbnail_jobs import build_missing_thumbnails, thumbnail_status
 from photovault.backup.jobs import BackupJobManager
 from photovault.database.connection import connect
+from photovault.pairing.discovery import AndroidDiscoveryService
+from photovault.pairing.trusted import list_trusted_android_devices, record_pairing_session, revoke_android_device, touch_android_device, trust_android_device
+from photovault.sources.android_wifi import AndroidCompanionUnavailable, AndroidCompanionWifiSource
+from photovault.collage.analysis import analyse_photo
+from photovault.collage.poc.runner import run_poc_photos
 
 STATIC_ROOT = Path(__file__).with_name("static")
 
@@ -143,6 +150,46 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
             finally:
                 connection.close()
             return
+        if parsed.path == "/api/collage/folders":
+            connection = connect(self.catalog_path)
+            try:
+                folders: dict[str, int] = {}
+                for row in connection.execute("SELECT relative_path FROM asset_locations WHERE missing_since IS NULL ORDER BY relative_path"):
+                    path = str(row[0]); parts = path.split("/")[:-1]
+                    for depth in range(1, len(parts) + 1): folders["/".join(parts[:depth])] = folders.get("/".join(parts[:depth]), 0) + 1
+                self._json({"folders": [{"name": name, "count": count} for name, count in sorted(folders.items())]})
+            finally: connection.close()
+            return
+        if parsed.path == "/api/collage/topics":
+            connection = connect(self.catalog_path)
+            try:
+                self._json({"topics": [{"id": topic.id, "name": topic.name, "item_count": topic.item_count} for topic in list_events(connection)]})
+            finally: connection.close()
+            return
+        if parsed.path == "/api/collage/photos":
+            params = parse_qs(parsed.query); folder = params.get("folder", [""])[0]; topic = params.get("topic", [""])[0]
+            connection = connect(self.catalog_path)
+            try: self._json(library_payload(connection, LibraryQuery(folder_prefix=folder, event_id=topic, media_type="IMAGE", limit=200)))
+            finally: connection.close()
+            return
+        if parsed.path.startswith("/api/collage/runs/"):
+            parts = parsed.path.split("/")
+            run = getattr(self.server, "collage_runs", {}).get(parts[4])
+            if run is None: self._send(b"Not found", "text/plain", 404); return
+            if len(parts) == 5: self._json(run["payload"]); return
+            if len(parts) == 6 and parts[5] == "comparison":
+                target = (run["output"] / "crop-comparison.jpg").resolve()
+                self._send(target.read_bytes(), "image/jpeg", immutable=True); return
+            if len(parts) == 7 and parts[5] == "documents":
+                document_id = parts[6]
+                target = (run["output"] / "documents" / f"{document_id}.json").resolve()
+                if run["output"] not in target.parents or not target.is_file(): self._send(b"Not found", "text/plain", 404); return
+                payload = json.loads(target.read_text(encoding="utf-8"))
+                self._json(payload[0] if isinstance(payload, list) and payload else payload)
+                return
+            target = (run["output"] / "previews" / parts[6]).resolve()
+            if run["output"] not in target.parents or not target.is_file(): self._send(b"Not found", "text/plain", 404); return
+            self._send(target.read_bytes(), mimetypes.guess_type(target.name)[0] or "image/jpeg", immutable=True); return
         if parsed.path == "/api/library":
             self._library(parsed.query)
             return
@@ -160,6 +207,34 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
             finally:
                 connection.close()
             return
+        if parsed.path == "/api/android/devices":
+            discovery: AndroidDiscoveryService = getattr(self.server, "android_discovery")
+            states: dict[str, str] = getattr(self.server, "android_connection_states")
+            devices = []
+            for d in discovery.devices:
+                pairing, protocol, api_version = d.pairing, d.protocol, d.api_version
+                status = states.get(d.device_id, "available")
+                # TXT records can lag behind the phone's current pairing window.
+                # Probe the public status endpoint so the UI never hides Pair
+                # merely because mDNS still contains an older advertisement.
+                try:
+                    live = AndroidCompanionWifiSource(f"http://{d.host}:{d.port}", "", timeout=1.5)._json("/api/pair/status")
+                    pairing = bool(live.get("pairing"))
+                    protocol = str(live.get("protocol") or protocol)
+                    api_version = "2" if pairing or protocol == "photovault-pairing-v1" else api_version
+                    status = "available"
+                except Exception:  # noqa: BLE001
+                    status = states.get(d.device_id, "offline")
+                devices.append({"device_id": d.device_id, "display_name": d.display_name, "host": d.host,
+                                "port": d.port, "protocol": protocol, "api_version": api_version,
+                                "pairing": pairing, "status": status})
+            self._json({"devices": devices, "service": "_photovault._tcp.local"})
+            return
+        if parsed.path == "/api/android/trusted":
+            connection = connect(self.catalog_path)
+            try: self._json({"devices": list_trusted_android_devices(connection)})
+            finally: connection.close()
+            return
         if parsed.path == "/api/thumbnails/status":
             connection = connect(self.catalog_path)
             try:
@@ -173,13 +248,16 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
         if parsed.path.startswith("/api/thumb/"):
             self._thumbnail(parsed.path.removeprefix("/api/thumb/"))
             return
-        relative = "index.html" if parsed.path in {"", "/"} else parsed.path.removeprefix("/")
+        relative = "index.html" if parsed.path in {"", "/"} else ("collage_v2.html" if parsed.path == "/experimental/collage" else parsed.path.removeprefix("/"))
         target = (STATIC_ROOT / relative).resolve()
         if STATIC_ROOT not in target.parents and target != STATIC_ROOT:
             self._send(b"Not found", "text/plain", 404)
             return
         try:
-            self._send(target.read_bytes(), mimetypes.guess_type(target.name)[0] or "text/plain")
+            body = target.read_bytes()
+            if target.name == "collage_v2.html":
+                body = body.replace(b"</body>", b'<script src="/collage_topic.js?v=20260903-1"></script><script src="/collage_topic_refresh.js?v=20260903-1"></script><script src="/collage_topic_guard.js?v=20260903-1"></script></body>')
+            self._send(body, mimetypes.guess_type(target.name)[0] or "text/plain")
         except FileNotFoundError:
             self._send(b"Not found", "text/plain", 404)
 
@@ -187,11 +265,118 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         try:
             payload = self._read_json()
+            if parsed.path == "/api/collage/generate":
+                asset_ids = [str(value) for value in payload.get("asset_ids", []) if str(value)]
+                if not 2 <= len(asset_ids) <= 20: raise ValueError("select between 2 and 20 photographs")
+                connection = connect(self.catalog_path)
+                try:
+                    photos = []
+                    for asset_id in asset_ids:
+                        row = connection.execute("SELECT v.current_mount_path, al.relative_path FROM asset_locations al JOIN volumes v ON v.id=al.volume_id WHERE al.asset_id=? AND al.missing_since IS NULL AND v.status='CONNECTED' LIMIT 1", (asset_id,)).fetchone()
+                        if not row: raise ValueError(f"photo is offline or missing: {asset_id}")
+                        root = Path(str(row[0])).resolve(); path = (root / str(row[1])).resolve()
+                        if root not in path.parents or not path.is_file(): raise ValueError(f"photo is unavailable: {asset_id}")
+                        cache = getattr(self.server, "collage_analysis_cache")
+                        if asset_id not in cache or cache[asset_id].path != path:
+                            cache[asset_id] = analyse_photo(path)
+                        photos.append(cache[asset_id])
+                finally: connection.close()
+                run_id = uuid.uuid4().hex
+                output = (self.catalog_path.expanduser().resolve().parent / "collage-runs" / run_id)
+                output.mkdir(parents=True, exist_ok=True)
+                requested_providers = payload.get("providers")
+                providers = [str(value) for value in requested_providers] if isinstance(requested_providers, list) else None
+                metrics = run_poc_photos(photos, output, seed=int(payload.get("seed", 42)), providers=providers, count=int(payload.get("count", 10)), source_run_id=run_id)
+                candidates = json.loads((output / "candidates.json").read_text())
+                result = {"run_id": run_id, "timestamp": datetime.now(timezone.utc).isoformat(), "selected_asset_ids": asset_ids, "seed": int(payload.get("seed", 42)), "metrics": metrics, "candidates": [{"document_id": c["document_id"], "provider": c["provider"], "candidate_number": c["candidate_number"], "seed": c["seed"], "rejected": c["rejected"], "rejection_reasons": c["rejection_reasons"], "preview": f"/api/collage/runs/{run_id}/previews/{c['provider']}-{c['candidate_number']:02d}-seed-{c['seed']}.jpg", "document": f"/api/collage/runs/{run_id}/documents/{c['document_id']}"} for c in candidates]}
+                (output / "run.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+                getattr(self.server, "collage_runs")[run_id] = {"output": output, "payload": result}
+                self._json(result, 201); return
+            if parsed.path.startswith("/api/collage/runs/") and "/documents/" in parsed.path:
+                parts = parsed.path.split("/")
+                run_id, document_id = parts[4], parts[6]
+                run = getattr(self.server, "collage_runs", {}).get(run_id)
+                if run is None: self._json({"error": "run not found"}, 404); return
+                if not isinstance(payload, dict) or payload.get("document_type") != "CollageDocument":
+                    raise ValueError("payload must be a CollageDocument")
+                if str(payload.get("document_id")) != document_id:
+                    raise ValueError("document_id does not match URL")
+                frames = payload.get("frames")
+                if not isinstance(frames, list) or not frames:
+                    raise ValueError("document must contain at least one frame")
+                for frame in frames:
+                    if not isinstance(frame, dict) or not frame.get("photo_id"):
+                        raise ValueError("every frame must reference a photo")
+                payload["cells"] = frames
+                payload["edited"] = True
+                payload["modified_at"] = datetime.now(timezone.utc).isoformat()
+                target = (run["output"] / "documents" / f"{document_id}.json").resolve()
+                if run["output"] not in target.parents: self._json({"error": "invalid document path"}, 400); return
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                self._json({"ok": True, "document": payload}); return
+            if parsed.path in {"/api/android/pair", "/api/android/reconnect"} or parsed.path.startswith("/api/android/pair/"):
+                if not self._local_origin_allowed():
+                    self._json({"error": "pairing requests must originate from the Photo Manager local UI"}, 403)
+                    return
+                pairings: dict[str, AndroidCompanionWifiSource] = getattr(self.server, "android_pairings")
+                if parsed.path == "/api/android/pair":
+                    host = str(payload.get("host", "")).strip()
+                    port = int(payload.get("port", 8765))
+                    if not host or not (1 <= port <= 65535): raise ValueError("a valid discovered device host and port are required")
+                    try:
+                        source = AndroidCompanionWifiSource(f"http://{host}:{port}", "", timeout=10.0)
+                        result = source.pair(desktop_name="Photo Manager")
+                    except AndroidCompanionUnavailable:
+                        raise
+                    except Exception as exc:  # noqa: BLE001
+                        # Never let a downstream pairing failure close the browser socket.
+                        raise AndroidCompanionUnavailable(f"pairing failed: {exc}") from exc
+                    pairings[result["session_id"]] = source
+                    connection = connect(self.catalog_path)
+                    try: record_pairing_session(connection, session_id=result["session_id"], device_id=result["device_id"], display_name=result["display_name"], state="AWAITING_NUMERIC_CONFIRMATION", sas=result["sas"], public_key_fingerprint=result["fingerprint"])
+                    finally: connection.close()
+                    self._json({"ok": True, **result}, 202)
+                    return
+                if parsed.path == "/api/android/reconnect":
+                    device_id = str(payload.get("device_id", "")).strip(); host = str(payload.get("host", "")).strip(); port = int(payload.get("port", 8765))
+                    connection = connect(self.catalog_path)
+                    try:
+                        trusted = connection.execute("SELECT public_key_fingerprint FROM trusted_android_devices WHERE device_id=? AND revoked_at IS NULL", (device_id,)).fetchone()
+                    finally: connection.close()
+                    if not trusted: self._json({"error": "device is not trusted"}, 403); return
+                    try:
+                        result = AndroidCompanionWifiSource(f"http://{host}:{port}", "", timeout=10.0).reconnect(expected_android_fingerprint=str(trusted[0]))
+                    except AndroidCompanionUnavailable:
+                        raise
+                    except Exception as exc:  # noqa: BLE001
+                        raise AndroidCompanionUnavailable(f"reconnect failed: {exc}") from exc
+                    connection = connect(self.catalog_path)
+                    try: touch_android_device(connection, device_id)
+                    finally: connection.close()
+                    self._json({"ok": True, **result}, 200)
+                    return
+                suffix = parsed.path.removeprefix("/api/android/pair/").strip("/")
+                session_id = suffix.removesuffix("/confirm")
+                source = pairings.get(session_id)
+                if source is None: self._json({"error": "unknown pairing session"}, 404); return
+                if suffix.endswith("/confirm"):
+                    paired = source.confirm_pairing(session_id)
+                    result = source.pairing_result(session_id)
+                    source_id = None
+                    if paired:
+                        connection = connect(self.catalog_path)
+                        try:
+                            source_id = trust_android_device(connection, device_id=result["device_id"], display_name=result["display_name"], public_key_fingerprint=result["fingerprint"], credential_reference_id="desktop-noise-static-v1")
+                            record_pairing_session(connection, session_id=session_id, device_id=result["device_id"], display_name=result["display_name"], state="PAIRED", sas=result["sas"], public_key_fingerprint=result["fingerprint"])
+                        finally: connection.close()
+                    self._json({"ok": True, "paired": paired, "source_id": source_id, "session_token": source.session_token if paired else None})
+                    return
             jobs: BackupJobManager = getattr(self.server, "backup_jobs")
             if parsed.path == "/api/backup/jobs":
                 folders = payload.get("folders", [])
                 if isinstance(folders, str): folders = [folders]
-                job = jobs.create(url=str(payload.get("url", "")), token=str(payload.get("token", "")), folders=[str(folder) for folder in folders], destination=str(payload.get("destination", "")), media_filter=str(payload.get("media_filter", "ALL")), workers=int(payload.get("workers", 5)), fsync_mode=str(payload.get("fsync_mode", "batch")), batch_files=int(payload.get("batch_files", 25)))
+                job = jobs.create(url=str(payload.get("url", "")), token=str(payload.get("token", "")), session_token=str(payload.get("session_token", "")) or None, android_fingerprint=str(payload.get("android_fingerprint", "")) or None, folders=[str(folder) for folder in folders], destination=str(payload.get("destination", "")), media_filter=str(payload.get("media_filter", "ALL")), workers=int(payload.get("workers", 5)), fsync_mode=str(payload.get("fsync_mode", "batch")), batch_files=int(payload.get("batch_files", 25)))
                 self._json(job.payload(), 201)
                 return
             if parsed.path.startswith("/api/backup/jobs/"):
@@ -254,8 +439,20 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                 self._json({"error": "Not found"}, 404)
             finally:
                 connection.close()
+        except AndroidCompanionUnavailable as exc:
+            self._json({"error": str(exc)}, 502)
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             self._json({"error": str(exc)}, 400)
+        except Exception as exc:  # noqa: BLE001
+            # Keep local UI/API failures observable instead of returning an empty socket.
+            self.log_error("POST %s failed: %s", parsed.path, exc)
+            self._json({"error": "internal server error"}, 500)
+
+    def _local_origin_allowed(self) -> bool:
+        origin = self.headers.get("Origin")
+        if not origin: return False
+        port = self.server.server_port
+        return origin in {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
 
     def do_PUT(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -285,6 +482,13 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
             self._json({"error": str(exc)}, 400)
 
     def do_DELETE(self) -> None:  # noqa: N802
+        if self.path.startswith("/api/android/trusted/"):
+            if not self._local_origin_allowed(): self._json({"error": "request must originate from the Photo Manager local UI"}, 403); return
+            device_id = urlparse(self.path).path.removeprefix("/api/android/trusted/").strip("/")
+            connection = connect(self.catalog_path)
+            try: revoke_android_device(connection, device_id); self._json({"ok": True, "device_id": device_id})
+            finally: connection.close()
+            return
         parsed = urlparse(self.path)
         prefix = "/api/topics/"
         if not parsed.path.startswith(prefix):
@@ -440,5 +644,32 @@ def serve(catalog: Path, host: str = "127.0.0.1", port: int = 8765) -> None:
     httpd = ThreadingHTTPServer((host, port), PhotoVaultHandler)
     httpd.catalog_path = catalog.expanduser().resolve()  # type: ignore[attr-defined]
     httpd.backup_jobs = BackupJobManager(httpd.catalog_path)  # type: ignore[attr-defined]
+    httpd.android_discovery = AndroidDiscoveryService()  # type: ignore[attr-defined]
+    httpd.android_pairings = {}  # type: ignore[attr-defined]
+    httpd.android_connection_states = {}  # type: ignore[attr-defined]
+    httpd.collage_runs = {}  # type: ignore[attr-defined]
+    httpd.collage_analysis_cache = {}  # type: ignore[attr-defined]
+    def reconnect_discovered(change, device) -> None:
+        if change == "disappeared":
+            httpd.android_connection_states[device.device_id] = "offline"  # type: ignore[attr-defined]
+            return
+        if change not in {"appeared", "updated"}: return
+        def run() -> None:
+            connection = connect(httpd.catalog_path)
+            try: trusted = connection.execute("SELECT public_key_fingerprint FROM trusted_android_devices WHERE device_id=? AND revoked_at IS NULL", (device.device_id,)).fetchone()
+            finally: connection.close()
+            if not trusted: return
+            try:
+                AndroidCompanionWifiSource(f"http://{device.host}:{device.port}", "").reconnect(expected_android_fingerprint=str(trusted[0]))
+                httpd.android_connection_states[device.device_id] = "connected"  # type: ignore[attr-defined]
+            except AndroidCompanionUnavailable:
+                httpd.android_connection_states[device.device_id] = "offline"  # type: ignore[attr-defined]
+        threading.Thread(target=run, daemon=True, name="photovault-android-reconnect").start()
+    httpd.android_discovery.on_change = reconnect_discovered  # type: ignore[attr-defined]
+    httpd.android_discovery.start()  # type: ignore[attr-defined]
     print(f"PhotoVault web UI: http://{host}:{port}")
-    httpd.serve_forever()
+    try:
+        httpd.serve_forever()
+    finally:
+        httpd.android_discovery.stop()  # type: ignore[attr-defined]
+        httpd.server_close()
