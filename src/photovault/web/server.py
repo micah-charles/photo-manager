@@ -319,7 +319,7 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
         try:
             body = target.read_bytes()
             if target.name == "collage_v2.html":
-                body = body.replace(b"</body>", b'<script src="/collage_sources.js?v=20260903-2"></script><script src="/collage_runs.js?v=20260903-2"></script><script src="/collage_crop_debug.js?v=20260903-2"></script><script src="/collage_topic.js?v=20260903-2"></script><script src="/collage_topic_refresh.js?v=20260903-2"></script><script src="/collage_topic_guard.js?v=20260903-2"></script></body>')
+                body = body.replace(b"</body>", b'<script src="/collage_sources.js?v=20260903-3"></script><script src="/collage_runs.js?v=20260903-3"></script><script src="/collage_crop_debug.js?v=20260903-3"></script><script src="/collage_topic.js?v=20260903-3"></script><script src="/collage_topic_refresh.js?v=20260903-3"></script><script src="/collage_topic_guard.js?v=20260903-3"></script></body>')
             self._send(body, mimetypes.guess_type(target.name)[0] or "text/plain")
         except FileNotFoundError:
             self._send(b"Not found", "text/plain", 404)
