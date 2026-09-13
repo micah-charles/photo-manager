@@ -68,7 +68,7 @@ The catalog is metadata only. Originals remain ordinary filesystem files.
 
 Phase 1 is an isolated, read-only layout experiment. It does not change the
 catalog or source photographs. Given a folder of images, it writes 30
-structured layout candidates (10 each from native, BSP and optimisation
+structured layout candidates (10 each from native, CEWE Fan genetic and BSP
 providers), individual JPEG previews, a labelled contact sheet and
 `candidates.json`:
 
@@ -107,3 +107,25 @@ separate application. The native IOUSBHost helper supports device, storage,
 lazy MTP folder metadata, bounded media streaming, and verified import with
 incremental source/destination records. Real-device and packaged-distribution
 validation remain environment-dependent; see [Android integration](docs/ANDROID_INTEGRATION_FINAL_REPORT.md).
+
+## Secure Android Wi-Fi pairing
+
+Install the generated Companion APK on the Pixel, start local sharing, and
+tap **Pair new computer**. In the Photo Manager web UI open **Android Backup**;
+the discovered phone appears under **Your Android devices**. Click **Pair**,
+compare the six-digit SAS shown on both devices, confirm on the phone, then
+confirm in Photo Manager. The UI fills the secure session credential into the
+backup form; no phone token is needed for the new APK.
+
+Create the backup plan and start it as usual. The existing range reads,
+SHA-256 verification, atomic writes, worker pool, batch fsync, resume and
+already-copied skipping remain unchanged. The secure session is short-lived;
+long-running jobs automatically perform a pinned Noise reconnect and retry
+after expiry. **Forget** removes the desktop trust record; the Companion also
+provides **Forget paired computers** to clear its phone-side trust. Pairing
+must then be performed again. Older APKs remain available through the explicitly labelled
+legacy URL/token fields.
+
+For an AI/MCP caller, pass `session_token` and `android_fingerprint` returned
+by the secure pairing flow to `create_backup_job`, then call
+`start_backup_job` and poll `backup_status`.

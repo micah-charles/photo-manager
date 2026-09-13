@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import mimetypes
 import base64
+import io
+import zipfile
 import threading
 import uuid
 from dataclasses import replace
@@ -13,7 +15,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from photovault.catalog.library import LibraryQuery, count_library_items, library_facets, list_library_items
-from photovault.catalog.organization import add_assets_to_event, create_event, delete_event, list_events, list_places, list_sources, list_tags, remove_assets_from_event, update_event
+from photovault.catalog.organization import add_assets_to_event, add_assets_to_topic_section, create_event, create_topic_section, delete_event, list_events, list_places, list_sources, list_tags, list_topic_sections, remove_assets_from_event, remove_assets_from_topic_section, update_event
 from photovault.catalog.people import list_people
 from photovault.catalog.collections import list_collections
 from photovault.catalog.thumbnail_jobs import build_missing_thumbnails, thumbnail_status
@@ -24,10 +26,71 @@ from photovault.pairing.trusted import list_trusted_android_devices, record_pair
 from photovault.sources.android_wifi import AndroidCompanionUnavailable, AndroidCompanionWifiSource
 from photovault.collage.analysis import FaceBox, PhotoAnalysis, analyse_photo
 from photovault.collage.poc.runner import run_poc_photos
-from photovault.collage.models import Canvas, Cell, Crop, LayoutCandidate, PhotoInput
+from photovault.collage.models import Canvas, Cell, Crop, LayoutCandidate, PhotoInput, page_spec_from_dict
 from photovault.collage.render import render_candidate
+from photovault.collage.design_formats import validate_design_spec, to_collage_document, validate_page_spec
+from PIL import Image, ImageDraw, ImageFont
 
 STATIC_ROOT = Path(__file__).with_name("static")
+
+
+def _run_collage_job(httpd, catalog_path: Path, payload: dict[str, object], job_id: str) -> None:
+    """Run candidate generation off the request thread and publish progress."""
+    job = httpd.collage_jobs[job_id]
+    job.update(status="running", stage="loading photos", progress=5)
+    try:
+        asset_ids = [str(value) for value in payload.get("asset_ids", []) if str(value)]
+        connection = connect(catalog_path)
+        try:
+            photos = []
+            for index, asset_id in enumerate(asset_ids):
+                row = connection.execute("SELECT v.current_mount_path, al.relative_path FROM asset_locations al JOIN volumes v ON v.id=al.volume_id WHERE al.asset_id=? AND al.missing_since IS NULL AND v.status='CONNECTED' LIMIT 1", (asset_id,)).fetchone()
+                if not row:
+                    raise ValueError(f"photo is offline or missing: {asset_id}")
+                root = Path(str(row[0])).resolve()
+                path = (root / str(row[1])).resolve()
+                if root not in path.parents or not path.is_file():
+                    raise ValueError(f"photo is unavailable: {asset_id}")
+                cache = getattr(httpd, "collage_analysis_cache")
+                fingerprints = getattr(httpd, "collage_analysis_fingerprints")
+                stat = path.stat()
+                fingerprint = {"path": str(path), "size_bytes": stat.st_size, "modified_ns": stat.st_mtime_ns}
+                if asset_id not in cache or fingerprints.get(asset_id) != fingerprint:
+                    cache[asset_id] = replace(analyse_photo(path), photo_id=asset_id)
+                    fingerprints[asset_id] = fingerprint
+                    save_collage_analysis_cache(getattr(httpd, "collage_analysis_cache_path"), cache, fingerprints)
+                photos.append(cache[asset_id])
+                job.update(progress=5 + int((index + 1) / len(asset_ids) * 20), stage=f"analysed {index + 1}/{len(asset_ids)} photos")
+        finally:
+            connection.close()
+
+        run_id = uuid.uuid4().hex
+        output = (catalog_path.parent / "collage-runs" / run_id)
+        output.mkdir(parents=True, exist_ok=True)
+        requested_providers = payload.get("providers")
+        providers = [str(value) for value in requested_providers] if isinstance(requested_providers, list) else None
+        page_spec = page_spec_from_dict(payload.get("page_spec"))
+        transforms = payload.get("photo_transforms") if isinstance(payload.get("photo_transforms"), dict) else None
+        job.update(progress=30, stage="generating candidates", run_id=run_id)
+        metrics = run_poc_photos(
+            photos,
+            output,
+            seed=int(payload.get("seed", 42)),
+            providers=providers,
+            count=int(payload.get("count", 10)),
+            source_run_id=run_id,
+            page_spec=page_spec,
+            photo_transforms=transforms,
+            progress_callback=lambda progress, stage: job.update(progress=progress, stage=stage),
+        )
+        job.update(progress=90, stage="saving candidates")
+        candidates = json.loads((output / "candidates.json").read_text())
+        result = {"run_id": run_id, "timestamp": datetime.now(timezone.utc).isoformat(), "selected_asset_ids": asset_ids, "seed": int(payload.get("seed", 42)), "page_spec": page_spec.to_dict(), "metrics": metrics, "candidates": [{"document_id": c["document_id"], "provider": c["provider"], "candidate_number": c["candidate_number"], "seed": c["seed"], "rejected": c["rejected"], "rejection_reasons": c["rejection_reasons"], "preview": f"/api/collage/runs/{run_id}/previews/{c['provider']}-{c['candidate_number']:02d}-seed-{c['seed']}.jpg", "document": f"/api/collage/runs/{run_id}/documents/{c['document_id']}"} for c in candidates]}
+        (output / "run.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+        getattr(httpd, "collage_runs")[run_id] = {"output": output, "payload": result}
+        job.update(status="complete", stage="complete", progress=100, result=result)
+    except Exception as error:  # surfaced through the job endpoint, not a hung request
+        job.update(status="failed", stage="failed", error=str(error))
 
 
 def load_collage_analysis_cache(path: Path) -> tuple[dict[str, PhotoInput], dict[str, dict[str, object]]]:
@@ -72,6 +135,9 @@ def save_collage_analysis_cache(path: Path, photos: dict[str, PhotoInput], finge
 
 
 def _row_payload(row) -> dict[str, object]:
+    absolute_path = None
+    if row["current_mount_path"] and row["volume_status"] == "CONNECTED":
+        absolute_path = str((Path(str(row["current_mount_path"])) / str(row["relative_path"])).resolve())
     return {
         "asset_id": row["asset_id"], "filename": row["filename"], "media_type": row["media_type"],
         "relative_path": row["relative_path"], "size_bytes": row["size_bytes"],
@@ -79,6 +145,9 @@ def _row_payload(row) -> dict[str, object]:
         "source_id": row["source_id"], "source": row["source_name"],
         "volume": row["volume_name"], "volume_status": row["volume_status"],
         "thumbnail": f"/api/thumb/{row['asset_id']}" if row["thumbnail_path"] else None,
+        "thumbnail_path": str(row["thumbnail_path"]) if row["thumbnail_path"] else None,
+        "absolute_path": absolute_path,
+        "original_url": f"/api/original/{row['asset_id']}",
         "camera": " ".join(filter(None, (row["camera_make"], row["camera_model"]))) or None,
         "width": row["width"], "height": row["height"], "latitude": row["latitude"], "longitude": row["longitude"],
         "favourite": bool(row["is_favourite"]), "review_status": row["review_status"], "rating": row["rating"],
@@ -178,6 +247,9 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+        from photovault.web.culling import handle
+        if handle(self, parsed, 'GET'):
+            return
         if parsed.path.startswith("/api/backup/jobs/"):
             job_id = parsed.path.removeprefix("/api/backup/jobs/").strip("/")
             try:
@@ -194,12 +266,22 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
             finally:
                 connection.close()
             return
+        if parsed.path.startswith("/api/collage/jobs/"):
+            job_id = parsed.path.removeprefix("/api/collage/jobs/").strip("/")
+            job = getattr(self.server, "collage_jobs", {}).get(job_id)
+            if job is None:
+                self._json({"error": "collage job not found"}, 404)
+            else:
+                self._json(dict(job))
+            return
         if parsed.path == "/api/collage/folders":
             connection = connect(self.catalog_path)
             try:
                 folders: dict[str, int] = {}
                 for row in connection.execute("SELECT relative_path FROM asset_locations WHERE missing_since IS NULL ORDER BY relative_path"):
                     path = str(row[0]); parts = path.split("/")[:-1]
+                    if any(part.startswith(".") for part in parts):
+                        continue
                     for depth in range(1, len(parts) + 1): folders["/".join(parts[:depth])] = folders.get("/".join(parts[:depth]), 0) + 1
                 self._json({"folders": [{"name": name, "count": count} for name, count in sorted(folders.items())]})
             finally: connection.close()
@@ -211,10 +293,12 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
             finally: connection.close()
             return
         if parsed.path == "/api/collage/photos":
-            params = parse_qs(parsed.query); folder = params.get("folder", [""])[0]; topic = params.get("topic", [""])[0]; source_ids = [value for value in params.get("source", []) if value]
+            params = parse_qs(parsed.query); folder = params.get("folder", [""])[0]; topic = params.get("topic", [""])[0]; source_ids = [value for value in params.get("source", []) if value]; requested_ids = tuple(value for value in params.get("asset_id", []) if value)
             connection = connect(self.catalog_path)
             try:
-                if len(source_ids) <= 1:
+                if requested_ids:
+                    self._json(library_payload(connection, LibraryQuery(asset_ids=requested_ids, media_type="IMAGE", limit=len(requested_ids))))
+                elif len(source_ids) <= 1:
                     self._json(library_payload(connection, LibraryQuery(folder_prefix=folder, event_id=topic, source_id=source_ids[0] if source_ids else "", media_type="IMAGE", limit=200)))
                 else:
                     merged = []
@@ -226,6 +310,15 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                     merged.sort(key=lambda item: (str(item.get("captured") or ""), str(item.get("asset_id") or "")), reverse=True)
                     self._json({"total": total, "items": merged[:200], "months": [], "years": [], "days": {}, "next_cursor": None, "has_more": total > 200})
             finally: connection.close()
+            return
+        if parsed.path.startswith("/api/collage/design-packages/"):
+            package_id = parsed.path.removeprefix("/api/collage/design-packages/").strip("/")
+            target = (self.catalog_path.parent / "collage-design-packages" / f"{package_id}.zip").resolve()
+            root = (self.catalog_path.parent / "collage-design-packages").resolve()
+            if root not in target.parents or not target.is_file():
+                self._send(b"Not found", "text/plain", 404)
+                return
+            self._send(target.read_bytes(), "application/zip", immutable=True)
             return
         if parsed.path == "/api/collage/runs":
             runs = []
@@ -262,6 +355,20 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                 self._json(topics_payload(connection))
             finally:
                 connection.close()
+            return
+        if parsed.path.startswith("/api/topics/") and parsed.path.endswith("/sections"):
+            topic_id = parsed.path.removeprefix("/api/topics/").removesuffix("/sections").strip("/")
+            connection = connect(self.catalog_path)
+            try: self._json({"topic_id": topic_id, "sections": list_topic_sections(connection, topic_id)})
+            finally: connection.close()
+            return
+        if parsed.path.startswith("/api/sections/") and parsed.path.endswith("/assets"):
+            section_id = parsed.path.removeprefix("/api/sections/").removesuffix("/assets").strip("/")
+            connection = connect(self.catalog_path)
+            try:
+                rows = connection.execute("SELECT asset_id FROM topic_section_assets WHERE section_id=? ORDER BY sort_order, asset_id", (section_id,)).fetchall()
+                self._json({"section_id": section_id, "asset_ids": [str(row[0]) for row in rows]})
+            finally: connection.close()
             return
         if parsed.path == "/api/navigation":
             connection = connect(self.catalog_path)
@@ -311,7 +418,7 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
         if parsed.path.startswith("/api/thumb/"):
             self._thumbnail(parsed.path.removeprefix("/api/thumb/"))
             return
-        relative = "index.html" if parsed.path in {"", "/"} else ("collage_v2.html" if parsed.path == "/experimental/collage" else parsed.path.removeprefix("/"))
+        relative = "index.html" if parsed.path in {"", "/"} else ("topic_workspace.html" if parsed.path == "/topic-workspace" else ("collage_v2.html" if parsed.path == "/experimental/collage" else ("fabric_spike_v2.html" if parsed.path == "/experimental/collage/fabric-v2" else ("fabric_spike.html" if parsed.path == "/experimental/collage/fabric" else parsed.path.removeprefix("/")))))
         target = (STATIC_ROOT / relative).resolve()
         if STATIC_ROOT not in target.parents and target != STATIC_ROOT:
             self._send(b"Not found", "text/plain", 404)
@@ -320,50 +427,107 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
             body = target.read_bytes()
             if target.name == "collage_v2.html":
                 body = body.replace(b"</body>", b'<script src="/collage_sources.js?v=20260903-3"></script><script src="/collage_runs.js?v=20260903-3"></script><script src="/collage_crop_debug.js?v=20260903-3"></script><script src="/collage_topic.js?v=20260903-3"></script><script src="/collage_topic_refresh.js?v=20260903-3"></script><script src="/collage_topic_guard.js?v=20260903-3"></script></body>')
+                body = body.replace(b"</body>", b'<script src="/collage_topic_section.js?v=20260904-1"></script></body>')
+                body = body.replace(b"</body>", b'<script src="/collage_design_package.js?v=20260905-1"></script></body>')
+            if target.name == "fabric_spike_v2.html":
+                body = body.replace(b"</body>", b'<script src="/collage_editor_package.js?v=20260905-1"></script></body>')
             self._send(body, mimetypes.guess_type(target.name)[0] or "text/plain")
         except FileNotFoundError:
             self._send(b"Not found", "text/plain", 404)
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+        from photovault.web.culling import handle
+        if handle(self, parsed, 'POST'):
+            return
         try:
             payload = self._read_json()
             if parsed.path == "/api/collage/generate":
                 asset_ids = [str(value) for value in payload.get("asset_ids", []) if str(value)]
                 if not 2 <= len(asset_ids) <= 20: raise ValueError("select between 2 and 20 photographs")
+                job_id = uuid.uuid4().hex
+                self.server.collage_jobs[job_id] = {"job_id": job_id, "status": "queued", "stage": "queued", "progress": 0}
+                threading.Thread(target=_run_collage_job, args=(self.server, self.catalog_path, payload, job_id), daemon=True, name=f"collage-job-{job_id[:8]}").start()
+                self._json({"job_id": job_id, "status": "queued"}, 202); return
+            if parsed.path == "/api/collage/design-packages":
+                asset_ids = list(dict.fromkeys(str(value) for value in payload.get("asset_ids", []) if str(value)))
+                if not 1 <= len(asset_ids) <= 200:
+                    raise ValueError("select between 1 and 200 photographs")
+                page = validate_page_spec(payload.get("page_spec") or {})
                 connection = connect(self.catalog_path)
                 try:
-                    photos = []
-                    for asset_id in asset_ids:
-                        row = connection.execute("SELECT v.current_mount_path, al.relative_path FROM asset_locations al JOIN volumes v ON v.id=al.volume_id WHERE al.asset_id=? AND al.missing_since IS NULL AND v.status='CONNECTED' LIMIT 1", (asset_id,)).fetchone()
-                        if not row: raise ValueError(f"photo is offline or missing: {asset_id}")
-                        root = Path(str(row[0])).resolve(); path = (root / str(row[1])).resolve()
-                        if root not in path.parents or not path.is_file(): raise ValueError(f"photo is unavailable: {asset_id}")
-                        cache = getattr(self.server, "collage_analysis_cache")
-                        fingerprints = getattr(self.server, "collage_analysis_fingerprints")
-                        stat = path.stat()
-                        fingerprint = {"path": str(path), "size_bytes": stat.st_size, "modified_ns": stat.st_mtime_ns}
-                        if asset_id not in cache or fingerprints.get(asset_id) != fingerprint:
-                            # Analysis may use a filename internally, but the
-                            # persisted collage document must use PhotoVault's
-                            # stable asset ID so duplicate filenames across
-                            # sources never collide.
-                            cache[asset_id] = replace(analyse_photo(path), photo_id=asset_id)
-                            fingerprints[asset_id] = fingerprint
-                            save_collage_analysis_cache(getattr(self.server, "collage_analysis_cache_path"), cache, fingerprints)
-                        photos.append(cache[asset_id])
-                finally: connection.close()
-                run_id = uuid.uuid4().hex
-                output = (self.catalog_path.expanduser().resolve().parent / "collage-runs" / run_id)
+                    manifest = library_payload(connection, LibraryQuery(asset_ids=tuple(asset_ids), media_type="IMAGE", limit=len(asset_ids)))
+                finally:
+                    connection.close()
+                items_by_id = {str(item["asset_id"]): item for item in manifest["items"]}
+                missing = [asset_id for asset_id in asset_ids if asset_id not in items_by_id]
+                if missing:
+                    raise ValueError(f"unknown or unavailable asset ids: {', '.join(missing[:5])}")
+                package_id = "pkg_" + uuid.uuid4().hex
+                root = self.catalog_path.parent / "collage-design-packages"
+                root.mkdir(parents=True, exist_ok=True)
+                package = {"format": "PhotoManager DesignPackage", "schema_version": 1, "package_id": package_id,
+                           "catalog_id": self.catalog_path.stem, "page_spec": page, "mode": str(payload.get("mode", "from_scratch")),
+                           "style": str(payload.get("style", "organic")), "assets": [{"label": f"A{index + 1:02d}", **items_by_id[asset_id]} for index, asset_id in enumerate(asset_ids)],
+                           "selection": {"topic_id": payload.get("topic_id"), "section_id": payload.get("section_id"), "asset_ids": asset_ids}}
+                if isinstance(payload.get("current_document"), dict):
+                    package["current_document"] = payload["current_document"]
+                contact = Image.new("RGB", (1000, max(120, ((len(asset_ids) + 5) // 6) * 180)), "#f5f2ed")
+                draw = ImageDraw.Draw(contact)
+                images: dict[str, bytes] = {}
+                for index, asset_id in enumerate(asset_ids):
+                    item = items_by_id[asset_id]; raw = b""
+                    path = item.get("thumbnail_path") or item.get("absolute_path")
+                    try:
+                        with Image.open(str(path)) as source:
+                            thumb = source.convert("RGB"); thumb.thumbnail((145, 135))
+                            cell = Image.new("RGB", (150, 145), "white"); cell.paste(thumb, ((150-thumb.width)//2, 2));
+                            x = (index % 6) * 165 + 5; y = (index // 6) * 180 + 5
+                            contact.paste(cell, (x, y)); draw.text((x, y + 148), f"A{index + 1:02d} {item['filename'][:18]}", fill="#292521")
+                            buf = io.BytesIO(); thumb.save(buf, format="JPEG", quality=88); raw = buf.getvalue()
+                    except (OSError, ValueError):
+                        pass
+                    images[f"A{index + 1:02d}.jpg"] = raw
+                instructions = "Use only the A IDs in this package. Return CollageDesignSpec v1 JSON. Do not invent or redraw photos. Keep geometry in mm."
+                schema_path = Path(__file__).resolve().parent.parent / "collage" / "schemas" / "design-spec-v1.json"
+                schema = json.loads(schema_path.read_text(encoding="utf-8")) if schema_path.is_file() else {"format": "CollageDesignSpec", "schema_version": 1}
+                target = root / f"{package_id}.zip"
+                with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+                    archive.writestr("design-package.json", json.dumps(package, indent=2, default=str))
+                    out = io.BytesIO(); contact.save(out, format="JPEG", quality=90); archive.writestr("contact-sheet.jpg", out.getvalue())
+                    for name, raw in images.items():
+                        if raw: archive.writestr(f"thumbnails/{name}", raw)
+                    archive.writestr("collage-design.schema.json", json.dumps(schema, indent=2))
+                    archive.writestr("CHATGPT-INSTRUCTIONS.md", instructions)
+                    if isinstance(package.get("current_document"), dict): archive.writestr("current-layout.json", json.dumps(package["current_document"], indent=2))
+                self._json({"package_id": package_id, "download": f"/api/collage/design-packages/{package_id}", "asset_count": len(asset_ids), "manifest": package}, 201)
+                return
+            if parsed.path in {"/api/collage/design-imports/validate", "/api/collage/design-imports"}:
+                spec = payload.get("spec") if isinstance(payload.get("spec"), dict) else payload
+                raw_assets = spec.get("assets") if isinstance(spec, dict) else []
+                labels = {str(item.get("label")): str(item.get("asset_id")) for item in raw_assets if isinstance(item, dict) and item.get("label") and item.get("asset_id")}
+                spec = json.loads(json.dumps(spec))
+                for alternative in spec.get("alternatives", []) if isinstance(spec, dict) else []:
+                    for element in alternative.get("elements", []) if isinstance(alternative, dict) else []:
+                        if isinstance(element, dict) and element.get("type") == "photo" and str(element.get("asset_id", "")) in labels:
+                            element["asset_id"] = labels[str(element["asset_id"])]
+                asset_ids = {str(item.get("asset_id")) for item in raw_assets if isinstance(item, dict) and item.get("asset_id")}
+                checked = validate_design_spec(spec, asset_ids)
+                if parsed.path.endswith("/validate"):
+                    counts = [{"alternative": index, "elements": len(item["elements"]), "photos": sum(x["type"] == "photo" for x in item["elements"])} for index, item in enumerate(checked["alternatives"])]
+                    self._json({"valid": True, "warnings": [], "alternatives": counts, "spec": checked})
+                    return
+                index = int(payload.get("alternative_index", 0))
+                if index < 0 or index >= len(checked["alternatives"]): raise ValueError("alternative_index is out of range")
+                document = to_collage_document(checked, index, {str(item["asset_id"]): item for item in raw_assets})
+                run_id = str(payload.get("run_id") or "imported")
+                output = self.catalog_path.parent / "collage-runs" / run_id
                 output.mkdir(parents=True, exist_ok=True)
-                requested_providers = payload.get("providers")
-                providers = [str(value) for value in requested_providers] if isinstance(requested_providers, list) else None
-                metrics = run_poc_photos(photos, output, seed=int(payload.get("seed", 42)), providers=providers, count=int(payload.get("count", 10)), source_run_id=run_id)
-                candidates = json.loads((output / "candidates.json").read_text())
-                result = {"run_id": run_id, "timestamp": datetime.now(timezone.utc).isoformat(), "selected_asset_ids": asset_ids, "seed": int(payload.get("seed", 42)), "metrics": metrics, "candidates": [{"document_id": c["document_id"], "provider": c["provider"], "candidate_number": c["candidate_number"], "seed": c["seed"], "rejected": c["rejected"], "rejection_reasons": c["rejection_reasons"], "preview": f"/api/collage/runs/{run_id}/previews/{c['provider']}-{c['candidate_number']:02d}-seed-{c['seed']}.jpg", "document": f"/api/collage/runs/{run_id}/documents/{c['document_id']}"} for c in candidates]}
-                (output / "run.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-                getattr(self.server, "collage_runs")[run_id] = {"output": output, "payload": result}
-                self._json(result, 201); return
+                document_path = output / "documents" / f"{document['document_id']}.json"
+                document_path.parent.mkdir(parents=True, exist_ok=True)
+                document_path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+                self._json({"ok": True, "document": document, "document_url": f"/api/collage/runs/{run_id}/documents/{document['document_id']}"}, 201)
+                return
             if parsed.path.startswith("/api/collage/runs/") and "/documents/" in parsed.path:
                 parts = parsed.path.split("/")
                 run_id, document_id = parts[4], parts[6]
@@ -428,6 +592,7 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                     style=str(payload.get("style", "")), metadata=dict(payload.get("metadata") or {}),
                     edited=True, document_id=document_id, source_run_id=run_id,
                     modified_at=str(payload["modified_at"]), created_at=payload.get("created_at"),
+                    page_spec=page_spec_from_dict(payload.get("page_spec")).to_dict(),
                 )
                 preview = run["output"] / "previews" / f"{candidate.provider}-{candidate.candidate_number:02d}-seed-{candidate.seed}-{document_id}.jpg"
                 render_candidate(candidate, photos, preview)
@@ -544,6 +709,19 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                     )
                     self._json({"ok": True, "id": event_id}, 201)
                     return
+                if parsed.path.startswith("/api/topics/") and parsed.path.endswith("/sections"):
+                    topic_id = parsed.path.removeprefix("/api/topics/").removesuffix("/sections").strip("/")
+                    asset_ids = payload.get("asset_ids", [])
+                    if not isinstance(asset_ids, list): raise ValueError("asset_ids must be a list")
+                    section_id = create_topic_section(connection, topic_id, str(payload.get("title", "")), [str(item) for item in asset_ids], description=str(payload.get("description", "")), date_start=_date_value(payload.get("date_start")), date_end=_date_value(payload.get("date_end")), cover_asset_id=_optional_value(payload.get("cover_asset_id")))
+                    self._json({"ok": True, "id": section_id}, 201)
+                    return
+                if parsed.path.startswith("/api/sections/") and parsed.path.endswith("/assets"):
+                    section_id = parsed.path.removeprefix("/api/sections/").removesuffix("/assets").strip("/")
+                    asset_ids = payload.get("asset_ids", [])
+                    if not isinstance(asset_ids, list): raise ValueError("asset_ids must be a list")
+                    self._json({"ok": True, "added": add_assets_to_topic_section(connection, section_id, [str(item) for item in asset_ids])})
+                    return
                 prefix = "/api/topics/"
                 if parsed.path.startswith(prefix) and parsed.path.endswith("/assets"):
                     event_id = parsed.path[len(prefix):-len("/assets")].strip("/")
@@ -607,6 +785,23 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
             finally: connection.close()
             return
         parsed = urlparse(self.path)
+        section_prefix = "/api/sections/"
+        if parsed.path.startswith(section_prefix) and parsed.path.endswith("/assets"):
+            section_id = parsed.path.removeprefix(section_prefix).removesuffix("/assets").strip("/")
+            try:
+                payload = self._read_json()
+                asset_ids = payload.get("asset_ids", [])
+                if not isinstance(asset_ids, list):
+                    raise ValueError("asset_ids must be a list")
+                connection = connect(self.catalog_path)
+                try:
+                    removed = remove_assets_from_topic_section(connection, section_id, [str(item) for item in asset_ids])
+                    self._json({"ok": True, "removed": removed})
+                finally:
+                    connection.close()
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                self._json({"error": str(exc)}, 400)
+            return
         prefix = "/api/topics/"
         if not parsed.path.startswith(prefix):
             self._json({"error": "Not found"}, 404)
@@ -765,6 +960,7 @@ def serve(catalog: Path, host: str = "127.0.0.1", port: int = 8765) -> None:
     httpd.android_pairings = {}  # type: ignore[attr-defined]
     httpd.android_connection_states = {}  # type: ignore[attr-defined]
     httpd.collage_runs = {}  # type: ignore[attr-defined]
+    httpd.collage_jobs = {}  # type: ignore[attr-defined]
     httpd.collage_analysis_cache_path = httpd.catalog_path.parent / "collage-analysis-cache.json"  # type: ignore[attr-defined]
     httpd.collage_analysis_cache, httpd.collage_analysis_fingerprints = load_collage_analysis_cache(httpd.collage_analysis_cache_path)  # type: ignore[attr-defined]
     # Runs are file-backed so a server restart does not erase the candidate

@@ -593,7 +593,109 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX idx_asset_locations_source ON asset_locations(source_id);
         """,
     ),
+    (
+        23,
+        """
+        CREATE TABLE trusted_android_devices (
+            device_id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL REFERENCES source_profiles(source_id) ON DELETE CASCADE,
+            display_name TEXT NOT NULL,
+            public_key_fingerprint TEXT NOT NULL,
+            credential_reference_id TEXT NOT NULL,
+            protocol_version TEXT NOT NULL,
+            paired_at TEXT NOT NULL,
+            last_authenticated_at TEXT,
+            revoked_at TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX idx_trusted_android_source ON trusted_android_devices(source_id);
+        CREATE TABLE android_pairing_sessions (
+            id TEXT PRIMARY KEY,
+            device_id TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            state TEXT NOT NULL CHECK(state IN (
+                'DISCOVERED', 'CONNECTING', 'HANDSHAKING',
+                'AWAITING_NUMERIC_CONFIRMATION', 'LOCAL_CONFIRMED',
+                'REMOTE_CONFIRMED', 'PAIRED', 'FAILED', 'EXPIRED', 'CANCELLED'
+            )),
+            sas TEXT,
+            handshake_hash TEXT,
+            public_key_fingerprint TEXT,
+            protocol_version TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            error_code TEXT
+        );
+        CREATE INDEX idx_android_pairing_sessions_expiry ON android_pairing_sessions(expires_at);
+        """,
+    ),
+    (
+        24,
+        """
+        CREATE TABLE android_pairing_requests_v2 (
+            pair_request_id TEXT PRIMARY KEY,
+            device_id TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            remote_address TEXT NOT NULL,
+            android_certificate_fingerprint TEXT NOT NULL,
+            desktop_certificate_fingerprint TEXT NOT NULL,
+            pairing_nonce BLOB NOT NULL,
+            sas TEXT NOT NULL,
+            state TEXT NOT NULL,
+            android_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(android_confirmed IN (0, 1)),
+            desktop_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(desktop_confirmed IN (0, 1)),
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            failure_reason TEXT
+        );
+        CREATE UNIQUE INDEX idx_android_pairing_v2_active_device
+            ON android_pairing_requests_v2(device_id)
+            WHERE state NOT IN ('PAIRED', 'REJECTED', 'EXPIRED', 'FAILED');
+        CREATE INDEX idx_android_pairing_v2_expiry
+            ON android_pairing_requests_v2(expires_at);
+        """,
+    ),
+    (
+        25,
+        """
+        CREATE TABLE topic_sections (
+            id TEXT PRIMARY KEY,
+            topic_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            cover_asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+            date_start TEXT,
+            date_end TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(topic_id, title)
+        );
+        CREATE TABLE topic_section_assets (
+            section_id TEXT NOT NULL REFERENCES topic_sections(id) ON DELETE CASCADE,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            added_at TEXT NOT NULL,
+            PRIMARY KEY(section_id, asset_id)
+        );
+        CREATE INDEX idx_topic_sections_topic ON topic_sections(topic_id, sort_order);
+        CREATE INDEX idx_topic_section_assets_asset ON topic_section_assets(asset_id);
+        """,
+    ),
 ]
+
+
+MIGRATIONS.append((26, """
+CREATE TABLE topic_culling (
+ topic_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+ asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+ decision TEXT NOT NULL CHECK(decision IN ('pick','reject')),
+ updated_at TEXT NOT NULL,
+ PRIMARY KEY(topic_id,asset_id)
+);
+"""))
 
 
 def apply_migrations(connection: sqlite3.Connection) -> None:

@@ -20,7 +20,7 @@ TOOLS = [
     ("get_photo", "Inspect one catalogued asset by stable asset ID.", {"asset_id": {"type": "string"}}),
     ("organize_trip_plan", "Create a read-only logical organization proposal. It never changes the catalog or files.", {"name": {"type": "string"}, "date_from": {"type": "string"}, "date_to": {"type": "string"}, "day_places": {"type": "object"}}),
     ("inspect_android_source", "Read a Companion device identity and folder summary without downloading files.", {"url": {"type": "string"}, "token": {"type": "string"}}),
-    ("create_backup_job", "Create a persisted-in-process backup job plan; it does not start copying.", {"url": {"type": "string"}, "token": {"type": "string"}, "folders": {"type": "array"}, "destination": {"type": "string"}, "workers": {"type": "integer", "minimum": 1, "maximum": 8}}),
+    ("create_backup_job", "Create a persisted-in-process backup job plan; it does not start copying. Use session_token and android_fingerprint from secure Android pairing when available; otherwise use the legacy phone token.", {"url": {"type": "string"}, "token": {"type": "string"}, "session_token": {"type": "string"}, "android_fingerprint": {"type": "string"}, "folders": {"type": "array"}, "destination": {"type": "string"}, "workers": {"type": "integer", "minimum": 1, "maximum": 8}}),
     ("start_backup_job", "Start an explicitly requested verified Android backup job.", {"job_id": {"type": "string"}}),
     ("backup_status", "Return bounded progress and interval throughput for a backup job.", {"job_id": {"type": "string"}}),
     ("cancel_backup_job", "Request cancellation of a running backup job; resumable files are retained.", {"job_id": {"type": "string"}}),

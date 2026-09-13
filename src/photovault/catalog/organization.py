@@ -164,6 +164,39 @@ def add_assets_to_event(
     return max(0, int(cursor.rowcount))
 
 
+def list_topic_sections(connection: sqlite3.Connection, topic_id: str) -> list[dict[str, object]]:
+    rows = connection.execute("""SELECT s.*, COUNT(sa.asset_id) AS item_count
+        FROM topic_sections s LEFT JOIN topic_section_assets sa ON sa.section_id=s.id
+        WHERE s.topic_id=? GROUP BY s.id ORDER BY s.sort_order, lower(s.title)""", (topic_id,)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_topic_section(connection: sqlite3.Connection, topic_id: str, title: str, asset_ids: list[str] | tuple[str, ...] = (), *, description: str = "", date_start: str | None = None, date_end: str | None = None, cover_asset_id: str | None = None) -> str:
+    clean = " ".join(title.strip().split())
+    if not clean: raise ValueError("section title is required")
+    if connection.execute("SELECT 1 FROM events WHERE id=?", (topic_id,)).fetchone() is None: raise ValueError("unknown topic")
+    section_id, now = str(uuid.uuid4()), _now()
+    order = connection.execute("SELECT COALESCE(MAX(sort_order), -1)+1 FROM topic_sections WHERE topic_id=?", (topic_id,)).fetchone()[0]
+    connection.execute("INSERT INTO topic_sections(id,topic_id,title,description,sort_order,cover_asset_id,date_start,date_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)", (section_id, topic_id, clean, description, order, cover_asset_id, date_start, date_end, now, now))
+    add_assets_to_topic_section(connection, section_id, asset_ids)
+    return section_id
+
+
+def add_assets_to_topic_section(connection: sqlite3.Connection, section_id: str, asset_ids: list[str] | tuple[str, ...]) -> int:
+    if connection.execute("SELECT 1 FROM topic_sections WHERE id=?", (section_id,)).fetchone() is None: raise ValueError("unknown section")
+    now, before = _now(), connection.total_changes
+    connection.executemany("INSERT OR IGNORE INTO topic_section_assets(section_id,asset_id,sort_order,added_at) SELECT ?,id,COALESCE((SELECT MAX(sort_order)+1 FROM topic_section_assets WHERE section_id=?),0),? FROM assets WHERE id=?", ((section_id, section_id, now, str(asset_id)) for asset_id in dict.fromkeys(asset_ids)))
+    connection.commit()
+    return connection.total_changes - before
+
+
+def remove_assets_from_topic_section(connection: sqlite3.Connection, section_id: str, asset_ids: list[str] | tuple[str, ...]) -> int:
+    before = connection.total_changes
+    connection.executemany("DELETE FROM topic_section_assets WHERE section_id=? AND asset_id=?", ((section_id, str(asset_id)) for asset_id in dict.fromkeys(asset_ids)))
+    connection.commit()
+    return connection.total_changes - before
+
+
 def update_event(connection: sqlite3.Connection, event_id: str, *, name: str, start_datetime: str | None = None, end_datetime: str | None = None, event_type: str = "other", description: str = "", default_place_id: str | None = None) -> None:
     clean = " ".join(name.strip().split())
     if not clean:

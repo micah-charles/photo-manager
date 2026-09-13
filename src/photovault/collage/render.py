@@ -14,7 +14,9 @@ except ImportError:  # pragma: no cover
 def render_candidate(candidate: LayoutCandidate, photos: dict[str, PhotoInput], destination: Path, smart_crop: bool = True) -> Path:
     if Image is None:
         raise RuntimeError("Pillow is required for rendering the collage POC")
-    canvas = Image.new("RGB", (candidate.canvas.width, candidate.canvas.height), (245, 242, 237))
+    background = str((candidate.page_spec or {}).get("background", "#f5f2ed"))
+    background_colour = background if background.startswith("#") else "#f5f2ed"
+    canvas = Image.new("RGB", (candidate.canvas.width, candidate.canvas.height), background_colour)
     for cell in candidate.cells:
         if not cell.photo_id or cell.photo_id not in photos:
             continue

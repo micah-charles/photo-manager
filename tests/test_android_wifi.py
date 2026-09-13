@@ -4,6 +4,7 @@ import io
 import json
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from photovault.sources.android_wifi import AndroidCompanionWifiSource
 
@@ -14,6 +15,55 @@ class Response(io.BytesIO):
 
 
 class AndroidWifiTests(unittest.TestCase):
+    def test_pairing_http_error_preserves_companion_message(self) -> None:
+        def fake_open(request, timeout):
+            raise HTTPError(
+                request.full_url,
+                403,
+                "Forbidden",
+                {},
+                io.BytesIO(b'{"ok":false,"error":"pairing mode is not enabled on the phone"}'),
+            )
+
+        source = AndroidCompanionWifiSource("http://phone:8765", "")
+        with patch("photovault.sources.android_wifi.urlopen", fake_open):
+            with self.assertRaises(Exception) as error:
+                source._post_json("/api/pair/start", {})
+        self.assertEqual(str(error.exception), "pairing mode is not enabled on the phone")
+
+    def test_expired_secure_session_reconnects_once_and_retries(self) -> None:
+        calls = []
+        def fake_open(request, timeout):
+            calls.append(request.headers.get("Authorization"))
+            if len(calls) == 1:
+                raise HTTPError(request.full_url, 401, "expired", {}, io.BytesIO(b"{}"))
+            return Response(json.dumps({"ok": True, "items": []}).encode())
+        source = AndroidCompanionWifiSource("http://phone:8765", "legacy", session_token="expired-session", expected_android_fingerprint="pinned")
+        with patch("photovault.sources.android_wifi.urlopen", fake_open), patch.object(source, "reconnect", side_effect=lambda **_: setattr(source, "session_token", "renewed-session")) as reconnect:
+            list(source.list_children(None))
+        reconnect.assert_called_once_with(expected_android_fingerprint="pinned")
+        self.assertEqual(calls, ["Bearer expired-session", "Bearer renewed-session"])
+
+    def test_secure_401_without_pinned_identity_does_not_downgrade(self) -> None:
+        def fake_open(request, timeout):
+            raise HTTPError(request.full_url, 401, "expired", {}, io.BytesIO(b"{}"))
+        source = AndroidCompanionWifiSource("http://phone:8765", "legacy", session_token="expired-session")
+        with patch("photovault.sources.android_wifi.urlopen", fake_open):
+            with self.assertRaises(Exception) as error:
+                list(source.list_children(None))
+        self.assertIn("HTTP 401", str(error.exception))
+
+    def test_secure_session_uses_bearer_header_without_legacy_query_token(self) -> None:
+        seen = []
+        def fake_open(request, timeout):
+            seen.append((request.full_url, request.headers.get("Authorization")))
+            return Response(json.dumps({"ok": True, "items": []}).encode())
+        with patch("photovault.sources.android_wifi.urlopen", fake_open):
+            source = AndroidCompanionWifiSource("http://phone:8765", "old-token", session_token="short-lived-session")
+            list(source.list_children(None))
+        self.assertEqual(seen[0][0], "http://phone:8765/api/media?")
+        self.assertEqual(seen[0][1], "Bearer short-lived-session")
+
     def test_identity_manifest_and_range_stream(self) -> None:
         seen = []
         def fake_open(request, timeout):

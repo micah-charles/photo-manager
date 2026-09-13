@@ -23,6 +23,8 @@ class BackupJob:
     token: str
     folders: tuple[str, ...]
     destination: Path
+    session_token: str | None = None
+    android_fingerprint: str | None = None
     media_filter: str = "ALL"
     workers: int = 5
     fsync_mode: str = "batch"
@@ -50,6 +52,8 @@ class BackupJob:
             elapsed = time.monotonic() - self.started_at if self.started_at else 0.0
             return {"job_id": self.id, "status": self.status, "folders": list(self.folders),
                     "destination": str(self.destination), "media_filter": self.media_filter,
+                    "secure_session": bool(self.session_token),
+                    "android_fingerprint": self.android_fingerprint,
                     "workers": self.workers, "fsync_mode": self.fsync_mode, "batch_files": self.batch_files,
                     "planned_items": self.planned_items, "planned_bytes": self.planned_bytes,
                     "imported_items": self.imported_items, "already_imported": self.already_imported,
@@ -69,6 +73,8 @@ class BackupJobManager:
         self._lock = threading.Lock()
 
     def create(self, *, url: str, token: str, folders: list[str], destination: str,
+               session_token: str | None = None,
+               android_fingerprint: str | None = None,
                media_filter: str = "ALL", workers: int = 5, fsync_mode: str = "batch",
                batch_files: int = 25) -> BackupJob:
         normalized = tuple(dict.fromkeys(folder.strip("/") for folder in folders if folder.strip("/")))
@@ -82,7 +88,9 @@ class BackupJobManager:
         if not 1 <= int(workers) <= 8:
             raise ValueError("workers must be between 1 and 8")
         job = BackupJob("backup_job_" + uuid.uuid4().hex, self.catalog, url, token, normalized, destination_path,
-                        media_filter, int(workers), fsync_mode, int(batch_files))
+                        session_token=session_token, android_fingerprint=android_fingerprint,
+                        media_filter=media_filter, workers=int(workers),
+                        fsync_mode=fsync_mode, batch_files=int(batch_files))
         with self._lock:
             self._jobs[job.id] = job
         return job
@@ -116,7 +124,7 @@ class BackupJobManager:
         connection = None
         snapshot_id = None
         try:
-            source = AndroidCompanionWifiSource(job.url, job.token)
+            source = AndroidCompanionWifiSource(job.url, job.token, session_token=job.session_token, expected_android_fingerprint=job.android_fingerprint)
             import_items: list[SourceImportItem] = []
             for folder in job.folders:
                 for item in source.iter_folder(folder):

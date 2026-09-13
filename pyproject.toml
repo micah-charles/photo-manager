@@ -10,9 +10,10 @@ requires-python = ">=3.11"
 
 [project.optional-dependencies]
 desktop = ["PySide6>=6.7", "Pillow>=10"]
-photo-intelligence = ["Pillow>=10", "numpy>=2"]
+photo-intelligence = ["Pillow>=10", "numpy>=2", "opencv-python-headless>=4.10"]
 ml = ["Pillow>=10", "numpy>=2", "onnxruntime>=1.18"]
 packaging = ["pyinstaller>=6.0"]
+pairing = ["noiseprotocol>=0.3.1", "zeroconf>=0.148.0", "keyring>=25.0"]
 
 [project.scripts]
 photovault = "photovault.cli.main:main"

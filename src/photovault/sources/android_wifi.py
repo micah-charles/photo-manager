@@ -1,6 +1,7 @@
 """Read-only client for the PhotoVault Android Companion POC."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import math
@@ -9,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import BinaryIO, Iterable, Iterator
 from urllib.parse import urlencode
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from .base import PhotoItem, PhotoSource, SourceIdentity, SourceStorage
@@ -51,14 +53,30 @@ class AndroidCompanionWifiSource(PhotoSource):
     base_url: str
     token: str
     timeout: float = 30.0
+    session_token: str | None = None
+    expected_android_fingerprint: str | None = None
     _identity_cache: SourceIdentity | None = field(default=None, init=False, repr=False)
+    _pending_pairings: dict[str, tuple[str, bytes]] = field(default_factory=dict, init=False, repr=False)
+    _pairing_results: dict[str, dict[str, str]] = field(default_factory=dict, init=False, repr=False)
+    _handshake_hash: bytes | None = field(default=None, init=False, repr=False)
 
-    def _request(self, path: str, *, headers: dict[str, str] | None = None, params: dict[str, object] | None = None):
-        query = urlencode({"token": self.token, **(params or {})})
+    def _request(self, path: str, *, headers: dict[str, str] | None = None, params: dict[str, object] | None = None, _retried: bool = False):
+        request_headers = dict(headers or {})
+        if self.session_token:
+            request_headers["Authorization"] = f"Bearer {self.session_token}"
+        query_params = dict(params or {})
+        if not self.session_token:
+            query_params["token"] = self.token
+        query = urlencode(query_params)
         separator = "&" if "?" in path else "?"
         url = f"{self.base_url.rstrip('/')}{path}{separator}{query}"
         try:
-            return urlopen(Request(url, headers=headers or {}), timeout=self.timeout)
+            return urlopen(Request(url, headers=request_headers), timeout=self.timeout)
+        except HTTPError as exc:
+            if exc.code == 401 and self.session_token and self.expected_android_fingerprint and not _retried:
+                self.reconnect(expected_android_fingerprint=self.expected_android_fingerprint)
+                return self._request(path, headers=headers, params=params, _retried=True)
+            raise AndroidCompanionUnavailable(f"companion request failed: HTTP {exc.code}") from exc
         except OSError as exc:
             raise AndroidCompanionUnavailable(str(exc)) from exc
 
@@ -71,6 +89,115 @@ class AndroidCompanionWifiSource(PhotoSource):
         if not payload.get("ok"):
             raise AndroidCompanionUnavailable(payload.get("error", "companion request failed"))
         return payload
+
+    def _post_json(self, path: str, payload: dict[str, object]) -> dict:
+        url = f"{self.base_url.rstrip('/')}{path}"
+        request = Request(url, data=json.dumps(payload, separators=(",", ":")).encode(), headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                result = json.load(response)
+        except HTTPError as exc:
+            try:
+                error_payload = json.load(exc)
+            except (ValueError, OSError):
+                error_payload = {}
+            detail = error_payload.get("error") if isinstance(error_payload, dict) else None
+            message = str(detail or f"companion pairing failed: HTTP {exc.code}")
+            raise AndroidCompanionUnavailable(message) from exc
+        except OSError as exc:
+            raise AndroidCompanionUnavailable(str(exc)) from exc
+        if not result.get("ok"):
+            raise AndroidCompanionUnavailable(str(result.get("error", "companion pairing failed")))
+        return result
+
+    def pair(self, *, desktop_name: str = "Photo Manager") -> dict[str, str]:
+        """Perform the Noise XX handshake; UI confirmation remains two-sided.
+
+        This intentionally does not send the legacy bearer token. The caller
+        must display ``sas`` and collect explicit confirmation from both peers
+        before persisting a trusted device.
+        """
+        try:
+            from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+            from noise.connection import Keypair, NoiseConnection
+        except ImportError as exc:
+            raise AndroidCompanionUnavailable("install the pairing optional dependencies") from exc
+        started = self._post_json("/api/pair/start", {"desktop_name": desktop_name, "protocol": "photovault-pairing-v1"})
+        session_id = str(started.get("session_id", ""))
+        if not session_id: raise AndroidCompanionUnavailable("companion returned no pairing session")
+        device_id = str(started.get("device_id", ""))
+        private_key, store = self._desktop_private_key(X25519PrivateKey)
+        initiator = NoiseConnection.from_name(b"Noise_XX_25519_ChaChaPoly_SHA256")
+        initiator.set_as_initiator(); initiator.set_prologue(b"photovault-pairing-v1")
+        initiator.set_keypair_from_private_bytes(Keypair.STATIC, private_key); initiator.start_handshake()
+        first = bytes(initiator.write_message())
+        second_payload = self._post_json(f"/api/pair/{session_id}/message", {"message": base64.b64encode(first).decode()})
+        second = base64.b64decode(str(second_payload.get("message", "")))
+        initiator.read_message(second)
+        third = bytes(initiator.write_message())
+        final = self._post_json(f"/api/pair/{session_id}/message", {"message": base64.b64encode(third).decode()})
+        self._handshake_hash = initiator.get_handshake_hash()
+        self.expected_android_fingerprint = str(final.get("fingerprint") or "") or None
+        pending_ref = f"pairing-pending:{device_id}:{session_id}"
+        store.put(pending_ref, base64.b64encode(private_key))
+        self._pending_pairings[session_id] = (pending_ref, private_key)
+        result = {"session_id": session_id, "device_id": device_id, "display_name": str(started.get("display_name", "Android device")), "sas": str(final.get("sas", "")), "fingerprint": str(final.get("fingerprint", "")), "state": "AWAITING_NUMERIC_CONFIRMATION"}
+        self._pairing_results[session_id] = result
+        return result
+
+    def confirm_pairing(self, session_id: str) -> bool:
+        """Confirm the desktop side after the user compared both SAS values."""
+        result = self._post_json(f"/api/pair/{session_id}/confirm", {})
+        if result.get("paired"):
+            from photovault.pairing.protocol import transfer_session_token
+            self.session_token = transfer_session_token(self._handshake_hash or b"")
+            pending = self._pending_pairings.pop(session_id, None)
+            if pending:
+                pending_ref, private_key = pending
+                from photovault.pairing.credentials import KeyringCredentialStore
+                store = KeyringCredentialStore()
+                store.put("desktop-noise-static-v1", base64.b64encode(private_key if isinstance(private_key, bytes) else bytes(private_key)))
+                store.delete(pending_ref)
+            return True
+        return False
+
+    def pairing_result(self, session_id: str) -> dict[str, str]:
+        try: return dict(self._pairing_results[session_id])
+        except KeyError as exc: raise AndroidCompanionUnavailable("unknown pairing session") from exc
+
+    def reconnect(self, *, expected_android_fingerprint: str) -> dict[str, str]:
+        """Reconnect without SAS and require the previously pinned Android key."""
+        try:
+            from noise.connection import Keypair, NoiseConnection
+            from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+        except ImportError as exc: raise AndroidCompanionUnavailable("install the pairing optional dependencies") from exc
+        started = self._post_json("/api/reconnect/start", {})
+        session_id = str(started.get("session_id", ""))
+        private_key, _ = self._desktop_private_key(X25519PrivateKey, create=False)
+        initiator = NoiseConnection.from_name(b"Noise_XX_25519_ChaChaPoly_SHA256")
+        initiator.set_as_initiator(); initiator.set_prologue(b"photovault-pairing-v1")
+        initiator.set_keypair_from_private_bytes(Keypair.STATIC, private_key); initiator.start_handshake()
+        first = bytes(initiator.write_message())
+        second_payload = self._post_json(f"/api/reconnect/{session_id}/message", {"message": base64.b64encode(first).decode()})
+        initiator.read_message(base64.b64decode(str(second_payload.get("message", ""))))
+        final = self._post_json(f"/api/reconnect/{session_id}/message", {"message": base64.b64encode(bytes(initiator.write_message())).decode()})
+        fingerprint = str(final.get("fingerprint", ""))
+        if not final.get("authenticated") or fingerprint != expected_android_fingerprint:
+            raise AndroidCompanionUnavailable("Android security identity changed or is not trusted")
+        from photovault.pairing.protocol import transfer_session_token
+        self._handshake_hash = initiator.get_handshake_hash()
+        self.expected_android_fingerprint = expected_android_fingerprint
+        self.session_token = transfer_session_token(self._handshake_hash)
+        return {"device_id": str(started.get("device_id", "")), "fingerprint": fingerprint, "state": "CONNECTED"}
+
+    @staticmethod
+    def _desktop_private_key(key_type, *, create: bool = True):
+        from photovault.pairing.credentials import KeyringCredentialStore
+        store = KeyringCredentialStore(); reference = "desktop-noise-static-v1"; stored = store.get(reference)
+        if stored is None and not create: raise AndroidCompanionUnavailable("no trusted desktop credential exists")
+        private_key = base64.b64decode(stored) if stored else key_type.generate().private_bytes_raw()
+        if stored is None: store.put(reference, base64.b64encode(private_key))
+        return private_key, store
 
     def identity(self) -> SourceIdentity:
         if self._identity_cache is not None:

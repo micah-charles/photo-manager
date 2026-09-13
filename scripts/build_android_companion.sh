@@ -13,7 +13,7 @@ rm -rf "$out"
 mkdir -p "$out/classes" "$out/res"
 "$build_tools/aapt2" compile --dir "$source_root/res" -o "$out/res/resources.zip"
 "$build_tools/aapt2" link -I "$platform" --manifest "$source_root/AndroidManifest.xml" --min-sdk-version 29 --target-sdk-version 35 -o "$out/unsigned.apk" "$out/res/resources.zip"
-javac -source 8 -target 8 -bootclasspath "$platform" -d "$out/classes" $(find "$source_root/src" -name '*.java' | sort)
+javac -source 8 -target 8 -bootclasspath "$platform" -d "$out/classes" $(find "$source_root/src" "$source_root/third_party/noise-java/src/main/java" -name '*.java' | sort)
 jar -cf "$out/classes.jar" -C "$out/classes" .
 mkdir -p "$out/dex"
 "$build_tools/d8" --lib "$platform" --min-api 29 --output "$out/dex" "$out/classes.jar"
