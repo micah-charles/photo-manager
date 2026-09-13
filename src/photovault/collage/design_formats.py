@@ -16,6 +16,7 @@ HEX = re.compile(r"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
 MASKS = {"rectangle", "rounded", "circle", "ellipse"}
 ROLES = {"hero", "secondary", "supporting", "detail", "background"}
 MAX_ELEMENTS = 200
+SUPPORTED_ELEMENT_TYPES = {"photo", "text", "rectangle", "ellipse", "line", "polygon"}
 
 
 def _number(value: Any, name: str, low: float | None = None, high: float | None = None) -> float:
@@ -80,6 +81,8 @@ def validate_design_spec(payload: Any, asset_ids: set[str]) -> dict[str, Any]:
     for alternative in alternatives:
         if not isinstance(alternative, dict) or not isinstance(alternative.get("elements"), list):
             raise ValueError("each alternative must contain an elements array")
+        if len(alternative["elements"]) < 1 or len(alternative["elements"]) > MAX_ELEMENTS:
+            raise ValueError(f"elements must contain between 1 and {MAX_ELEMENTS} items")
         elements = []
         ids: set[str] = set()
         for index, raw in enumerate(alternative["elements"]):
@@ -91,7 +94,7 @@ def validate_design_spec(payload: Any, asset_ids: set[str]) -> dict[str, Any]:
                 raise ValueError("elements must have unique non-empty ids")
             ids.add(element_id)
             kind = element.get("type")
-            if kind not in {"photo", "text", "rectangle", "ellipse", "line", "polygon", "paper_shape", "brush_shape"}:
+            if kind not in SUPPORTED_ELEMENT_TYPES:
                 raise ValueError(f"unsupported element type: {kind}")
             for key in ("x_mm", "y_mm", "width_mm", "height_mm"):
                 element[key] = _number(element.get(key, 0), key, -100 if key[:1] in {"x", "y"} else 0, 3000)
@@ -122,6 +125,15 @@ def validate_design_spec(payload: Any, asset_ids: set[str]) -> dict[str, Any]:
                 text_style = dict(element.get("text_style") or {})
                 text_style["font_id"] = str(text_style.get("font_id", "serif"))
                 text_style["font_size_pt"] = _number(text_style.get("font_size_pt", 12), "text_style.font_size_pt", 4, 300)
+                text_style["weight"] = str(text_style.get("weight", "normal"))
+                if text_style["weight"] not in {"normal", "bold", "600", "700"}:
+                    raise ValueError("unsupported text weight")
+                text_style["italic"] = bool(text_style.get("italic", False))
+                text_style["alignment"] = str(text_style.get("alignment", "left"))
+                if text_style["alignment"] not in {"left", "center", "right", "justify"}:
+                    raise ValueError("unsupported text alignment")
+                text_style["line_height"] = _number(text_style.get("line_height", 1.15), "text_style.line_height", .5, 3)
+                text_style["letter_spacing"] = _number(text_style.get("letter_spacing", 0), "text_style.letter_spacing", -20, 100)
                 if "color" in text_style:
                     text_style["color"] = _colour(text_style["color"], "text_style.color")
                 element["text_style"] = text_style
@@ -131,6 +143,24 @@ def validate_design_spec(payload: Any, asset_ids: set[str]) -> dict[str, Any]:
                     element["fill"] = _colour(fill, "fill")
                 if "stroke" in element:
                     element["stroke"] = _colour(element["stroke"], "stroke")
+                if "stroke_width" in element:
+                    element["stroke_width"] = _number(element["stroke_width"], "stroke_width", 0, 30)
+            if kind == "line":
+                element["stroke"] = _colour(element.get("stroke", "#292521"), "stroke")
+                element["stroke_width"] = _number(element.get("stroke_width", 1), "stroke_width", 0, 30)
+            if kind == "polygon":
+                points = element.get("points")
+                if not isinstance(points, list) or len(points) < 3 or len(points) > 100:
+                    raise ValueError("polygon.points must contain between 3 and 100 points")
+                checked_points = []
+                for point in points:
+                    if not isinstance(point, dict):
+                        raise ValueError("polygon points must be objects")
+                    checked_points.append({
+                        "x": _number(point.get("x", 0), "polygon.point.x", -3000, 3000),
+                        "y": _number(point.get("y", 0), "polygon.point.y", -3000, 3000),
+                    })
+                element["points"] = checked_points
             elements.append(element)
         checked.append({**alternative, "elements": sorted(elements, key=lambda x: (x["z_index"], x["id"]))})
     return {**payload, "page_spec": page, "alternatives": checked}
@@ -154,7 +184,7 @@ def to_collage_document(spec: dict[str, Any], alternative_index: int = 0, asset_
         item["height"] = round(float(item.get("height_mm", 0)) * scale)
         if item["type"] == "photo":
             item["photo_id"] = item.pop("asset_id")
-            item["style"] = {**item.pop("border", {}), **item.pop("shadow", {})}
+            item["style"] = {"border": item.pop("border", {}), "shadow": item.pop("shadow", {})}
             item["clipping_shape"] = item.pop("mask", {}).get("type", "rectangle")
             item["transform"] = item.pop("image", {})
         elements.append(item)
@@ -163,3 +193,38 @@ def to_collage_document(spec: dict[str, Any], alternative_index: int = 0, asset_
             "page_spec": page, "canvas": {"width": round(width * scale), "height": round(float(page["height_mm"]) * scale), "gutter": round(float(page.get("gutter_mm", 4)) * scale)},
             "background": page.get("background", "#f5f2ed"), "elements": elements, "frames": [x for x in elements if x["type"] == "photo"], "cells": [x for x in elements if x["type"] == "photo"],
             "provider": "ai-design", "style": alternative.get("style", ""), "metadata": {"design_reason": alternative.get("reason", ""), "source": "CollageDesignSpec v1"}, "edited": True}
+
+
+def validate_collage_document(payload: Any, asset_ids: set[str]) -> dict[str, Any]:
+    """Validate the V2 document written by the editor before publishing it."""
+    if not isinstance(payload, dict) or payload.get("document_type") != "CollageDocument":
+        raise ValueError("payload must be a CollageDocument")
+    if int(payload.get("schema_version", 0)) != 2:
+        raise ValueError("unsupported CollageDocument schema_version")
+    page = validate_page_spec(payload.get("page_spec") or {})
+    elements = payload.get("elements")
+    if not isinstance(elements, list) or not 1 <= len(elements) <= MAX_ELEMENTS:
+        raise ValueError(f"elements must contain between 1 and {MAX_ELEMENTS} items")
+    checked = []
+    seen: set[str] = set()
+    for index, raw in enumerate(elements):
+        if not isinstance(raw, dict):
+            raise ValueError(f"element {index} must be an object")
+        item = deepcopy(raw)
+        element_id = str(item.get("element_id") or item.get("id") or "")
+        if not element_id or element_id in seen:
+            raise ValueError("elements must have unique non-empty element_id values")
+        seen.add(element_id)
+        kind = item.get("type")
+        if kind not in SUPPORTED_ELEMENT_TYPES:
+            raise ValueError(f"unsupported element type: {kind}")
+        for key in ("x", "y", "width", "height"):
+            item[key] = _number(item.get(key, 0), key, -400, 12000 if key in {"x", "y"} else 12000)
+        if kind == "photo":
+            photo_id = str(item.get("photo_id") or "")
+            if photo_id not in asset_ids:
+                raise ValueError(f"document references an unknown asset: {photo_id}")
+        if kind == "text" and (not isinstance(item.get("content"), str) or len(item["content"]) > 2000):
+            raise ValueError("text content is required and must be short")
+        checked.append(item)
+    return {**payload, "page_spec": page, "elements": checked}

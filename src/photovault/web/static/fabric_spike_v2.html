@@ -1,7 +1,59 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Photo Manager · Collage editor</title><link rel="stylesheet" href="/style.css"><style>
-body{background:#f5f2ed;color:#292521}main{max-width:1400px;margin:auto;padding:28px}.top{display:flex;justify-content:space-between;align-items:start}.muted{color:#756d64}.bar,.panel{background:#fff;border:1px solid #ded7ce;border-radius:14px;padding:14px;margin:14px 0}.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}button,select,input{font:inherit;padding:8px 10px;border:1px solid #c9c0b5;border-radius:8px;background:#fff}button.primary{background:#302b26;color:#fff}.workspace{display:grid;grid-template-columns:220px minmax(500px,1fr) 260px;gap:14px;align-items:start}.photos{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;max-height:680px;overflow:auto}.photo{border:2px solid transparent;border-radius:8px;padding:3px;cursor:grab}.photo img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:5px}.photo small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.canvas-wrap{background:#e9e3da;border-radius:10px;padding:14px;overflow:hidden}.canvas-container{margin:auto}.canvas-wrap canvas{display:block;max-width:100%;margin:auto;background:#fff;box-shadow:0 8px 24px #0002}.inspector label{display:block;margin:10px 0}.inspector input[type=range]{width:100%}.status{min-height:24px}.badge{display:inline-block;padding:3px 7px;border-radius:999px;background:#e8f2ef;color:#286e67;font-size:12px}@media(max-width:950px){.workspace{grid-template-columns:1fr}.photos{max-height:220px;grid-template-columns:repeat(6,1fr)}}
-</style></head><body><main><header class="top"><div><div class="muted">EXPERIMENTAL · EDITOR ENGINE</div><h1>Fabric.js collage editor</h1><p class="muted">One document, one renderer. Originals are never changed.</p></div><a href="/experimental/collage">← Back to Smart Collage</a></header>
-<section class="bar"><label>Run <select id="run"><option>Loading runs…</option></select></label><label>Candidate <select id="candidate"><option>Choose a run</option></select></label><button id="open" class="primary">Open candidate</button><span id="identity" class="badge">No document loaded</span></section>
-<section class="bar"><button id="undo">Undo</button><button id="redo">Redo</button><button id="layout" class="primary">Layout mode</button><button id="crop">Crop mode</button><button id="save" class="primary">Save variant</button><button id="reload">Reload saved</button><button id="export">Export layout JSON</button><button id="export-package">Export ChatGPT package</button><button id="import">Import design JSON</button><input id="import-file" type="file" accept="application/json,.json" hidden><span id="status" class="muted status"></span></section>
-<section class="workspace"><aside class="panel"><b>Photos</b><p class="muted">Drag a photo onto a frame in Crop mode to replace it.</p><div id="photos" class="photos"></div></aside><div class="canvas-wrap"><canvas id="canvas" width="1200" height="800"></canvas></div><aside class="panel inspector"><b>Inspector</b><div id="selection" class="muted">Select an element</div><label>Opacity <input id="opacity" type="range" min="0.1" max="1" step="0.05" value="1"></label><label>Border width <input id="border-width" type="range" min="0" max="20" step="1" value="0"></label><label>Border colour <input id="border-color" type="color" value="#286e67"></label><label>Mask <select id="mask"><option value="rectangle">Rectangle</option><option value="rounded">Rounded</option><option value="circle">Circle</option></select></label><label>Image zoom <input id="zoom" type="range" min="0.5" max="10" step="0.05" value="1"></label><button id="rotate">Rotate image 90°</button><button id="reset">Reset smart crop</button><button id="raise">Bring forward</button><button id="lower">Send backward</button></aside></section></main><script src="/vendor/fabric/index.min.js"></script><script src="/fabric_spike_v3.js?v=20260905-6"></script></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Photo Manager · Collage editor</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    body{background:#f5f2ed;color:#292521}
+    main{max-width:1400px;margin:auto;padding:28px}
+    .top{display:flex;justify-content:space-between;align-items:start;gap:20px}
+    .muted{color:#756d64}.status{min-height:24px}
+    .bar,.panel{background:#fff;border:1px solid #ded7ce;border-radius:14px;padding:14px;margin:14px 0}
+    .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    button,select,input{font:inherit;padding:8px 10px;border:1px solid #c9c0b5;border-radius:8px;background:#fff}
+    button.primary{background:#302b26;color:#fff}button:disabled,input:disabled,select:disabled{opacity:.45;cursor:not-allowed}
+    .workspace{display:grid;grid-template-columns:220px minmax(500px,1fr) 260px;gap:14px;align-items:start}
+    .photos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:680px;overflow:auto}
+    .photo{border:2px solid transparent;border-radius:8px;padding:3px;cursor:grab}.photo:hover{border-color:#b9d5d0}
+    .photo img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:5px}.photo small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .canvas-wrap{background:#e9e3da;border-radius:10px;padding:14px;overflow:hidden;min-width:0}
+    .canvas-wrap .canvas-container{margin:auto;overflow:visible!important}.canvas-wrap canvas{display:block;max-width:100%;margin:auto}.canvas-wrap .lower-canvas{background:#fff;box-shadow:0 8px 24px #0002}.canvas-wrap .upper-canvas{background:transparent}
+    .inspector label{display:block;margin:10px 0}.inspector input[type=range]{width:100%}.inspector button{display:block;margin:6px 0;width:100%}
+    .badge{display:inline-block;padding:3px 7px;border-radius:999px;background:#e8f2ef;color:#286e67;font-size:12px}
+    .layers{display:flex;flex-direction:column;gap:5px;margin-top:10px;max-height:260px;overflow:auto}.layer-row{text-align:left;padding:6px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.layer-row.active{border-color:#286e67;background:#e8f2ef}
+    .warning{background:#fff5d9;border-color:#e2c36d}.inline-control{display:inline-flex;align-items:center;gap:5px}
+    @media(max-width:950px){.workspace{grid-template-columns:1fr}.photos{max-height:220px;grid-template-columns:repeat(6,minmax(60px,1fr))}}
+  </style>
+</head>
+<body>
+  <main>
+    <header class="top">
+      <div><div class="muted">EXPERIMENTAL · EDITOR ENGINE</div><h1>Fabric.js collage editor</h1><p class="muted">One document, one renderer. Originals are never changed.</p></div>
+      <a href="/experimental/collage">← Back to Smart Collage</a>
+    </header>
+    <section class="bar">
+      <label>Run <select id="run"><option>Loading runs…</option></select></label>
+      <label>Candidate <select id="candidate"><option>Choose a run</option></select></label>
+      <button id="open" class="primary">Open candidate</button><span id="identity" class="badge">No document loaded</span>
+    </section>
+    <section class="bar">
+      <button id="undo">Undo</button><button id="redo">Redo</button><button id="layout" class="primary">Layout mode</button><button id="crop">Crop mode</button><button id="fit">Fit page</button><button id="save" class="primary">Save variant</button><button id="reload">Reload saved</button>
+      <button id="export">Export layout JSON</button><button id="export-png">Export PNG</button><button id="export-package">Export ChatGPT package</button>
+      <button id="load-sample">Load Kew Gardens AI sample</button><button id="import-ai">Import AI design</button><button id="import-debug">Import CollageDocument (debug)</button>
+      <input id="import-ai-file" type="file" accept="application/json,.json" hidden><input id="import-debug-file" type="file" accept="application/json,.json" hidden>
+      <span id="alternative-picker" class="inline-control" hidden>Alternative <select id="alternative"></select><button id="apply-ai" disabled>Open selected</button></span>
+      <span id="status" class="muted status"></span>
+    </section>
+    <section class="workspace">
+      <aside class="panel"><b>Photos in this design</b><p class="muted">Drag a photo onto a frame in Crop mode. Double-click also replaces the selected frame.</p><div id="photos" class="photos"></div><hr><b>Layers</b><div id="layers" class="layers"><span class="muted">Open a document to see layers.</span></div></aside>
+      <div id="canvas-wrap" class="canvas-wrap"><canvas id="canvas" width="1200" height="800"></canvas></div>
+      <aside class="panel inspector"><b>Inspector</b><div id="selection" class="muted">No element selected</div><label>Opacity <input id="opacity" type="range" min="0.1" max="1" step="0.05" value="1"></label><label>Border width (mm) <input id="border-width" type="range" min="0" max="20" step="0.1" value="0"></label><label>Border colour <input id="border-color" type="color" value="#ffffff"></label><label>Mask <select id="mask"><option value="rectangle">Rectangle</option><option value="rounded">Rounded</option><option value="circle">Circle</option><option value="ellipse">Ellipse</option></select></label><label>Image zoom <input id="zoom" type="range" min="0.5" max="10" step="0.05" value="1"></label><button id="rotate">Rotate image 90°</button><button id="reset">Reset smart crop</button><button id="raise">Bring forward</button><button id="lower">Send backward</button><button id="delete" class="warning">Delete layer</button></aside>
+    </section>
+  </main>
+  <script src="/vendor/fabric/index.min.js"></script>
+  <script src="/fabric_spike_v3.js?v=20260913-1"></script>
+  <script src="/collage_editor_package.js?v=20260913-1"></script>
+</body>
+</html>

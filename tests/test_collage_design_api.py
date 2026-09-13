@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+import http.client
+import json
+import tempfile
+import threading
+import unittest
+import zipfile
+from pathlib import Path
+
+from PIL import Image
+
+from photovault.catalog.scanner import register_volume, scan_volume
+from photovault.database.connection import connect
+from photovault.platform.base import VolumeIdentity
+from photovault.web.server import PhotoVaultHandler, ThreadingHTTPServer
+
+
+class _Provider:
+    def identify(self, path: Path) -> VolumeIdentity:
+        return VolumeIdentity("test", "design-api-volume", "Design API volume")
+
+
+class CollageDesignApiTests(unittest.TestCase):
+    def test_export_validate_import_and_save_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "photos"
+            root.mkdir()
+            Image.new("RGB", (320, 240), "#d36c5c").save(root / "one.jpg")
+            Image.new("RGB", (240, 320), "#4b8f8c").save(root / "two.jpg")
+            catalog = Path(directory) / "catalog.db"
+            db = connect(catalog)
+            volume_id = register_volume(db, root, _Provider())
+            scan_volume(db, volume_id, root)
+            asset_ids = [str(row[0]) for row in db.execute("SELECT id FROM assets ORDER BY id")]
+            db.close()
+
+            server = ThreadingHTTPServer(("127.0.0.1", 0), PhotoVaultHandler)
+            server.catalog_path = catalog
+            server.collage_runs = {}
+            server.collage_jobs = {}
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            self.addCleanup(server.shutdown)
+            self.addCleanup(server.server_close)
+
+            def request(method: str, path: str, body: dict | None = None) -> tuple[int, dict | bytes]:
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+                encoded = json.dumps(body).encode() if body is not None else None
+                headers = {"Content-Type": "application/json"} if encoded is not None else {}
+                connection.request(method, path, encoded, headers)
+                response = connection.getresponse()
+                raw = response.read()
+                status = response.status
+                content_type = response.getheader("Content-Type", "")
+                connection.close()
+                return status, json.loads(raw) if "application/json" in content_type else raw
+
+            status, exported = request(
+                "POST",
+                "/api/collage/design-packages",
+                {
+                    "asset_ids": asset_ids,
+                    "page_spec": {"type": "single", "width_mm": 300, "height_mm": 300},
+                    "topic_id": "topic-test",
+                    "section_id": "section-test",
+                },
+            )
+            self.assertEqual(status, 201)
+            self.assertIsInstance(exported, dict)
+            package_id = str(exported["package_id"])
+            manifest = exported["manifest"]
+            self.assertNotIn("absolute_path", json.dumps(manifest))
+            self.assertNotIn("thumbnail_path", json.dumps(manifest))
+
+            status, package_bytes = request("GET", exported["download"])
+            self.assertEqual(status, 200)
+            self.assertIsInstance(package_bytes, bytes)
+            with zipfile.ZipFile(__import__("io").BytesIO(package_bytes)) as archive:
+                names = set(archive.namelist())
+                self.assertIn("design-package.json", names)
+                self.assertIn("contact-sheet.jpg", names)
+                self.assertIn("thumbnails/A01.jpg", names)
+                self.assertIn("README-for-AI.txt", names)
+
+            spec = {
+                "format": "CollageDesignSpec",
+                "schema_version": 1,
+                "package_id": package_id,
+                "alternatives": [{
+                    "id": "alt-1",
+                    "style": "test",
+                    "elements": [
+                        {"id": "background", "type": "rectangle", "x_mm": 0, "y_mm": 0,
+                         "width_mm": 300, "height_mm": 300, "fill": "#f5f2ed", "z_index": 0},
+                        {"id": "photo-1", "type": "photo", "asset_id": "A01", "x_mm": 10, "y_mm": 10,
+                         "width_mm": 120, "height_mm": 120, "image": {"zoom": 1.2}, "z_index": 1},
+                        {"id": "title", "type": "text", "content": "Test page", "x_mm": 20, "y_mm": 260,
+                         "width_mm": 100, "height_mm": 15, "z_index": 2},
+                    ],
+                }],
+            }
+            status, validated = request("POST", "/api/collage/design-imports/validate", {"spec": spec})
+            self.assertEqual(status, 200)
+            self.assertTrue(validated["valid"])
+            self.assertEqual(validated["alternatives"][0]["photos"], 1)
+
+            status, imported = request("POST", "/api/collage/design-imports", {"spec": spec, "alternative_index": 0})
+            self.assertEqual(status, 201)
+            document = imported["document"]
+            self.assertEqual(document["schema_version"], 2)
+            self.assertEqual(document["elements"][1]["photo_id"], asset_ids[0])
+            document_url = imported["document_url"]
+
+            status, read_back = request("GET", document_url)
+            self.assertEqual(status, 200)
+            self.assertEqual(read_back["document_id"], document["document_id"])
+
+            document["elements"][1]["rotation_deg"] = 9
+            status, saved = request("POST", "/api/collage/documents", document)
+            self.assertEqual(status, 201)
+            self.assertTrue(saved["variant"])
+            self.assertNotEqual(saved["document"]["document_id"], document["document_id"])
+            self.assertEqual(saved["document"]["elements"][1]["rotation_deg"], 9)
+
+
+if __name__ == "__main__":
+    unittest.main()
