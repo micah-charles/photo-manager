@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from photovault.catalog.library import LibraryQuery, count_library_items, library_facets, list_library_items
+from photovault.catalog.library import LibraryQuery, count_library_items, library_asset_ids, library_day_counts, library_facets, list_library_items
 from photovault.catalog.organization import add_assets_to_event, add_assets_to_topic_section, create_event, create_topic_section, delete_event, list_events, list_places, list_sources, list_tags, list_topic_sections, remove_assets_from_event, remove_assets_from_topic_section, update_event
 from photovault.catalog.people import list_people
 from photovault.catalog.collections import list_collections
@@ -431,7 +431,7 @@ def library_payload(connection, query: LibraryQuery) -> dict[str, object]:
     for month in months:
         year = str(month["key"])[:4]
         years[year] = years.get(year, 0) + int(month["item_count"])
-    return {"total": count_library_items(connection, query), "items": items, "months": months, "years": [{"key": year, "label": year, "item_count": count} for year, count in years.items()], "days": days, "next_cursor": next_cursor, "has_more": has_more}
+    return {"total": count_library_items(connection, query), "items": items, "months": months, "years": [{"key": year, "label": year, "item_count": count} for year, count in years.items()], "days": days, "day_counts": library_day_counts(connection, query), "next_cursor": next_cursor, "has_more": has_more}
 
 
 def folder_asset_ids(connection, folder: str) -> list[str]:
@@ -516,9 +516,35 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/library/ids":
             connection = connect(self.catalog_path)
             try:
-                folder = parse_qs(parsed.query).get("folder", [""])[0]
-                asset_ids = folder_asset_ids(connection, folder)
-                self._json({"folder": folder.strip("/"), "asset_ids": asset_ids, "count": len(asset_ids)})
+                params = parse_qs(parsed.query)
+                day = params.get("day", [""])[0]
+                captured_from = params.get("from", [""])[0]
+                captured_to = params.get("to", [""])[0]
+                if day:
+                    captured_from = f"{day} 00:00:00"
+                    captured_to = f"{day} 23:59:59"
+                query = LibraryQuery(
+                    search=params.get("search", [""])[0],
+                    folder_prefix=params.get("folder", [""])[0],
+                    media_type=params.get("type", ["ALL"])[0].upper(),
+                    favourite_only=params.get("favourite", ["0"])[0] == "1",
+                    recently_added=params.get("recent", ["0"])[0] == "1",
+                    captured_from=captured_from,
+                    captured_to=captured_to,
+                    captured_month=params.get("month", [""])[0],
+                    source_id=params.get("source", [""])[0],
+                    event_id=params.get("event", [""])[0],
+                    tag_id=params.get("tag", [""])[0],
+                    place_id=params.get("place", [""])[0],
+                    person_id=params.get("person", [""])[0],
+                    category=params.get("category", [""])[0],
+                    review_status=params.get("review", [""])[0],
+                    include_rejected=params.get("include_rejected", ["0"])[0] == "1",
+                )
+                asset_ids = library_asset_ids(connection, query)
+                self._json({"day": day, "folder": query.folder_prefix.strip("/"), "asset_ids": asset_ids, "count": len(asset_ids)})
+            except (ValueError, TypeError) as exc:
+                self._json({"error": str(exc)}, 400)
             finally:
                 connection.close()
             return

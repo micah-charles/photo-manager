@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from photovault.catalog.library import LibraryQuery
+from photovault.catalog.library import LibraryQuery, library_asset_ids, library_day_counts
 from photovault.catalog.scanner import register_volume, scan_volume
 from photovault.database.connection import connect
 from photovault.catalog.organization import add_assets_to_event, create_event
@@ -14,6 +14,55 @@ from photovault.web.server import STATIC_ROOT, _decode_cursor, library_payload, 
 
 
 class WebLibraryTests(unittest.TestCase):
+    def test_day_counts_and_selection_ids_are_not_page_limited(self) -> None:
+        class Provider:
+            def identify(self, path: Path) -> VolumeIdentity:
+                return VolumeIdentity("web", "web-volume", "Web test volume")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "media"
+            root.mkdir()
+            for name in ("a.jpg", "b.jpg", "c.jpg"):
+                (root / name).write_bytes(name.encode())
+            db = connect(Path(directory) / "catalog.db")
+            volume_id = register_volume(db, root, Provider())
+            scan_volume(db, volume_id, root)
+            db.execute("UPDATE asset_locations SET modified_ns=?", (1784073600 * 1_000_000_000,))
+            db.commit()
+
+            payload = library_payload(db, LibraryQuery(captured_month="2026-07", limit=1))
+            self.assertEqual(len(payload["items"]), 1)
+            self.assertEqual(len(payload["days"]["2026-07-15"]), 1)
+            self.assertEqual(payload["day_counts"]["2026-07-15"], 3)
+            self.assertEqual(
+                len(library_asset_ids(db, LibraryQuery(captured_from="2026-07-15 00:00:00", captured_to="2026-07-15 23:59:59"))),
+                3,
+            )
+            db.close()
+
+    def test_date_selection_uses_display_time_for_iso_capture_values(self) -> None:
+        class Provider:
+            def identify(self, path: Path) -> VolumeIdentity:
+                return VolumeIdentity("web", "web-volume", "Web test volume")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "media"
+            root.mkdir()
+            for name in ("a.jpg", "b.jpg", "c.jpg"):
+                (root / name).write_bytes(name.encode())
+            db = connect(Path(directory) / "catalog.db")
+            volume_id = register_volume(db, root, Provider())
+            scan_volume(db, volume_id, root)
+            db.execute("UPDATE media_metadata SET capture_datetime=?", ("2026-04-15T12:00:00",))
+            db.commit()
+
+            self.assertEqual(library_day_counts(db, LibraryQuery(limit=1))["2026-04-15"], 3)
+            self.assertEqual(
+                len(library_asset_ids(db, LibraryQuery(captured_from="2026-04-15 00:00:00", captured_to="2026-04-15 23:59:59"))),
+                3,
+            )
+            db.close()
+
     def test_library_payload_groups_real_catalog_rows_for_month(self) -> None:
         class Provider:
             def identify(self, path: Path) -> VolumeIdentity:

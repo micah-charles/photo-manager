@@ -42,6 +42,11 @@ _SORTS = {
 }
 
 
+def _display_captured_expr() -> str:
+    """Return the catalog's single capture-time expression used by the UI."""
+    return "CASE WHEN COALESCE(mm.capture_datetime, al.capture_date) IS NOT NULL THEN datetime(COALESCE(mm.capture_datetime, al.capture_date), printf('%+d seconds', COALESCE(sp.time_offset_seconds, 0))) ELSE datetime(al.modified_ns / 1000000000, 'unixepoch') END"
+
+
 def library_facets(connection: sqlite3.Connection, query: LibraryQuery = LibraryQuery()) -> list[dict[str, object]]:
     """Return complete month navigation facets, independent of page size/cursor."""
     facet_query = LibraryQuery(**{
@@ -55,13 +60,14 @@ def library_facets(connection: sqlite3.Connection, query: LibraryQuery = Library
         "offset": 0,
     })
     where, params = _where_for_query(facet_query)
-    captured_expr = "COALESCE(mm.capture_datetime, al.capture_date, datetime(al.modified_ns / 1000000000, 'unixepoch'))"
+    captured_expr = _display_captured_expr()
     rows = connection.execute(
         f"""SELECT substr({captured_expr}, 1, 7) AS month, COUNT(DISTINCT al.asset_id) AS item_count
             FROM asset_locations al
             JOIN assets a ON a.id=al.asset_id
             LEFT JOIN media_metadata mm ON mm.asset_id=al.asset_id
             LEFT JOIN asset_reviews ar ON ar.asset_id=al.asset_id
+            LEFT JOIN source_profiles sp ON sp.source_id=al.source_id
             WHERE {' AND '.join(where)} AND {captured_expr} IS NOT NULL
             GROUP BY 1 ORDER BY 1 DESC""",
         params,
@@ -115,18 +121,17 @@ def _where_for_query(query: LibraryQuery) -> tuple[list[str], list[object]]:
     if query.recently_added:
         where.append("a.created_at >= datetime('now', '-30 days')")
     if query.captured_from:
-        where.append("COALESCE(mm.capture_datetime, al.capture_date, datetime(al.modified_ns / 1000000000, 'unixepoch')) >= ?")
+        where.append(f"{_display_captured_expr()} >= ?")
         params.append(query.captured_from)
     if query.captured_to:
-        where.append("COALESCE(mm.capture_datetime, al.capture_date, datetime(al.modified_ns / 1000000000, 'unixepoch')) <= ?")
+        where.append(f"{_display_captured_expr()} <= ?")
         params.append(query.captured_to)
     if query.captured_month:
         # Library displays modified time when embedded capture time is absent.
         # Apply the same fallback to month navigation, otherwise the month
         # rail can show a month whose selection returns no rows.
         where.append(
-            "substr(COALESCE(mm.capture_datetime, al.capture_date, "
-            "datetime(al.modified_ns / 1000000000, 'unixepoch')), 1, 7) = ?"
+            f"substr({_display_captured_expr()}, 1, 7) = ?"
         )
         params.append(query.captured_month)
     if query.source_id:
@@ -170,7 +175,7 @@ def _where_for_query(query: LibraryQuery) -> tuple[list[str], list[object]]:
         where.append("al.asset_id IN (" + ",".join("?" for _ in query.asset_ids) + ")")
         params.extend(query.asset_ids)
     if query.after_asset_id:
-        captured_expr = "COALESCE(mm.capture_datetime, al.capture_date, datetime(al.modified_ns / 1000000000, 'unixepoch'))"
+        captured_expr = _display_captured_expr()
         if query.after_captured:
             where.append(f"(({captured_expr} IS NULL) OR {captured_expr} < ? OR ({captured_expr} = ? AND al.asset_id > ?))")
             params.extend((query.after_captured, query.after_captured, query.after_asset_id))
@@ -233,6 +238,56 @@ def list_library_items(connection: sqlite3.Connection, query: LibraryQuery = Lib
     return list(connection.execute(sql, params))
 
 
+def library_day_counts(connection: sqlite3.Connection, query: LibraryQuery = LibraryQuery()) -> dict[str, int]:
+    """Return complete day counts for the current filters, independent of page size."""
+    unpaged = LibraryQuery(**{
+        **query.__dict__,
+        "after_captured": "",
+        "after_asset_id": "",
+        "limit": 1,
+        "offset": 0,
+    })
+    where, params = _where_for_query(unpaged)
+    captured_expr = _display_captured_expr()
+    day_expr = f"substr({captured_expr}, 1, 10)"
+    rows = connection.execute(
+        f"""SELECT {day_expr} AS day, COUNT(*) AS item_count
+            FROM asset_locations al
+            JOIN assets a ON a.id=al.asset_id
+            LEFT JOIN media_metadata mm ON mm.asset_id=al.asset_id
+            LEFT JOIN asset_reviews ar ON ar.asset_id=al.asset_id
+            LEFT JOIN source_profiles sp ON sp.source_id=al.source_id
+            WHERE {' AND '.join(where)} AND {captured_expr} IS NOT NULL
+            GROUP BY 1 ORDER BY 1 DESC""",
+        params,
+    ).fetchall()
+    return {str(row[0]): int(row[1]) for row in rows}
+
+
+def library_asset_ids(connection: sqlite3.Connection, query: LibraryQuery = LibraryQuery()) -> list[str]:
+    """Return every matching asset id for an explicit bulk-selection action."""
+    unpaged = LibraryQuery(**{
+        **query.__dict__,
+        "after_captured": "",
+        "after_asset_id": "",
+        "limit": 1,
+        "offset": 0,
+    })
+    where, params = _where_for_query(unpaged)
+    rows = connection.execute(
+        f"""SELECT DISTINCT al.asset_id
+            FROM asset_locations al
+            JOIN assets a ON a.id=al.asset_id
+            LEFT JOIN media_metadata mm ON mm.asset_id=al.asset_id
+            LEFT JOIN asset_reviews ar ON ar.asset_id=al.asset_id
+            LEFT JOIN source_profiles sp ON sp.source_id=al.source_id
+            WHERE {' AND '.join(where)}
+            ORDER BY al.asset_id""",
+        params,
+    ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
 def count_library_items(connection: sqlite3.Connection, query: LibraryQuery = LibraryQuery()) -> int:
     """Count items using exactly the same filter semantics as the page query."""
     unbounded = LibraryQuery(**{**query.__dict__, "limit": 1, "offset": 0})
@@ -243,6 +298,7 @@ def count_library_items(connection: sqlite3.Connection, query: LibraryQuery = Li
         f"""SELECT COUNT(*) FROM asset_locations al JOIN assets a ON a.id=al.asset_id
             LEFT JOIN media_metadata mm ON mm.asset_id=al.asset_id
             LEFT JOIN asset_reviews ar ON ar.asset_id=al.asset_id
+            LEFT JOIN source_profiles sp ON sp.source_id=al.source_id
             WHERE {' AND '.join(where)}""",
         params,
     ).fetchone()[0])
