@@ -44,6 +44,9 @@ The desktop entry point is `photovault-app --catalog ~/.photovault/catalog.db`. 
 
 Design and safety details: [architecture](docs/ARCHITECTURE.md), [database schema](docs/DATABASE_SCHEMA.md), [backup model](docs/BACKUP_MODEL.md), [safety model](docs/SAFETY_MODEL.md), [Windows porting](docs/WINDOWS_PORTING.md), [ML backend](docs/ML_BACKEND.md), and [open-source landscape](docs/OPEN_SOURCE_LANDSCAPE.md).
 
+For a reusable ChatGPT hand-off prompt and the exact v2 JSON field names, see
+[the standard AI collage design prompt](docs/CHATGPT_AI_COLLAGE_DESIGN_PROMPT.md).
+
 ## Quick start
 
 ```bash
