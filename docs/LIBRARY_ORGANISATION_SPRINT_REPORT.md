@@ -68,10 +68,10 @@ The deterministic Qt capture harness covers 20 pages, including Timeline, Import
 Settings. The existing screenshots
 are stored outside the repository at:
 
-`/Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA/screenshots`
+`<visual-qa-root>/screenshots`
 
 The catalog fixture used for visual QA is a copy under
-`/Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA`; the original regression
+`<visual-qa-root>`; the original regression
 catalog is not opened in write mode by the capture process.
 
 The current macOS release smoke check also passes:

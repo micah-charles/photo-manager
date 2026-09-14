@@ -55,8 +55,8 @@ PYTHONPATH=src python3 -m photovault.cli --help
 Example:
 
 ```bash
-PYTHONPATH=src python3 -m photovault.cli --catalog /tmp/photovault.db register /Volumes/ExtremePro
-PYTHONPATH=src python3 -m photovault.cli --catalog /tmp/photovault.db scan <volume-id> /Volumes/ExtremePro
+PYTHONPATH=src python3 -m photovault.cli --catalog /tmp/photovault.db register /path/to/source-volume
+PYTHONPATH=src python3 -m photovault.cli --catalog /tmp/photovault.db scan <volume-id> /path/to/source-volume
 PYTHONPATH=src python3 -m photovault.cli --catalog /tmp/photovault.db volumes
 # Refresh known disk status after disconnecting/reconnecting removable media.
 PYTHONPATH=src python3 -m photovault.cli --catalog /tmp/photovault.db volume-refresh
@@ -94,7 +94,7 @@ original media or binds to the LAN by default:
 
 ```bash
 PYTHONPATH=src python3 -m photovault.cli \
-  --catalog /Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA/round1-workers5-copy.db \
+  --catalog /path/to/catalog.db \
   web
 ```
 

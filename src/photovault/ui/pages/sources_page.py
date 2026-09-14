@@ -12,7 +12,7 @@ def build_sources_page(owner: object, layout: object, tables: dict[str, QTableWi
     layout.addWidget(intro)
     folder_form = QFormLayout()
     owner.source_folder_path = QLineEdit()
-    owner.source_folder_path.setPlaceholderText("/Volumes/CameraSD or /Users/.../Photos")
+    owner.source_folder_path.setPlaceholderText("/path/to/CameraSD or /path/to/Photos")
     source_path_row = QHBoxLayout()
     source_path_row.addWidget(owner.source_folder_path, 1)
     owner.source_folder_browse = QPushButton("Browse…")

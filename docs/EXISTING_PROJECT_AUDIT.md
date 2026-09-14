@@ -1,7 +1,7 @@
 # PhotoVault Phase 0 — Existing Project Audit
 
 Date: 2026-08-21
-Scope: `/Volumes/ExtremePro/project/photos`
+Scope: `<legacy-project-root>`
 
 ## Executive summary
 

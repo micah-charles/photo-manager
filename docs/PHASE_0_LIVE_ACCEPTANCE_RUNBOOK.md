@@ -3,7 +3,7 @@
 This runbook covers the two checks that cannot be proven by the local Qt test
 suite: a real Android Companion transfer and a real Windows package smoke test.
 It is intentionally read-only on the phone. Put the catalog, logs, and copied
-media on the external `/Volumes/ExtremePro` drive.
+media on an external drive.
 
 ## Pixel Companion transfer
 
@@ -12,15 +12,15 @@ media on the external `/Volumes/ExtremePro` drive.
 2. Start PhotoVault with an external catalog:
 
    ```bash
-   cd /Volumes/ExtremePro/project/codex/photo-manager-github
+   cd /path/to/photo-manager
    PYTHONPATH=src .venv/bin/python -m photovault.ui \
-     --catalog /Volumes/ExtremePro/PhotoVault-CameraRound1-Fresh/live-acceptance.db
+     --catalog /path/to/live-acceptance.db
    ```
 
 3. Open **Android Devices**, enter the current Companion URL/token, and press
    **Connect**. Confirm the device identity and folder inventory.
 4. Select `DCIM/Camera`, first choose a small test limit, and choose a
-   destination under `/Volumes/ExtremePro`. Verify the plan before starting.
+   destination under `/path/to/backup-root`. Verify the plan before starting.
 5. Start the transfer and record the live file count, bytes, elapsed time,
    average speed, interval speed, and ETA. Cancel once during the small test;
    confirm the UI says it is safe to resume.
@@ -30,7 +30,7 @@ media on the external `/Volumes/ExtremePro` drive.
 
    ```bash
    PYTHONPATH=src .venv/bin/python -m photovault.cli \
-     --catalog /Volumes/ExtremePro/PhotoVault-CameraRound1-Fresh/live-acceptance.db \
+     --catalog /path/to/live-acceptance.db \
      android import-batches --limit 20
    ```
 
@@ -78,7 +78,7 @@ With the macOS app open and the external regression catalog selected:
 - confirmation that no phone/source files were deleted or rewritten.
 
 The deterministic local evidence remains in
-`/Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA/screenshots` and does not
+`<visual-qa-root>/screenshots` and does not
 replace these live checks.
 
 ## Safe deterministic UI capture
@@ -88,11 +88,11 @@ SQLite WAL setup needs a writable catalog directory. Copy the database to the
 external QA workspace first, then capture from that copy:
 
 ```bash
-cp /Volumes/ExtremePro/PhotoVault-CameraRound1-Fresh/round1-fresh-workers5.db \
-  /Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA/latest-source-audit.db
+cp /path/to/round1-fresh-workers5.db \
+  <visual-qa-root>/latest-source-audit.db
 QT_QPA_PLATFORM=offscreen PYTHONPATH=src .venv/bin/python scripts/capture_ui_review.py \
-  /Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA/latest-source-audit.db \
-  /Volumes/ExtremePro/AIWorkspace/PhotoVault-VisualQA/latest-offscreen-audit
+  <visual-qa-root>/latest-source-audit.db \
+  <visual-qa-root>/latest-offscreen-audit
 ```
 
 This produces deterministic page screenshots without opening the protected

@@ -519,8 +519,19 @@ async function applyAiDesign() {
 }
 
 async function loadSample() {
-  try { const response = await fetch("/examples/kew-gardens-ai-design-v1.json"); if (!response.ok) throw new Error(`HTTP ${response.status}`); await validateAiSpec(await response.json()); }
-  catch (error) { status(`Sample design unavailable: ${error.message}`); }
+  try {
+    const response = await fetch("/examples/kew-gardens-ai-design-v1.json");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const sample = await response.json();
+    const currentAssets = [...new Set(elements().map(photoId).filter(Boolean))];
+    if (currentAssets.length < 12) throw new Error("Open a candidate with at least 12 photo assets before loading the sample.");
+    sample.assets = (sample.assets || []).map((asset, index) => {
+      const assetId = currentAssets[index];
+      const info = state.assetMap.get(String(assetId)) || {};
+      return { ...asset, asset_id: assetId, filename: info.filename || `selected-image-${String(index + 1).padStart(2, "0")}.jpg` };
+    });
+    await validateAiSpec(sample);
+  } catch (error) { status(`Sample design unavailable: ${error.message}`); }
 }
 
 function replacePhoto(assetId) {

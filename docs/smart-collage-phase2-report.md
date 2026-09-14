@@ -26,7 +26,7 @@ locally, the run produced 30 candidates: 20 survived and 10 were hard
 rejected. Analysis took 280.515ms total; 58 cells changed from centre crop and
 44 potential face-cut cases were avoided. Provider generation times were
 Native 1ms, CEWE Fan 397ms and BSP 1ms. The output is at
-`/Volumes/ExtremePro/AIWorkspace/smart-collage-poc/sat-08-aug-2026-phase2-opencv/`.
+`<collage-poc-root>/sat-08-aug-2026-phase2-opencv/`.
 These figures validate the pipeline only; they are not the final full-resolution
 acceptance result.
 

@@ -1,8 +1,8 @@
 # PhotoVault full product integration report
 
 **Updated:** 2026-09-02  
-**Primary repository:** `/Volumes/ExtremePro/project/codex/photo-manager-github`  
-**Legacy reference:** `/Volumes/ExtremePro/project/photos`
+**Primary repository:** `<project-root>`
+**Legacy reference:** `<legacy-project-root>`
 
 ## Executive summary
 
@@ -27,7 +27,7 @@ The real Pixel 8 Pro baseline remains valid and must not be regressed:
 | Failures / partial files | 0 / 0 |
 | SHA-256 verified | 6,674 |
 
-The verified backup at `/Volumes/ExtremePro/PhotoVault-CameraRound1-Fresh` is
+The verified backup at `<verified-backup-root>` is
 user data and is outside this repository. It must be treated as read-only.
 
 ## Product boundary

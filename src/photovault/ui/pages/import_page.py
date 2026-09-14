@@ -13,7 +13,7 @@ def build_import_page(owner: object, layout: object) -> None:
     form = QFormLayout()
     owner.import_folder_path = QLineEdit()
     owner.import_folder_path.setAccessibleName("Import source folder")
-    owner.import_folder_path.setPlaceholderText("/Volumes/NikonSD or /Users/.../Photos")
+    owner.import_folder_path.setPlaceholderText("/path/to/CameraSD or /path/to/Photos")
     source_row = QHBoxLayout()
     source_row.addWidget(owner.import_folder_path, 1)
     browse = QPushButton("Browse…")

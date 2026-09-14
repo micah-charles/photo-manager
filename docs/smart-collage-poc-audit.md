@@ -1,7 +1,7 @@
 # Smart Collage POC audit
 
 Date: 2026-09-03  
-Scope: `/Volumes/ExtremePro/project/codex/photo-manager-github`
+Scope: `<project-root>`
 
 ## Reusable existing components
 

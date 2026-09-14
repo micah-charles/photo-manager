@@ -210,7 +210,7 @@ A repeatable visual review harness is available at
 Android Devices, Backup Health, Advanced Tools, People, Places, Categories,
 and Visual Duplicates against the external regression catalog. The review
 pack is stored outside the repository at
-`/Volumes/ExtremePro/PhotoVault-UI-Review`; the Library capture shows real
+`<qa-delivery-root>`; the Library capture shows real
 cached previews after the background thumbnail builder generated the first
 12 previews.
 

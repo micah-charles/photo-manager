@@ -50,7 +50,7 @@ review before adoption. No third-party source was copied.
 ### Build and test
 
 ```zsh
-cd /Volumes/ExtremePro/project/codex/photo-manager-github
+cd /path/to/photo-manager
 zsh scripts/build_android_libusb_mtp_helper.sh
 ./native/macos/android_mtp_libusb/photovault-android-libusb-mtp --probe
 ./native/macos/android_mtp_libusb/photovault-android-libusb-mtp --stream-test DCIM/Camera > /tmp/photovault-libusb-test.jpg
@@ -111,7 +111,7 @@ on this Mac. The reproducible build script therefore uses only installed
 Android SDK build-tools (`aapt2`, `d8`, `zipalign`, `apksigner`) and `javac`:
 
 ```zsh
-cd /Volumes/ExtremePro/project/codex/photo-manager-github
+cd /path/to/photo-manager
 zsh scripts/build_android_companion.sh
 ```
 
@@ -170,9 +170,9 @@ PYTHONPATH=src python3 -m photovault.cli \
 
 # This is a plan only: it neither reads photo bytes nor writes the destination.
 PYTHONPATH=src python3 -m photovault.cli \
-  --catalog /Volumes/EXTERNAL_DRIVE/photovault-benchmark.db \
+  --catalog /path/to/photovault-benchmark.db \
   android-wifi --url http://PHONE_IP:8765 --token TOKEN \
-  copy-folder DCIM/Camera /Volumes/EXTERNAL_DRIVE/PhotoVault-Camera-Test \
+  copy-folder DCIM/Camera /path/to/PhotoVault-Camera-Test \
   --oldest-first --images-only --limit 1000
 # Add --confirm-copy only after checking the plan. Copies are atomically
 # written, SHA-256 verified, and never overwrite a conflicting destination.

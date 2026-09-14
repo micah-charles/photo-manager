@@ -15,18 +15,18 @@
     "preset_id": "large-square"
   },
   "assets": [
-    {"label": "A01", "asset_id": "asset_b405c139f29a4674b31dd6d880341710", "filename": "PXL_20260419_125509643.jpg"},
-    {"label": "A02", "asset_id": "asset_293885cac7eb4c799ffd9576f0efcb54", "filename": "PXL_20260419_125457395.jpg"},
-    {"label": "A03", "asset_id": "asset_e911c129a88c4705985be25b03320dcf", "filename": "PXL_20260418_132315869.jpg"},
-    {"label": "A04", "asset_id": "asset_9467743f36674fdd862959c55d342a02", "filename": "PXL_20260418_132245816.jpg"},
-    {"label": "A05", "asset_id": "asset_fdef433e93064306ae9c5d0b81a5b0a5", "filename": "PXL_20260418_132210231.jpg"},
-    {"label": "A06", "asset_id": "asset_a9be608e84b44f05b8bce418b296b795", "filename": "PXL_20260418_132202343.jpg"},
-    {"label": "A07", "asset_id": "asset_37843404773a41b1b6e4769883bd0b8c", "filename": "PXL_20260418_131913677.jpg"},
-    {"label": "A08", "asset_id": "asset_75bd0463ee0540f58247275c845f7236", "filename": "PXL_20260418_131838865.jpg"},
-    {"label": "A09", "asset_id": "asset_6557a878ef9a4329a8b33c0e0d07a37f", "filename": "PXL_20260418_131900448.jpg"},
-    {"label": "A10", "asset_id": "asset_3a6fa35fa1ef48be8ce56292413abb50", "filename": "PXL_20260418_131824193.jpg"},
-    {"label": "A11", "asset_id": "asset_18f1dda440084ecdad4b1f25847f65f6", "filename": "PXL_20260418_131811200.MP.jpg"},
-    {"label": "A12", "asset_id": "asset_7b219932dcce44b0b9885239ababd61b", "filename": "PXL_20260418_131712625.jpg"}
+    {"label": "A01", "asset_id": "example_asset_01", "filename": "example-image-01.jpg"},
+    {"label": "A02", "asset_id": "example_asset_02", "filename": "example-image-02.jpg"},
+    {"label": "A03", "asset_id": "example_asset_03", "filename": "example-image-03.jpg"},
+    {"label": "A04", "asset_id": "example_asset_04", "filename": "example-image-04.jpg"},
+    {"label": "A05", "asset_id": "example_asset_05", "filename": "example-image-05.jpg"},
+    {"label": "A06", "asset_id": "example_asset_06", "filename": "example-image-06.jpg"},
+    {"label": "A07", "asset_id": "example_asset_07", "filename": "example-image-07.jpg"},
+    {"label": "A08", "asset_id": "example_asset_08", "filename": "example-image-08.jpg"},
+    {"label": "A09", "asset_id": "example_asset_09", "filename": "example-image-09.jpg"},
+    {"label": "A10", "asset_id": "example_asset_10", "filename": "example-image-10.jpg"},
+    {"label": "A11", "asset_id": "example_asset_11", "filename": "example-image-11.jpg"},
+    {"label": "A12", "asset_id": "example_asset_12", "filename": "example-image-12.jpg"}
   ],
   "alternatives": [
     {
