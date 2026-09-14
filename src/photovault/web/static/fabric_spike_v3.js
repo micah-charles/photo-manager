@@ -11,6 +11,9 @@ const state = {
   photos: [], assetMap: new Map(), activeId: null, mode: "layout", renderMode: "funnel", renderFallbacks: [],
   history: [], future: [], canvas: null, gestureBefore: null,
   controlBefore: null, aiSpec: null, aiPackageId: null, renderPromise: Promise.resolve(),
+  layerGroups: { Text: true, Photos: true, Supporting: false, Details: false, Decorations: true, Background: false },
+  layerFilter: "all", layerSearch: "",
+  lastExportReport: null,
   renderValidation: { validation_status: "valid", warnings: [], repairs: [] },
 };
 window.fabricSpikeState = state;
@@ -27,7 +30,7 @@ const elementId = (element) => String(element?.element_id || element?.id || `ele
 const photoId = (element) => (element && (element.type === "photo" || !element.type) ? (element.photo_id || element.asset_id || null) : null);
 const isPhotoElement = (element) => Boolean(photoId(element));
 const activeElement = () => elements().find((element) => elementId(element) === state.activeId) || null;
-const canvasSize = () => ({ width: Number(state.doc?.canvas?.width || 1200), height: Number(state.doc?.canvas?.height || 800) });
+const canvasSize = (doc = state.doc) => ({ width: Number(doc?.canvas?.width || 1200), height: Number(doc?.canvas?.height || 800) });
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const status = (message) => { if ($("status")) $("status").textContent = message; };
 function updateDocumentChrome() {
@@ -109,14 +112,16 @@ function normalizeDocument(raw) {
   return documentValue;
 }
 
-function photoUrls(assetId) {
-  const info = state.assetMap.get(String(assetId));
+function photoUrls(assetId, context = null) {
+  const assetMap = context?.assetMap || state.assetMap;
+  const renderMode = context?.renderMode || state.renderMode;
+  const info = assetMap.get(String(assetId));
   const thumbnail = info?.thumbnail || `/api/thumb/${encodeURIComponent(assetId)}`;
   const original = info?.original_url || `/api/original/${encodeURIComponent(assetId)}`;
-  return state.renderMode === "view" ? [original, thumbnail] : [thumbnail];
+  return renderMode === "view" ? [original, thumbnail] : [thumbnail];
 }
 
-function photoUrl(assetId) { return photoUrls(assetId)[0]; }
+function photoUrl(assetId, context = null) { return photoUrls(assetId, context)[0]; }
 
 function sourceSize(element) {
   const info = state.assetMap.get(String(photoId(element))) || {};
@@ -160,12 +165,26 @@ const FONT_STACKS = Object.freeze({
   display: 'Impact, "Arial Black", sans-serif',
 });
 
-function renderWarning(element, code, message, details = {}) {
-  state.renderValidation.warnings.push({ element_id: elementId(element), code, message, ...details });
+function createRenderContext(canvas, options = {}) {
+  return {
+    canvas,
+    doc: options.doc || state.doc,
+    assetMap: options.assetMap || state.assetMap,
+    renderMode: options.renderMode || state.renderMode,
+    mode: options.mode || state.mode,
+    activeId: options.activeId ?? state.activeId,
+    interactive: Boolean(options.interactive),
+    strictAssets: Boolean(options.strictAssets),
+    report: options.report || { validation_status: "valid", warnings: [], repairs: [], rendered_element_ids: [], failed_element_ids: [], fallbacks: [] },
+  };
 }
 
-function renderRepair(element, reason, details = {}) {
-  state.renderValidation.repairs.push({ element_id: elementId(element), reason, ...details });
+function renderWarning(element, code, message, details = {}, context = null) {
+  (context?.report || state.renderValidation).warnings.push({ element_id: elementId(element), code, message, ...details });
+}
+
+function renderRepair(element, reason, details = {}, context = null) {
+  (context?.report || state.renderValidation).repairs.push({ element_id: elementId(element), reason, ...details });
 }
 
 function actualTextMetrics(object) {
@@ -186,7 +205,7 @@ function setTextFontSize(object, sizePx) {
   object.setCoords?.();
 }
 
-function fitTextObject(object, element) {
+function fitTextObject(object, element, context = null) {
   const style = element.text_style || {};
   const targetWidth = Math.max(1, Number(element.width || 1));
   const targetHeight = Math.max(1, Number(element.height || 1));
@@ -234,10 +253,10 @@ function fitTextObject(object, element) {
     const before = Number(style.font_size_pt || finalSizePt);
     element.text_style ||= {};
     element.text_style.font_size_pt = Number(finalSizePt.toFixed(2));
-    renderRepair(element, "FABRIC_TEXT_SHRINK_TO_FIT", { from_font_size_pt: before, to_font_size_pt: element.text_style.font_size_pt });
+    renderRepair(element, "FABRIC_TEXT_SHRINK_TO_FIT", { from_font_size_pt: before, to_font_size_pt: element.text_style.font_size_pt }, context);
   }
   if (finalMetrics.width > targetWidth + 0.5 || finalMetrics.height > targetHeight + 0.5) {
-    renderWarning(element, "FABRIC_TEXT_OVERFLOW", "Text still exceeds its declared box after browser-metric fitting.", { width_px: finalMetrics.width, height_px: finalMetrics.height });
+    renderWarning(element, "FABRIC_TEXT_OVERFLOW", "Text still exceeds its declared box after browser-metric fitting.", { width_px: finalMetrics.width, height_px: finalMetrics.height }, context);
   }
 }
 
@@ -252,10 +271,11 @@ function fabricBounds(object) {
   }
 }
 
-function keepTextInsideSafeArea(object, element) {
+function keepTextInsideSafeArea(object, element, context = null) {
   if (element.allow_bleed) return;
-  const page = canvasSize();
-  const safe = Number(state.doc?.page_spec?.safe_margin_mm || 8) * PX_PER_MM;
+  const doc = context?.doc || state.doc;
+  const page = canvasSize(doc);
+  const safe = Number(doc?.page_spec?.safe_margin_mm || 8) * PX_PER_MM;
   const before = fabricBounds(object);
   let dx = 0;
   let dy = 0;
@@ -271,11 +291,11 @@ function keepTextInsideSafeArea(object, element) {
     element.y = Math.round(Number(object.top || 0));
     if (Number.isFinite(Number(element.x_mm))) element.x_mm = Number((element.x / PX_PER_MM).toFixed(2));
     if (Number.isFinite(Number(element.y_mm))) element.y_mm = Number((element.y / PX_PER_MM).toFixed(2));
-    renderRepair(element, "FABRIC_TEXT_SAFE_AREA", { from_x: oldX, from_y: oldY, to_x: element.x, to_y: element.y });
+    renderRepair(element, "FABRIC_TEXT_SAFE_AREA", { from_x: oldX, from_y: oldY, to_x: element.x, to_y: element.y }, context);
   }
   const after = fabricBounds(object);
   if (after.left < safe - 0.5 || after.top < safe - 0.5 || after.right > page.width - safe + 0.5 || after.bottom > page.height - safe + 0.5) {
-    renderWarning(element, "FABRIC_TEXT_OUTSIDE_SAFE_AREA", "Text remains outside the safe margin after bounded repair.");
+    renderWarning(element, "FABRIC_TEXT_OUTSIDE_SAFE_AREA", "Text remains outside the safe margin after bounded repair.", {}, context);
   }
 }
 
@@ -299,26 +319,29 @@ function shapeName(element) {
   return element.clipping_shape || element.mask?.type || "rectangle";
 }
 
-function frameObject(element) {
+function frameObject(element, context = null) {
   const style = elementStyle(element);
   const width = Number(element.width || 0);
   const height = Number(element.height || 0);
   const rounded = shapeName(element) === "rounded";
+  const activeId = context?.activeId ?? state.activeId;
+  const interactive = Boolean(context?.interactive);
+  const mode = context?.mode || state.mode;
   const object = new fabric.Rect({
     left: Number(element.x || 0) + width / 2,
     top: Number(element.y || 0) + height / 2,
     originX: "center", originY: "center", width, height,
     fill: "rgba(40,110,103,0.035)",
-    stroke: elementId(element) === state.activeId ? "#286e67" : (style.border.color || "#d4cbc1"),
-    strokeWidth: elementId(element) === state.activeId ? 2 : Math.max(style.border.width_mm * PX_PER_MM, 1),
+    stroke: interactive && elementId(element) === activeId ? "#286e67" : (style.border.color || "#d4cbc1"),
+    strokeWidth: interactive && elementId(element) === activeId ? 2 : Math.max(style.border.width_mm * PX_PER_MM, 1),
     opacity: Number(element.opacity ?? 1),
     angle: Number(element.rotation_deg || 0),
     rx: rounded ? Math.min(width, height) * 0.12 : 0,
     ry: rounded ? Math.min(width, height) * 0.12 : 0,
     shadow: createShadow(style.shadow), objectCaching: false,
     visible: !element.hidden,
-    selectable: !element.locked && !element.hidden && state.mode === "layout",
-    evented: !element.locked && !element.hidden && state.mode === "layout",
+    selectable: interactive && !element.locked && !element.hidden && mode === "layout",
+    evented: interactive && !element.locked && !element.hidden && mode === "layout",
   });
   object._elementId = elementId(element);
   object._kind = "photo-frame";
@@ -344,25 +367,38 @@ function clipPath(element, imageScale) {
   });
 }
 
-async function loadPhotoImage(element) {
+async function loadPhotoImage(element, context = null) {
   let image = null;
   let usedOriginal = false;
-  for (const [index, url] of photoUrls(photoId(element)).entries()) {
-    image = await fabric.Image.fromURL(url, { crossOrigin: "anonymous" }).catch(() => null);
-    if (image) { usedOriginal = state.renderMode === "view" && index === 0; break; }
+  let lastError = null;
+  for (const [index, url] of photoUrls(photoId(element), context).entries()) {
+    try {
+      image = await fabric.Image.fromURL(url, { crossOrigin: "anonymous" });
+      if (image) { usedOriginal = (context?.renderMode || state.renderMode) === "view" && index === 0; break; }
+    } catch (error) { lastError = error; }
   }
-  return { image, usedOriginal };
+  return { image, usedOriginal, error: image ? null : lastError || new Error(`Photo asset ${photoId(element)} could not be loaded.`) };
 }
 
-async function addPhoto(element, loaded = null) {
+async function addPhoto(element, loaded = null, context = null) {
+  const ctx = context || createRenderContext(state.canvas);
   const id = elementId(element);
-  const fallbackFrame = frameObject(element);
-  state.canvas.add(fallbackFrame);
+  const fallbackFrame = frameObject(element, ctx);
+  ctx.canvas.add(fallbackFrame);
   const transform = imageTransform(element);
-  const source = sourceSize(element);
-  const { image, usedOriginal } = loaded || await loadPhotoImage(element);
-  if (!image) return;
-  if (state.renderMode === "view" && !usedOriginal) state.renderFallbacks.push(photoId(element));
+  const sourceInfo = ctx.assetMap.get(String(photoId(element))) || {};
+  const source = { width: Number(sourceInfo.width || 1), height: Number(sourceInfo.height || 1) };
+  const loadedResult = loaded || await loadPhotoImage(element, ctx);
+  const { image, usedOriginal } = loadedResult;
+  if (!image) {
+    ctx.report.failed_element_ids.push(id);
+    if (ctx.report) ctx.report.warnings.push({ element_id: id, code: "PHOTO_ASSET_LOAD_FAILED", message: loadedResult.error?.message || "Photo asset could not be loaded." });
+    return { rendered: false, usedOriginal, error: loadedResult.error };
+  }
+  if (ctx.renderMode === "view" && !usedOriginal) {
+    ctx.report.fallbacks.push(photoId(element));
+    ctx.report.warnings.push({ element_id: id, code: "PHOTO_ORIGINAL_FALLBACK", message: "Original photo unavailable; thumbnail fallback was used." });
+  }
   // The editor intentionally renders the catalog thumbnail.  Catalog metadata
   // may describe the original at a different resolution, so use the loaded
   // image's intrinsic dimensions for cover scaling while preserving its
@@ -383,18 +419,49 @@ async function addPhoto(element, loaded = null) {
     originX: "center", originY: "center", scaleX: imageScale, scaleY: imageScale,
     angle: Number(element.rotation_deg || 0) + transform.rotation,
     opacity: Number(element.opacity ?? 1), objectCaching: false,
-    visible: !element.hidden, selectable: !element.locked && !element.hidden && state.mode === "crop",
-    evented: !element.locked && !element.hidden && state.mode === "crop",
+    visible: !element.hidden, selectable: ctx.interactive && !element.locked && !element.hidden && ctx.mode === "crop",
+    evented: ctx.interactive && !element.locked && !element.hidden && ctx.mode === "crop",
   });
   image.clipPath = clipPath(element, imageScale);
   image._elementId = id; image._kind = "photo-image"; image._baseScale = baseScale;
   image._visualWidth = visualWidth; image._visualHeight = visualHeight;
-  state.canvas.remove(fallbackFrame);
-  state.canvas.add(image);
-  state.canvas.add(frameObject(element));
+  ctx.canvas.remove(fallbackFrame);
+  ctx.canvas.add(image);
+  ctx.canvas.add(frameObject(element, ctx));
+  return { rendered: true, usedOriginal, image };
 }
 
-async function addDesignAsset(element) {
+async function loadDesignAsset(element) {
+  const url = designAssetUrl(element);
+  if (!url) return { object: null, error: new Error("Design asset has no safe URL.") };
+  if (/\.svg(?:$|[?#])/i.test(url) && typeof fabric.loadSVGFromURL === "function") {
+    try {
+      const parsed = await fabric.loadSVGFromURL(url);
+      const objects = (parsed?.objects || []).filter(Boolean);
+      if (objects.length && typeof fabric.util?.groupSVGElements === "function") {
+        const object = fabric.util.groupSVGElements(objects, parsed.options || {});
+        const width = Number(object?.width || 0);
+        const height = Number(object?.height || 0);
+        if (width > 0 && height > 0 && Number.isFinite(width) && Number.isFinite(height)) return { object, source: "svg-group", sourceWidth: width, sourceHeight: height };
+      }
+      throw new Error("SVG has no non-empty rendered bounds.");
+    } catch (error) {
+      return { object: null, error };
+    }
+  }
+  try {
+    const object = await fabric.Image.fromURL(url, { crossOrigin: "anonymous" });
+    const width = Number(object?.width || 0);
+    const height = Number(object?.height || 0);
+    if (!object || width <= 0 || height <= 0) throw new Error("Design asset has empty rendered bounds.");
+    return { object, source: "image", sourceWidth: width, sourceHeight: height };
+  } catch (error) {
+    return { object: null, error };
+  }
+}
+
+async function addDesignAsset(element, loaded = null, context = null) {
+  const ctx = context || createRenderContext(state.canvas);
   const id = elementId(element);
   const width = Number(element.width || 0);
   const height = Number(element.height || 0);
@@ -402,38 +469,34 @@ async function addDesignAsset(element) {
     left: Number(element.x || 0) + width / 2, top: Number(element.y || 0) + height / 2,
     originX: "center", originY: "center", width, height, fill: "rgba(192,141,88,.12)",
     stroke: "#c08d58", strokeDashArray: [6, 4], angle: Number(element.rotation_deg || 0),
-    visible: !element.hidden, selectable: !element.locked && !element.hidden && state.mode === "layout",
-    evented: !element.locked && !element.hidden && state.mode === "layout", objectCaching: false,
+    visible: !element.hidden, selectable: ctx.interactive && !element.locked && !element.hidden && ctx.mode === "layout",
+    evented: ctx.interactive && !element.locked && !element.hidden && ctx.mode === "layout", objectCaching: false,
   });
   fallback._elementId = id; fallback._kind = "design-asset";
-  const url = designAssetUrl(element);
-  let image = null;
-  if (url && /\.svg(?:$|[?#])/i.test(url) && typeof fabric.loadSVGFromURL === "function") {
-    try {
-      const parsed = await fabric.loadSVGFromURL(url);
-      const objects = (parsed?.objects || []).filter(Boolean);
-      if (objects.length && typeof fabric.util?.groupSVGElements === "function") {
-        image = fabric.util.groupSVGElements(objects, parsed.options || {});
-      }
-    } catch (_) { image = null; }
+  const loadedResult = loaded || await loadDesignAsset(element);
+  const image = loadedResult.object;
+  if (!image) {
+    ctx.canvas.add(fallback);
+    ctx.report.failed_element_ids.push(id);
+    ctx.report.warnings.push({ element_id: id, code: "DESIGN_ASSET_LOAD_FAILED", message: loadedResult.error?.message || "Design asset could not be loaded." });
+    return { rendered: false, error: loadedResult.error };
   }
-  if (!image && url) image = await fabric.Image.fromURL(url, { crossOrigin: "anonymous" }).catch(() => null);
-  if (!image) { state.canvas.add(fallback); return; }
-  const sourceWidth = Math.max(Number(image.width || 1), 1);
-  const sourceHeight = Math.max(Number(image.height || 1), 1);
+  const sourceWidth = Math.max(Number(loadedResult.sourceWidth || image.width || 1), 1);
+  const sourceHeight = Math.max(Number(loadedResult.sourceHeight || image.height || 1), 1);
   const scale = Math.min(width / sourceWidth, height / sourceHeight);
   image.set({
     left: Number(element.x || 0) + width / 2, top: Number(element.y || 0) + height / 2,
     originX: "center", originY: "center", scaleX: scale, scaleY: scale,
     angle: Number(element.rotation_deg || 0), opacity: Number(element.opacity ?? 1),
-    visible: !element.hidden, selectable: !element.locked && !element.hidden && state.mode === "layout",
-    evented: !element.locked && !element.hidden && state.mode === "layout", objectCaching: false,
+    visible: !element.hidden, selectable: ctx.interactive && !element.locked && !element.hidden && ctx.mode === "layout",
+    evented: ctx.interactive && !element.locked && !element.hidden && ctx.mode === "layout", objectCaching: false,
   });
   image._elementId = id; image._kind = "design-asset"; image._sourceWidth = sourceWidth; image._sourceHeight = sourceHeight; image._frameWidth = width; image._frameHeight = height;
-  state.canvas.add(image);
+  ctx.canvas.add(image);
+  return { rendered: true, source: loadedResult.source, object: image };
 }
 
-function textOptions(element) {
+function textOptions(element, context = null) {
   const style = element.text_style || {};
   return {
     left: Number(element.x || 0), top: Number(element.y || 0), width: Number(element.width || 240),
@@ -443,41 +506,134 @@ function textOptions(element) {
     charSpacing: Number(style.letter_spacing || 0) * 10, fill: style.color || "#292521",
     angle: Number(element.rotation_deg || 0), opacity: Number(element.opacity ?? 1),
     editable: false, objectCaching: false, visible: !element.hidden,
-    selectable: !element.locked && !element.hidden && state.mode === "layout",
-    evented: !element.locked && !element.hidden && state.mode === "layout",
+    selectable: Boolean(context?.interactive) && !element.locked && !element.hidden && (context?.mode || state.mode) === "layout",
+    evented: Boolean(context?.interactive) && !element.locked && !element.hidden && (context?.mode || state.mode) === "layout",
   };
 }
 
-function addDecoration(element) {
+function addDecoration(element, context = null) {
+  const ctx = context || createRenderContext(state.canvas);
   const x = Number(element.x || 0), y = Number(element.y || 0), width = Number(element.width || 0), height = Number(element.height || 0);
   let object;
   const strokeWidth = Number(element.stroke_width || 0) * PX_PER_MM;
   if (element.type === "text") {
-    object = new fabric.Textbox(String(element.content || ""), textOptions(element));
-    fitTextObject(object, element);
-    keepTextInsideSafeArea(object, element);
-  } else if (element.type === "line") object = new fabric.Line([0, 0, width, height], { left: x, top: y, stroke: element.stroke || "#292521", strokeWidth, opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: !element.locked && !element.hidden, evented: !element.locked && !element.hidden, objectCaching: false });
-  else if (element.type === "ellipse") object = new fabric.Ellipse({ left: x + width / 2, top: y + height / 2, originX: "center", originY: "center", rx: width / 2, ry: height / 2, fill: element.fill || "transparent", stroke: element.stroke || "transparent", strokeWidth, opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: !element.locked && !element.hidden, evented: !element.locked && !element.hidden, objectCaching: false });
+    object = new fabric.Textbox(String(element.content || ""), textOptions(element, ctx));
+    fitTextObject(object, element, ctx);
+    keepTextInsideSafeArea(object, element, ctx);
+  } else if (element.type === "line") object = new fabric.Line([0, 0, width, height], { left: x, top: y, stroke: element.stroke || "#292521", strokeWidth, opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: ctx.interactive && !element.locked && !element.hidden, evented: ctx.interactive && !element.locked && !element.hidden, objectCaching: false });
+  else if (element.type === "ellipse") object = new fabric.Ellipse({ left: x + width / 2, top: y + height / 2, originX: "center", originY: "center", rx: width / 2, ry: height / 2, fill: element.fill || "transparent", stroke: element.stroke || "transparent", strokeWidth, opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: ctx.interactive && !element.locked && !element.hidden, evented: ctx.interactive && !element.locked && !element.hidden, objectCaching: false });
   else if (element.type === "polygon") {
     const points = (element.points || []).map((point) => ({ x: Number(point.x || 0), y: Number(point.y || 0) }));
-    object = new fabric.Polygon(points, { left: x, top: y, fill: element.fill || "transparent", stroke: element.stroke || "transparent", strokeWidth, opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: !element.locked && !element.hidden, evented: !element.locked && !element.hidden, objectCaching: false });
-  } else object = new fabric.Rect({ left: x + width / 2, top: y + height / 2, originX: "center", originY: "center", width, height, fill: element.fill || "transparent", stroke: element.stroke || "transparent", strokeWidth, opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: !element.locked && !element.hidden, evented: !element.locked && !element.hidden, objectCaching: false });
+    object = new fabric.Polygon(points, { left: x, top: y, fill: element.fill || "transparent", stroke: element.stroke || "transparent", strokeWidth, opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: ctx.interactive && !element.locked && !element.hidden, evented: ctx.interactive && !element.locked && !element.hidden, objectCaching: false });
+  } else object = new fabric.Rect({ left: x + width / 2, top: y + height / 2, originX: "center", originY: "center", width, height, fill: element.fill || "transparent", stroke: element.stroke || "transparent", strokeWidth, opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: ctx.interactive && !element.locked && !element.hidden, evented: ctx.interactive && !element.locked && !element.hidden, objectCaching: false });
   object._elementId = elementId(element); object._kind = element.type === "text" ? "text" : "decoration";
-  state.canvas.add(object);
+  ctx.canvas.add(object);
+  return { rendered: true, object };
+}
+
+function layerCategory(element) {
+  if (element.type === "text") return "Text";
+  if (element.type === "photo") return "Photos";
+  if (element.role === "background" || element.is_background) return "Background";
+  return "Decorations";
+}
+
+function photoRole(element) {
+  const role = String(element.role || "supporting").toLowerCase();
+  if (role === "hero") return "Hero";
+  if (role === "secondary") return "Secondary";
+  if (role === "detail" || role === "details") return "Details";
+  return "Supporting";
+}
+
+function layerLabel(element) {
+  const info = state.assetMap.get(String(photoId(element))) || {};
+  if (element.type === "text") return String(element.label || element.name || element.content || "Text").replace(/\s+/g, " ").trim().slice(0, 54) || "Text";
+  if (element.type === "photo") {
+    const prefix = element.asset_label || element.label || info.label || info.short_label || null;
+    const filename = element.filename || info.filename || "Photo";
+    return `${prefix ? `${prefix} · ` : ""}${filename}`.slice(0, 54);
+  }
+  return String(element.label || element.name || element.asset_label || (element.type === "design_asset" ? "Design asset" : element.type || "Shape")).replace(/\s+/g, " ").trim().slice(0, 54);
+}
+
+function layerIcon(element) {
+  if (element.type === "photo") return "IMG";
+  if (element.type === "text") return "T";
+  if (element.type === "design_asset") return "SVG";
+  return "SHAPE";
+}
+
+function layerMatches(element) {
+  const category = layerCategory(element);
+  const filter = state.layerFilter || "all";
+  if (filter === "photo" && category !== "Photos") return false;
+  if (filter === "text" && category !== "Text") return false;
+  if (filter === "decoration" && !["Decorations", "Background"].includes(category)) return false;
+  const query = String(state.layerSearch || "").trim().toLowerCase();
+  return !query || `${layerLabel(element)} ${elementId(element)} ${element.type} ${element.role || ""}`.toLowerCase().includes(query);
+}
+
+function layerGroupOpen(key, defaultOpen = true) {
+  if (!(key in state.layerGroups)) state.layerGroups[key] = defaultOpen;
+  return Boolean(state.layerGroups[key]);
+}
+
+function expandLayerGroupFor(element) {
+  const category = layerCategory(element);
+  state.layerGroups[category] = true;
+  if (category === "Photos") state.layerGroups[photoRole(element)] = true;
+}
+
+function selectLayer(id) {
+  const element = elements().find((candidate) => elementId(candidate) === id);
+  if (!element) return;
+  expandLayerGroupFor(element);
+  state.activeId = id;
+  const object = state.canvas?.getObjects().find((item) => item._elementId === id && (state.mode === "crop" ? item._kind === "photo-image" : item._kind !== "photo-image"));
+  if (object) state.canvas.setActiveObject(object);
+  inspect(object || { _elementId: id });
+}
+
+function toggleLayerAction(id, action) {
+  const element = elements().find((candidate) => elementId(candidate) === id);
+  if (!element) return;
+  const before = snapshot();
+  if (action === "hide") element.hidden = !Boolean(element.hidden);
+  if (action === "lock") element.locked = !Boolean(element.locked);
+  record(before);
+  queueRender().then(() => status(`${action === "hide" ? (element.hidden ? "Layer hidden." : "Layer shown.") : (element.locked ? "Layer locked." : "Layer unlocked.")}`));
+}
+
+function layerRow(element) {
+  const id = elementId(element);
+  return `<div class="layer-row ${id === state.activeId ? "active" : ""}" data-layer-id="${esc(id)}" title="${esc(`${layerLabel(element)} · ${id}`)}" role="button" tabindex="0"><button class="layer-icon" data-layer-action="hide" aria-label="${element.hidden ? "Show" : "Hide"} layer">${element.hidden ? "◌" : "●"}</button><button class="layer-icon" data-layer-action="lock" aria-label="${element.locked ? "Unlock" : "Lock"} layer">${element.locked ? "🔒" : "🔓"}</button><span class="layer-type">${esc(layerIcon(element))}</span><span class="layer-label">${esc(layerLabel(element))}</span></div>`;
+}
+
+function layerGroup(title, key, items, defaultOpen = true) {
+  if (!items.length) return "";
+  const open = layerGroupOpen(key, defaultOpen);
+  return `<section class="layer-group" data-layer-group="${esc(key)}"><button class="layer-group-toggle" data-group-toggle="${esc(key)}"><span>${open ? "▾" : "▸"}</span>${esc(title)}<span class="layer-group-count">${items.length}</span></button><div class="layer-group-items"${open ? "" : " hidden"}>${items.map(layerRow).join("")}</div></section>`;
 }
 
 function refreshLayers() {
   const container = $("layers");
   if (!container) return;
-  const ordered = [...elements()].sort((a, b) => (Number(b.z_index || 0) - Number(a.z_index || 0)) || elementId(a).localeCompare(elementId(b)));
-  container.innerHTML = ordered.map((element) => `<button class="layer-row ${elementId(element) === state.activeId ? "active" : ""}" data-layer-id="${esc(elementId(element))}">${element.hidden ? "◌" : "●"} ${esc(element.type)} · ${esc(elementId(element))}${element.locked ? " 🔒" : ""}</button>`).join("") || `<span class="muted">No layers</span>`;
-  container.querySelectorAll("[data-layer-id]").forEach((button) => {
-    button.onclick = () => {
-      const id = button.dataset.layerId; state.activeId = id;
-      const object = state.canvas.getObjects().find((item) => item._elementId === id && (state.mode === "crop" ? item._kind === "photo-image" : item._kind !== "photo-image"));
-      if (object) state.canvas.setActiveObject(object);
-      inspect(object || { _elementId: id });
-    };
+  const filtered = [...elements()].filter(layerMatches).sort((a, b) => (Number(b.z_index || 0) - Number(a.z_index || 0)) || elementId(a).localeCompare(elementId(b)));
+  if (!filtered.length) { container.innerHTML = `<span class="muted">No matching layers</span>`; return; }
+  const groups = new Map([["Text", []], ["Photos", []], ["Decorations", []], ["Background", []]]);
+  filtered.forEach((element) => groups.get(layerCategory(element))?.push(element));
+  const photos = groups.get("Photos") || [];
+  const photoGroups = ["Hero", "Secondary", "Supporting", "Details"].map((role) => [role, photos.filter((element) => photoRole(element) === role)]).filter(([, items]) => items.length);
+  const photoMarkup = photos.length ? layerGroup("Photos", "Photos", photos, true).replace(photos.map(layerRow).join(""), photoGroups.map(([role, items]) => layerGroup(role, role, items, role === "Supporting" ? items.length <= 4 : role === "Details" ? false : true)).join("")) : "";
+  container.innerHTML = [layerGroup("Text", "Text", groups.get("Text") || [], true), photoMarkup, layerGroup("Decorations", "Decorations", groups.get("Decorations") || [], true), layerGroup("Background", "Background", groups.get("Background") || [], false)].join("") || `<span class="muted">No layers</span>`;
+  container.querySelectorAll("[data-group-toggle]").forEach((button) => {
+    button.onclick = () => { const key = button.dataset.groupToggle; state.layerGroups[key] = !layerGroupOpen(key); refreshLayers(); };
+  });
+  container.querySelectorAll("[data-layer-id]").forEach((row) => {
+    row.onclick = (event) => { if (event.target.closest("[data-layer-action]")) return; selectLayer(row.dataset.layerId); };
+    row.onkeydown = (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectLayer(row.dataset.layerId); } };
+    row.querySelectorAll("[data-layer-action]").forEach((button) => { button.onclick = (event) => { event.stopPropagation(); toggleLayerAction(row.dataset.layerId, button.dataset.layerAction); }; });
   });
 }
 
@@ -600,41 +756,63 @@ function fitPage() {
   }
 }
 
+async function renderDocument(targetCanvas, doc, options = {}) {
+  const context = createRenderContext(targetCanvas, { ...options, doc });
+  const page = canvasSize(doc);
+  targetCanvas.setZoom?.(1);
+  targetCanvas.setDimensions({ width: page.width, height: page.height });
+  targetCanvas.clear();
+  targetCanvas.backgroundColor = doc.background || doc.page_spec?.background || "#f5f2ed";
+  if (document.fonts?.ready) await document.fonts.ready;
+  const ordered = [...(doc.elements || [])].sort((a, b) => (Number(a.z_index || 0) - Number(b.z_index || 0)) || elementId(a).localeCompare(elementId(b)));
+  const visible = ordered.filter((element) => !element.hidden);
+  const [photoEntries, designEntries] = await Promise.all([
+    Promise.all(visible.filter((element) => element.type === "photo").map(async (element) => [elementId(element), await loadPhotoImage(element, context)])),
+    Promise.all(visible.filter((element) => element.type === "design_asset").map(async (element) => [elementId(element), await loadDesignAsset(element)])),
+  ]);
+  const photoLoads = new Map(photoEntries);
+  const designLoads = new Map(designEntries);
+  for (const element of visible) {
+    let result;
+    if (element.type === "photo") result = await addPhoto(element, photoLoads.get(elementId(element)), context);
+    else if (element.type === "design_asset") result = await addDesignAsset(element, designLoads.get(elementId(element)), context);
+    else result = addDecoration(element, context);
+    if (result?.rendered) context.report.rendered_element_ids.push(elementId(element));
+  }
+  context.report.failed_element_ids = [...new Set(context.report.failed_element_ids)];
+  context.report.validation_status = context.report.failed_element_ids.length ? "failed" : (context.report.warnings.length ? "warnings" : (context.report.repairs.length ? "repaired" : "valid"));
+  targetCanvas.renderAll();
+  if (context.strictAssets && context.report.failed_element_ids.length) {
+    throw new Error(`Required asset layer(s) failed to render: ${context.report.failed_element_ids.join(", ")}`);
+  }
+  return context.report;
+}
+
 async function renderNow() {
   if (!state.doc || !state.canvas) return;
   const activeBeforeClear = state.activeId;
-  const page = canvasSize();
-  // Geometry checks and Fabric objects are built in document pixels. Fit the
-  // viewport only after the complete projection has been created.
-  state.canvas.setZoom(1);
-  state.canvas.setDimensions({ width: page.width, height: page.height });
-  state.canvas.clear(); state.activeId = activeBeforeClear; state.canvas.backgroundColor = state.doc.background || state.doc.page_spec?.background || "#f5f2ed";
-  state.renderValidation = { validation_status: "valid", warnings: [], repairs: [] };
-  if (document.fonts?.ready) await document.fonts.ready;
-  const ordered = [...elements()].sort((a, b) => (Number(a.z_index || 0) - Number(b.z_index || 0)) || elementId(a).localeCompare(elementId(b)));
-  state.renderFallbacks = [];
-  // Fetch photo pixels concurrently, then project them in document layer
-  // order. This keeps stacking deterministic without making view/original
-  // mode wait for every photo one-by-one.
-  const photoLoads = new Map(await Promise.all(
-    ordered.filter((element) => element.type === "photo").map(async (element) => [elementId(element), await loadPhotoImage(element)]),
-  ));
-  for (const element of ordered) {
-    if (element.hidden) continue;
-    if (element.type === "photo") await addPhoto(element, photoLoads.get(elementId(element)));
-    else if (element.type === "design_asset") await addDesignAsset(element);
-    else addDecoration(element);
-  }
+  state.activeId = activeBeforeClear;
+  state.renderValidation = { validation_status: "valid", warnings: [], repairs: [], rendered_element_ids: [], failed_element_ids: [], fallbacks: [] };
+  const renderReport = await renderDocument(state.canvas, state.doc, {
+    assetMap: state.assetMap, renderMode: state.renderMode, mode: state.mode,
+    activeId: activeBeforeClear, interactive: true, report: state.renderValidation,
+  });
+  // Fabric emits `selection:cleared` while the shared renderer rebuilds the
+  // canvas.  That event is correct for a user clearing selection, but it must
+  // not erase the document-level selection that triggered a control update.
+  // Restore the stable element id before projecting the selection back onto
+  // the newly-created Fabric objects.
+  state.activeId = activeBeforeClear;
+  state.renderFallbacks = renderReport.fallbacks;
   applyInteractivity(); fitPage(); state.canvas.renderAll(); refreshLayers();
-  const renderReport = state.renderValidation;
-  renderReport.validation_status = renderReport.warnings.length ? "warnings" : (renderReport.repairs.length ? "repaired" : "valid");
   state.doc.metadata ||= {};
   state.doc.metadata.render_validation = clone(renderReport);
   updateDocumentChrome();
   $("identity").textContent = `${state.doc.provider || "document"} · ${elements().length} elements · ${state.canvas.getObjects().length} layers`;
   if (state.activeId) {
     const desired = state.canvas.getObjects().find((object) => object._elementId === state.activeId && (state.mode === "crop" ? object._kind === "photo-image" : object._kind !== "photo-image"));
-    if (desired) state.canvas.setActiveObject(desired); inspect(desired || { _elementId: state.activeId });
+    if (desired) state.canvas.setActiveObject(desired);
+    inspect(desired || { _elementId: state.activeId });
   }
   state.canvas.requestRenderAll();
 }
@@ -688,6 +866,9 @@ async function loadCandidates() {
 async function openDocument(url) {
   const documentUrl = url || state.savedDocumentUrl || state.candidates[Number($("candidate")?.value)]?.document;
   if (!documentUrl) { status("Choose a candidate first, or import an AI design."); return; }
+  // Keep the resolved document endpoint so Reload saved works for documents
+  // opened directly from an AI-design URL as well as run candidates.
+  state.savedDocumentUrl = documentUrl;
   state.doc = normalizeDocument(await api(documentUrl)); state.history = []; state.future = []; state.activeId = elements()[0] ? elementId(elements()[0]) : null;
   await loadPhotos(); await queueRender(); updateDocumentChrome(); status("Document loaded. Fabric canvas ready.");
 }
@@ -706,57 +887,70 @@ function exportLayout() {
   status(`Exported ${assets.length} assets and ${elements().length} elements.`);
 }
 
-function exportPng() {
+function createExportCanvas() {
+  const node = document.createElement("canvas");
+  node.setAttribute("aria-hidden", "true");
+  node.style.position = "fixed";
+  node.style.left = "-100000px";
+  node.style.top = "-100000px";
+  document.body.appendChild(node);
+  const CanvasClass = fabric.StaticCanvas || fabric.Canvas;
+  return new CanvasClass(node, { enableRetinaScaling: false, renderOnAddRemove: false, selection: false, preserveObjectStacking: true });
+}
+
+async function exportRenderedPng({ renderMode, multiplier, filename, label }) {
+  const exportDoc = normalizeDocument(clone(state.doc));
+  const report = { validation_status: "valid", warnings: [], repairs: [], rendered_element_ids: [], failed_element_ids: [], fallbacks: [] };
+  const exportCanvas = createExportCanvas();
+  try {
+    status(label);
+    await renderDocument(exportCanvas, exportDoc, {
+      assetMap: state.assetMap, renderMode, mode: "layout", activeId: null,
+      interactive: false, strictAssets: true, report,
+    });
+    state.lastExportReport = clone(report);
+    if (renderMode === "view" && report.fallbacks.length) {
+      throw new Error(`${report.fallbacks.length} original photo(s) are offline; high-resolution export was not created.`);
+    }
+    const dataUrl = exportCanvas.toDataURL({ format: "png", multiplier, enableRetinaScaling: false });
+    const link = document.createElement("a"); link.href = dataUrl; link.download = filename; link.click();
+    return report;
+  } finally {
+    await exportCanvas.dispose?.();
+    exportCanvas.lowerCanvasEl?.remove?.();
+    exportCanvas.wrapperEl?.remove?.();
+  }
+}
+
+async function exportPng() {
   if (!state.doc) { status("Open a document first."); return; }
-  try { const dataUrl = state.canvas.toDataURL({ format: "png", multiplier: 2 }); const link = document.createElement("a"); link.href = dataUrl; link.download = `photomanager-collage-preview-${state.doc.document_id || "layout"}.png`; link.click(); status("Exported 2× preview PNG."); } catch (error) { status(`PNG export failed: ${error.message}`); }
+  try {
+    const report = await exportRenderedPng({
+      renderMode: state.renderMode, multiplier: 2,
+      filename: `photomanager-collage-preview-${state.doc.document_id || "layout"}.png`,
+      label: "Rendering preview PNG…",
+    });
+    status(`Exported 2× preview PNG · ${report.rendered_element_ids.length} elements rendered.`);
+  } catch (error) { status(`PNG export failed: ${error.message}`); }
 }
 
 async function exportHighResPng() {
   if (!state.doc) { status("Open a document first."); return; }
-  const previousMode = state.renderMode;
   try {
-    state.renderMode = "view";
-    if ($("render-mode")) $("render-mode").value = "view";
-    status("Loading original photos for high-resolution export…");
-    await queueRender();
-    if (state.renderFallbacks.length) throw new Error(`${state.renderFallbacks.length} original photo(s) are offline; high-resolution export was not created.`);
     const page = state.doc.page_spec || {};
     const widthMm = Number(page.width_mm || 300) * (page.type === "spread" ? 2 : 1);
     const heightMm = Number(page.height_mm || 200);
     const dpi = clamp(Number(page.dpi || 300), 72, 1200);
     const targetWidth = Math.max(1, Math.round(widthMm / 25.4 * dpi));
     const targetHeight = Math.max(1, Math.round(heightMm / 25.4 * dpi));
-    const logical = canvasSize();
-    // fitPage() deliberately changes Fabric's backing canvas to the on-screen
-    // size. Export from logical document coordinates so the requested physical
-    // DPI is not multiplied from a 724px (or similarly fitted) viewport.
-    const fittedWidth = state.canvas.getWidth();
-    const fittedHeight = state.canvas.getHeight();
-    const fittedViewport = state.canvas.viewportTransform ? state.canvas.viewportTransform.slice() : null;
-    let dataUrl;
-    try {
-      state.canvas.setZoom(1);
-      state.canvas.setDimensions({ width: logical.width, height: logical.height });
-      const multiplier = targetWidth / Math.max(logical.width, 1);
-      dataUrl = state.canvas.toDataURL({ format: "png", multiplier, enableRetinaScaling: false });
-    } finally {
-      state.canvas.setDimensions({ width: fittedWidth, height: fittedHeight });
-      if (fittedViewport) state.canvas.setViewportTransform(fittedViewport);
-      fitPage();
-      state.canvas.requestRenderAll();
-    }
-    const link = document.createElement("a"); link.href = dataUrl;
-    link.download = `photomanager-collage-${state.doc.document_id || "layout"}-${targetWidth}x${targetHeight}px.png`; link.click();
-    status(`Exported high-resolution PNG ${targetWidth} × ${targetHeight}px from original photos.`);
-  } catch (error) {
-    status(`High-resolution export failed: ${error.message}`);
-  } finally {
-    if (previousMode !== "view") {
-      state.renderMode = previousMode;
-      if ($("render-mode")) $("render-mode").value = previousMode;
-      await queueRender();
-    }
-  }
+    const logical = canvasSize(state.doc);
+    const report = await exportRenderedPng({
+      renderMode: "view", multiplier: targetWidth / Math.max(logical.width, 1),
+      filename: `photomanager-collage-${state.doc.document_id || "layout"}-${targetWidth}x${targetHeight}px.png`,
+      label: "Loading original photos for high-resolution export…",
+    });
+    status(`Exported high-resolution PNG ${targetWidth} × ${targetHeight}px from original photos · ${report.rendered_element_ids.length} elements rendered.`);
+  } catch (error) { status(`High-resolution export failed: ${error.message}`); }
 }
 
 async function saveVariant() {
@@ -919,6 +1113,8 @@ function wire() {
   $("import-ai-file")?.addEventListener("change", (event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { try { validateAiSpec(JSON.parse(String(reader.result || ""))); } catch (error) { status(`AI JSON is invalid: ${error.message}`); } }; reader.readAsText(file); event.target.value = ""; });
   $("import-ai-package-file")?.addEventListener("change", (event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) importDesignPackage(file).catch((error) => status(`AI package import failed: ${error.message}`)); });
   $("import-debug-file")?.addEventListener("change", (event) => { if (event.target.files?.[0]) importDebugDocument(event.target.files[0]); event.target.value = ""; });
+  $("layers-filter")?.addEventListener("change", (event) => { state.layerFilter = event.target.value; refreshLayers(); });
+  $("layers-search")?.addEventListener("input", (event) => { state.layerSearch = event.target.value; refreshLayers(); });
   $("apply-ai")?.addEventListener("click", applyAiDesign); $("load-sample")?.addEventListener("click", loadSample);
   $("undo")?.addEventListener("click", async () => { if (!state.history.length) return; state.future.push(snapshot()); state.doc = normalizeDocument(state.history.pop()); state.activeId = elements()[0] ? elementId(elements()[0]) : null; await loadPhotos(); await queueRender(); status("Undid the last operation."); });
   $("redo")?.addEventListener("click", async () => { if (!state.future.length) return; state.history.push(snapshot()); state.doc = normalizeDocument(state.future.pop()); state.activeId = elements()[0] ? elementId(elements()[0]) : null; await loadPhotos(); await queueRender(); status("Redid the last operation."); });

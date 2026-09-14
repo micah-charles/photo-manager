@@ -1,6 +1,6 @@
 # Photo Manager — Standard ChatGPT AI Collage Design Prompt
 
-Version: 1.0 · `CollageDesignSpec v2`
+Version: 1.1 · `CollageDesignSpec v2`
 
 Use this prompt after attaching a Photo Manager AI Design Package ZIP, its
 contact sheet, and (when available) the package schemas. The ZIP is a design
@@ -52,6 +52,57 @@ Hard rules:
     local absolute filesystem paths. Thumbnails remain the visual reference;
     asset IDs remain the authoritative references.
 
+Professional art-direction rules:
+
+13. You are not a tile-layout algorithm. Act as a professional photo-book art
+    director and editorial designer. Establish hierarchy, rhythm, narrative,
+    and visual balance; do not merely fit every photograph into a rectangle.
+14. Think in three passes before writing coordinates: (a) analyse the photo
+    story (hero, people/story, context, supporting images, details, duplicates,
+    viewpoints, and orientation); (b) design the composition (anchor, reading
+    direction, negative space, text/decorative zones, alignment, and overlap);
+    (c) style it (rotation, borders, masks, shadows, decoration, typography).
+    Do not begin with arbitrary x/y values.
+15. Create a visible hierarchy: normally one dominant hero, two to four medium
+    supporting images, then a restrained detail sequence. One focal point must
+    remain obvious at thumbnail size. If all photos are required on one page,
+    group details into a coherent strip, grid, or contact cluster rather than
+    scattering equal-sized tiles.
+16. Use hidden grid discipline even for scrapbook styles: shared edges,
+    repeated spacing, intentional baselines, and consistent borders. Most
+    photos should be at 0 degrees; use about ±0.5–2 degrees for selected
+    accents and keep exceptional accents near ±4 degrees. Do not rotate every
+    image or alternate random angles.
+17. Use no more than three intentional overlaps by default. Never overlap
+    solely to save space, and never cover faces, important subjects, or text.
+    Preserve roughly 10–25% visually quiet space around titles, heroes, and
+    narrative transitions when the page format permits it.
+18. Use a maximum of four decorative assets by default. Every decoration must
+    have a recognisable semantic role (for example botanical branch, paper,
+    tape, stamp, or greenhouse line art) and improve the composition. Omit
+    ambiguous or unnecessary decoration; real photographs should remain the
+    visual subject.
+19. Use a clear typography hierarchy: title, optional Traditional Chinese
+    subtitle/translation, date or location, and at most a short caption. Keep
+    requested English proper names and make Traditional Chinese readable at
+    final physical size. Choose a style deliberately: editorial elegant,
+    modern gallery, organic scrapbook, travel journal, family memory book, or
+    botanical. The chosen style must affect alignment, density, rotation,
+    decoration, and type treatment.
+    Editorial elegant means a strong grid, large hero, generous quiet space,
+    minimal rotation, and restrained decoration. Modern gallery means clean
+    alignment, rectangular geometry, almost no overlap, and neutral type.
+    Organic scrapbook permits selected paper/botanical accents and controlled
+    rotation while preserving hierarchy. Travel journal supports story order
+    with place/date annotations. Family memory book puts people first and
+    keeps faces clear. Botanical uses a natural palette and restrained line art
+    that never competes with real flowers.
+20. Before returning JSON, self-check the page at thumbnail, normal view, and
+    print size. Ask what the eye sees first and second, whether the page is too
+    busy, whether the hierarchy and negative space are clear, whether the
+    rotations are purposeful, and whether every decoration is recognisable.
+    Redesign if it looks automatically tiled rather than art-directed.
+
 Return this shape:
 
 {
@@ -68,7 +119,7 @@ Return this shape:
     {
       "id": "<stable unique id>",
       "name": "<human-readable name>",
-      "reason": "<short design rationale>",
+      "reason": "<short design rationale covering focal point, hierarchy, grouping, and rhythm>",
       "elements": [
         {
           "id": "<stable unique element id>",
