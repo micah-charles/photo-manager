@@ -26,9 +26,12 @@ class _Provider:
 
 class CollageDesignPackageV2Tests(unittest.TestCase):
     def test_safe_svg_allows_namespace_and_rejects_script(self) -> None:
-        safe = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#e6eee2"/></svg>'
+        safe = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M1 9 L9 1" stroke="#61775A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5" cy="5" r="4" fill="#e6eee2"/></svg>'
         cleaned = sanitize_svg(safe)
         self.assertIn(b"circle", cleaned)
+        self.assertIn(b"stroke-linecap", cleaned)
+        with self.assertRaisesRegex(ValueError, "invalid stroke-linecap"):
+            sanitize_svg(safe.replace(b'stroke-linecap="round"', b'stroke-linecap="roundish"'))
         with self.assertRaisesRegex(ValueError, "unsafe"):
             sanitize_svg(b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
 

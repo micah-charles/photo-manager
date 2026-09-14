@@ -31,10 +31,17 @@ _SVG_ATTRS = {
     "id", "viewBox", "width", "height", "preserveAspectRatio", "d", "x", "y",
     "x1", "x2", "y1", "y2", "cx", "cy", "r", "rx", "ry", "points", "fill",
     "fill-opacity", "stroke", "stroke-width", "stroke-opacity", "opacity",
+    "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "fill-rule", "clip-rule",
     "offset", "stop-color", "stop-opacity", "gradientUnits", "gradientTransform",
     "transform", "clip-path", "clipPathUnits", "xmlns",
 }
 _HEX_OR_FUNCTION = re.compile(r"^(?:none|currentColor|#[0-9a-fA-F]{3,8}|[a-zA-Z]+|rgba?\([^)]{1,80}\))$")
+_SVG_ENUM_ATTRS = {
+    "stroke-linecap": {"butt", "round", "square", "inherit"},
+    "stroke-linejoin": {"arcs", "bevel", "miter", "miter-clip", "round", "inherit"},
+    "fill-rule": {"nonzero", "evenodd", "inherit"},
+    "clip-rule": {"nonzero", "evenodd", "inherit"},
+}
 
 
 def sha256_bytes(raw: bytes) -> str:
@@ -92,6 +99,8 @@ def sanitize_svg(raw: bytes) -> bytes:
                 raise ValueError("SVG contains an unsafe external reference")
             if name in {"fill", "stroke", "stop-color"} and not _HEX_OR_FUNCTION.fullmatch(value):
                 raise ValueError("SVG contains an unsafe colour value")
+            if name in _SVG_ENUM_ATTRS and value not in _SVG_ENUM_ATTRS[name]:
+                raise ValueError(f"SVG contains an invalid {name} value")
             cleaned[name] = value
         node.attrib.clear()
         node.attrib.update(cleaned)
