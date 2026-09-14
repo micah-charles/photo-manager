@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://photovault.local/schemas/collage-design-package-v2.json",
+  "title": "PhotoManager AI Design Package v2 manifest",
+  "type": "object",
+  "required": ["format", "schema_version", "package_id", "catalog_id", "design", "photo_assets", "assets"],
+  "properties": {
+    "format": {"const": "PhotoManager AI Design Package"},
+    "schema_version": {"const": 2},
+    "package_id": {"type": "string", "pattern": "^pkg_[a-f0-9]{32}$"},
+    "catalog_id": {"type": "string", "minLength": 1, "maxLength": 200},
+    "design": {"const": "design.json"},
+    "photo_assets": {"type": "array", "minItems": 1, "maxItems": 200, "items": {"type": "object"}},
+    "assets": {"type": "array", "maxItems": 40, "items": {"$ref": "#/$defs/designAsset"}},
+    "selection": {"type": "object"},
+    "style_intent": {"type": "string", "maxLength": 500}
+  },
+  "$defs": {
+    "designAsset": {
+      "type": "object",
+      "required": ["id", "path", "media_type", "sha256"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,80}$"},
+        "path": {"type": "string", "pattern": "^assets/[A-Za-z0-9_./-]+\\.(svg|png|webp)$"},
+        "media_type": {"enum": ["image/svg+xml", "image/png", "image/webp"]},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

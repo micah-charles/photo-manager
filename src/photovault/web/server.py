@@ -14,6 +14,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from photovault.catalog.library import LibraryQuery, count_library_items, library_facets, list_library_items
@@ -30,7 +31,14 @@ from photovault.collage.analysis import FaceBox, PhotoAnalysis, analyse_photo
 from photovault.collage.poc.runner import run_poc_photos
 from photovault.collage.models import Canvas, Cell, Crop, LayoutCandidate, PhotoInput, page_spec_from_dict
 from photovault.collage.render import render_candidate
-from photovault.collage.design_formats import validate_collage_document, validate_design_spec, to_collage_document, validate_page_spec
+from photovault.collage.design_assets import (
+    ALLOWED_MEDIA, MAX_PACKAGE_BYTES, read_asset_bytes, safe_member_name,
+    sanitize_svg, sha256_bytes, validate_zip_members,
+)
+from photovault.collage.design_formats import (
+    validate_and_repair_design_spec, validate_collage_document,
+    validate_design_spec, to_collage_document, validate_page_spec,
+)
 from PIL import Image, ImageDraw, ImageFont
 
 STATIC_ROOT = Path(__file__).with_name("static")
@@ -45,21 +53,174 @@ def _package_manifest(catalog_path: Path, package_id: str) -> dict[str, object]:
         raise ValueError("package_id is invalid")
     root = (catalog_path.parent / "collage-design-packages").resolve()
     target = (root / f"{package_id}.zip").resolve()
-    if root not in target.parents or not target.is_file():
+    record = (root / f"{package_id}.json").resolve()
+    if root not in target.parents or root not in record.parents or not (target.is_file() or record.is_file()):
         raise ValueError("design package was not found; export the package again")
     try:
-        with zipfile.ZipFile(target) as archive:
-            package = json.loads(archive.read("design-package.json"))
+        if record.is_file():
+            package = json.loads(record.read_text(encoding="utf-8"))
+        else:
+            with zipfile.ZipFile(target) as archive:
+                package = json.loads(archive.read("design-package.json"))
     except (OSError, KeyError, ValueError, zipfile.BadZipFile) as exc:
         raise ValueError("design package is unreadable") from exc
     if not isinstance(package, dict) or package.get("package_id") != package_id:
         raise ValueError("design package identity does not match package_id")
     if str(package.get("catalog_id") or "") != catalog_path.stem:
         raise ValueError("design package belongs to a different catalog")
-    assets = package.get("assets")
+    assets = package.get("photo_assets") or package.get("assets")
     if not isinstance(assets, list) or not assets:
         raise ValueError("design package has no assets")
     return package
+
+
+def _managed_design_asset_ids(catalog_path: Path) -> set[str]:
+    root = (catalog_path.parent / "collage-design-assets").resolve()
+    if not root.is_dir():
+        return set()
+    return {path.stem for path in root.iterdir() if path.is_file() and path.stem.startswith("pa_")}
+
+
+def _write_bytes_atomic(target: Path, raw: bytes) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("wb", dir=target.parent, delete=False) as stream:
+        temporary = Path(stream.name)
+        stream.write(raw)
+        stream.flush()
+    temporary.replace(target)
+
+
+def _decode_uploaded_package(value: object) -> bytes:
+    if not isinstance(value, str) or not value:
+        raise ValueError("package_zip_base64 is required")
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("package_zip_base64 is invalid") from exc
+    if len(raw) > MAX_PACKAGE_BYTES:
+        raise ValueError("design package is too large")
+    return raw
+
+
+def _ingest_design_package(catalog_path: Path, raw: bytes) -> tuple[dict[str, object], dict[str, Any], dict[str, Any]]:
+    """Validate, sanitize and cache a v2 package before any document is written."""
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile as exc:
+        raise ValueError("uploaded design package is not a valid ZIP") from exc
+    with archive:
+        names = set(validate_zip_members(archive, len(raw)))
+        if not {"manifest.json", "design.json"}.issubset(names):
+            raise ValueError("v2 design package must contain manifest.json and design.json")
+        try:
+            manifest = json.loads(archive.read("manifest.json"))
+            design = json.loads(archive.read("design.json"))
+        except (KeyError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError("design package JSON is unreadable") from exc
+        if not isinstance(manifest, dict) or manifest.get("format") != "PhotoManager AI Design Package" or int(manifest.get("schema_version", 0)) != 2:
+            raise ValueError("unsupported design package manifest")
+        if not isinstance(design, dict) or design.get("format") not in {"CollageDesignSpec", "PhotoManager Collage Design"} or int(design.get("schema_version", 0)) != 2:
+            raise ValueError("design.json must be CollageDesignSpec v2")
+        catalog_id = str(manifest.get("catalog_id") or design.get("catalog_id") or "")
+        if catalog_id and catalog_id != catalog_path.stem:
+            raise ValueError("design package belongs to a different catalog")
+        photo_assets = design.get("assets")
+        if not isinstance(photo_assets, list) or not photo_assets:
+            raise ValueError("design.json must include photo asset references")
+        package_assets = manifest.get("assets") or []
+        if not isinstance(package_assets, list) or len(package_assets) > 40:
+            raise ValueError("manifest.assets must be an array of at most 40 assets")
+        package_id = "pkg_" + uuid.uuid4().hex
+        decorative: list[dict[str, object]] = []
+        pending: list[tuple[Path, bytes]] = []
+        seen_ids: set[str] = set()
+        total = 0
+        for raw_asset in package_assets:
+            if not isinstance(raw_asset, dict):
+                raise ValueError("each manifest asset must be an object")
+            asset_id = str(raw_asset.get("id") or "")
+            if not re.fullmatch(r"^[A-Za-z0-9_-]{1,80}$", asset_id) or asset_id in seen_ids:
+                raise ValueError("manifest asset ids must be unique safe names")
+            seen_ids.add(asset_id)
+            path = safe_member_name(str(raw_asset.get("path") or ""))
+            suffix = Path(path).suffix.lower()
+            if suffix not in ALLOWED_MEDIA or not path.startswith("assets/"):
+                raise ValueError("decorative assets must be safe SVG, PNG or WebP files under assets/")
+            expected_media = ALLOWED_MEDIA[suffix]
+            if raw_asset.get("media_type") and str(raw_asset["media_type"]) != expected_media:
+                raise ValueError(f"asset media_type does not match {path}")
+            asset_bytes = read_asset_bytes(archive, path)
+            total += len(asset_bytes)
+            if total > 20 * 1024 * 1024:
+                raise ValueError("decorative assets are too large")
+            if raw_asset.get("sha256") and str(raw_asset["sha256"]).lower() != sha256_bytes(asset_bytes):
+                raise ValueError(f"checksum mismatch for {path}")
+            if suffix == ".svg":
+                asset_bytes = sanitize_svg(asset_bytes)
+            else:
+                try:
+                    with Image.open(io.BytesIO(asset_bytes)) as image:
+                        image.verify()
+                        if image.width > 12000 or image.height > 12000:
+                            raise ValueError("decorative raster dimensions are too large")
+                except (OSError, ValueError) as exc:
+                    raise ValueError(f"decorative raster is unreadable: {path}") from exc
+            managed_id = "pa_" + uuid.uuid4().hex
+            target = (catalog_path.parent / "collage-design-assets" / f"{managed_id}{suffix}").resolve()
+            root = (catalog_path.parent / "collage-design-assets").resolve()
+            if root not in target.parents:
+                raise ValueError("managed design asset path is invalid")
+            pending.append((target, asset_bytes))
+            decorative.append({"id": asset_id, "path": path, "media_type": expected_media, "sha256": sha256_bytes(asset_bytes), "package_asset_id": managed_id, "asset_url": f"/api/collage/design-assets/{managed_id}"})
+
+        spec = json.loads(json.dumps(design))
+        spec["package_id"] = package_id
+        spec["catalog_id"] = catalog_path.stem
+        photo_labels = {str(item.get("label")): str(item.get("asset_id")) for item in photo_assets if isinstance(item, dict) and item.get("label") and item.get("asset_id")}
+        for alternative in spec.get("alternatives", []) if isinstance(spec.get("alternatives"), list) else []:
+            for element in alternative.get("elements", []) if isinstance(alternative, dict) and isinstance(alternative.get("elements"), list) else []:
+                if isinstance(element, dict) and element.get("type") == "photo" and str(element.get("asset_id") or "") in photo_labels:
+                    element["asset_id"] = photo_labels[str(element["asset_id"])]
+        by_path = {str(item["path"]): item for item in decorative}
+        for alternative in spec.get("alternatives", []) if isinstance(spec.get("alternatives"), list) else []:
+            for element in alternative.get("elements", []) if isinstance(alternative, dict) and isinstance(alternative.get("elements"), list) else []:
+                if isinstance(element, dict) and element.get("type") == "design_asset":
+                    ref = safe_member_name(str(element.get("asset_ref") or ""))
+                    managed = by_path.get(ref)
+                    if not managed:
+                        raise ValueError(f"design asset reference is not listed in manifest: {ref}")
+                    element["package_asset_id"] = managed["package_asset_id"]
+                    element["asset_url"] = managed["asset_url"]
+        connection = connect(catalog_path)
+        try:
+            available_photo_ids = {str(row[0]) for row in connection.execute("SELECT DISTINCT asset_id FROM asset_locations WHERE missing_since IS NULL")}
+        finally:
+            connection.close()
+        photo_ids = {str(item["asset_id"]) for item in photo_assets if isinstance(item, dict) and item.get("asset_id")}
+        missing_photo_ids = sorted(photo_ids - available_photo_ids)
+        if missing_photo_ids:
+            raise ValueError(f"unknown or unavailable photo asset ids: {', '.join(missing_photo_ids[:5])}")
+        checked, report = validate_and_repair_design_spec(spec, available_photo_ids, {str(item["package_asset_id"]) for item in decorative})
+        spec = checked
+        package = {"format": "PhotoManager AI Design Package", "schema_version": 2, "package_id": package_id, "catalog_id": catalog_path.stem, "assets": photo_assets, "photo_assets": photo_assets, "decorative_assets": decorative, "page_spec": spec.get("page_spec"), "spec": spec, "validation": report}
+        package_root = catalog_path.parent / "collage-design-packages"
+        package_root.mkdir(parents=True, exist_ok=True)
+        written: list[Path] = []
+        try:
+            for target, asset_bytes in pending:
+                _write_bytes_atomic(target, asset_bytes)
+                written.append(target)
+            _write_json_atomic(package_root / f"{package_id}.json", package)
+        except Exception:
+            for target in written:
+                try:
+                    target.unlink()
+                except OSError:
+                    pass
+            raise
+    asset_map = {str(item["asset_id"]): item for item in photo_assets if isinstance(item, dict) and item.get("asset_id")}
+    asset_map.update({str(item["package_asset_id"]): item for item in decorative})
+    return package, spec, asset_map
 
 
 def _resolve_design_import(catalog_path: Path, payload: dict[str, object]) -> tuple[dict[str, object], dict[str, dict[str, object]], str | None]:
@@ -72,16 +233,20 @@ def _resolve_design_import(catalog_path: Path, payload: dict[str, object]) -> tu
     inline_assets = spec.get("assets") if isinstance(spec.get("assets"), list) else []
     if package_id and not package_id.startswith("fixture:"):
         package = _package_manifest(catalog_path, package_id)
-        assets = package["assets"]
+        assets = package.get("photo_assets") or package.get("assets")
+        decorative = package.get("decorative_assets") if isinstance(package.get("decorative_assets"), list) else []
         spec["page_spec"] = spec.get("page_spec") or package.get("page_spec") or {}
     else:
         # Fixtures and older local exports may carry their manifest inline. A
         # normal AI import with a package_id always takes the package branch.
         assets = inline_assets
+        decorative = []
     if not isinstance(assets, list) or not assets:
         raise ValueError("AI design must include a package_id from an exported design package")
     asset_items = [item for item in assets if isinstance(item, dict) and item.get("asset_id")]
     asset_map = {str(item["asset_id"]): item for item in asset_items}
+    design_asset_map = {str(item["package_asset_id"]): item for item in decorative if isinstance(item, dict) and item.get("package_asset_id")}
+    asset_map.update(design_asset_map)
     labels = {str(item.get("label")): str(item["asset_id"]) for item in asset_items if item.get("label")}
     spec["assets"] = asset_items
     if package_id:
@@ -92,7 +257,17 @@ def _resolve_design_import(catalog_path: Path, payload: dict[str, object]) -> tu
                 reference = str(element.get("asset_id", ""))
                 if reference in labels:
                     element["asset_id"] = labels[reference]
-    checked = validate_design_spec(spec, set(asset_map))
+            if isinstance(element, dict) and element.get("type") == "design_asset":
+                reference = str(element.get("package_asset_id") or "")
+                if reference not in design_asset_map:
+                    asset_ref = str(element.get("asset_ref") or "")
+                    match = next((item for item in decorative if isinstance(item, dict) and str(item.get("path")) == asset_ref), None)
+                    if match:
+                        reference = str(match["package_asset_id"])
+                if reference in design_asset_map:
+                    element["package_asset_id"] = reference
+                    element["asset_url"] = design_asset_map[reference].get("asset_url")
+    checked = validate_design_spec(spec, set(asset_map) - set(design_asset_map), set(design_asset_map))
     return checked, asset_map, package_id
 
 
@@ -403,6 +578,22 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                 return
             self._send(target.read_bytes(), "application/zip", immutable=True)
             return
+        if parsed.path.startswith("/api/collage/design-assets/"):
+            managed_id = parsed.path.removeprefix("/api/collage/design-assets/").strip("/")
+            if not re.fullmatch(r"pa_[0-9a-f]{32}", managed_id):
+                self._json({"error": "invalid design asset id"}, 400)
+                return
+            root = (self.catalog_path.parent / "collage-design-assets").resolve()
+            matches = [path for path in root.glob(f"{managed_id}.*") if path.is_file() and path.suffix.lower() in {".svg", ".png", ".webp"}] if root.is_dir() else []
+            if not matches:
+                self._send(b"Not found", "text/plain", 404)
+                return
+            target = matches[0].resolve()
+            if root not in target.parents:
+                self._send(b"Not found", "text/plain", 404)
+                return
+            self._send(target.read_bytes(), ALLOWED_MEDIA[target.suffix.lower()], immutable=True)
+            return
         if parsed.path.startswith("/api/collage/documents/"):
             document_id = parsed.path.removeprefix("/api/collage/documents/").strip("/")
             if not re.fullmatch(r"doc_[0-9a-f]{32}", document_id):
@@ -547,7 +738,8 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
         if handle(self, parsed, 'POST'):
             return
         try:
-            payload = self._read_json()
+            package_limit = MAX_PACKAGE_BYTES * 2 if parsed.path == "/api/collage/design-import-packages" else 1_000_000
+            payload = self._read_json(package_limit)
             if parsed.path == "/api/collage/generate":
                 asset_ids = [str(value) for value in payload.get("asset_ids", []) if str(value)]
                 if not 2 <= len(asset_ids) <= 20: raise ValueError("select between 2 and 20 photographs")
@@ -555,6 +747,15 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                 self.server.collage_jobs[job_id] = {"job_id": job_id, "status": "queued", "stage": "queued", "progress": 0}
                 threading.Thread(target=_run_collage_job, args=(self.server, self.catalog_path, payload, job_id), daemon=True, name=f"collage-job-{job_id[:8]}").start()
                 self._json({"job_id": job_id, "status": "queued"}, 202); return
+            if parsed.path == "/api/collage/design-import-packages":
+                package, spec, asset_map = _ingest_design_package(self.catalog_path, _decode_uploaded_package(payload.get("package_zip_base64")))
+                alternatives = spec.get("alternatives") if isinstance(spec.get("alternatives"), list) else []
+                counts = [{"alternative": index, "elements": len(item.get("elements", [])),
+                           "photos": sum(isinstance(element, dict) and element.get("type") == "photo" for element in item.get("elements", [])),
+                           "design_assets": sum(isinstance(element, dict) and element.get("type") == "design_asset" for element in item.get("elements", []))}
+                          for index, item in enumerate(alternatives) if isinstance(item, dict)]
+                self._json({"valid": True, "package_id": package["package_id"], "spec": spec, "alternatives": counts, "validation": package.get("validation", {}), "decorative_assets": package.get("decorative_assets", [])}, 201)
+                return
             if parsed.path == "/api/collage/design-packages":
                 asset_ids = list(dict.fromkeys(str(value) for value in payload.get("asset_ids", []) if str(value)))
                 if not 1 <= len(asset_ids) <= 200:
@@ -585,14 +786,54 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                         "relative_path": item.get("relative_path"), "size_bytes": item.get("size_bytes"),
                         "capture_datetime": item.get("captured"), "width": item.get("width"),
                         "height": item.get("height"), "camera": item.get("camera"),
+                        "analysis": {"faces": "unavailable", "saliency": "unavailable"},
                         "thumbnail_file": f"thumbnails/A{index + 1:02d}.jpg",
                     })
-                package = {"format": "PhotoManager DesignPackage", "schema_version": 1, "package_id": package_id,
-                           "catalog_id": self.catalog_path.stem, "page_spec": page, "mode": str(payload.get("mode", "from_scratch")),
-                           "style": str(payload.get("style", "organic")), "assets": package_assets,
-                           "selection": {"topic_id": payload.get("topic_id"), "section_id": payload.get("section_id"), "asset_ids": asset_ids}}
+                style_intent = str(payload.get("style_intent") or payload.get("style") or "organic scrapbook")
+                legacy_package = {"format": "PhotoManager DesignPackage", "schema_version": 1, "package_id": package_id,
+                                  "catalog_id": self.catalog_path.stem, "page_spec": page, "mode": str(payload.get("mode", "from_scratch")),
+                                  "style": style_intent, "assets": package_assets,
+                                  "selection": {"topic_id": payload.get("topic_id"), "section_id": payload.get("section_id"), "asset_ids": asset_ids}}
+                design_spec = {"format": "CollageDesignSpec", "schema_version": 2, "package_id": package_id,
+                               "catalog_id": self.catalog_path.stem, "page_spec": page, "style": style_intent,
+                               "style_intent": style_intent, "mode": str(payload.get("mode", "from_scratch")),
+                               "assets": package_assets, "alternatives": []}
+                manifest_v2 = {"format": "PhotoManager AI Design Package", "schema_version": 2,
+                              "package_id": package_id, "catalog_id": self.catalog_path.stem,
+                              "design": "design.json", "photo_assets": package_assets, "assets": [],
+                              "selection": legacy_package["selection"], "style_intent": style_intent}
+                decorative_package_assets = []
+                decorative_files = {}
                 if isinstance(payload.get("current_document"), dict):
-                    package["current_document"] = payload["current_document"]
+                    legacy_package["current_document"] = payload["current_document"]
+                    design_spec["current_document"] = payload["current_document"]
+                    # Preserve already-imported decorative artwork as safe,
+                    # managed package assets. Never follow a path from the
+                    # browser payload; resolve only pa_* files under our own
+                    # managed directory.
+                    managed_root = (self.catalog_path.parent / "collage-design-assets").resolve()
+                    seen_managed = set()
+                    for element in payload["current_document"].get("elements", []):
+                        if not isinstance(element, dict) or element.get("type") != "design_asset":
+                            continue
+                        managed_id = str(element.get("asset_id") or element.get("package_asset_id") or "")
+                        if not re.fullmatch(r"pa_[0-9a-f]{32}", managed_id) or managed_id in seen_managed:
+                            continue
+                        candidates = [path for path in managed_root.glob(f"{managed_id}.*") if path.is_file() and path.suffix.lower() in ALLOWED_MEDIA]
+                        if not candidates:
+                            continue
+                        source = candidates[0]
+                        raw_asset = source.read_bytes()
+                        if source.suffix.lower() == ".svg":
+                            raw_asset = sanitize_svg(raw_asset)
+                        package_asset_id = f"D{len(decorative_package_assets) + 1:02d}"
+                        package_path = f"assets/{package_asset_id}{source.suffix.lower()}"
+                        decorative_files[package_path] = raw_asset
+                        decorative_package_assets.append({"id": package_asset_id, "path": package_path,
+                                                          "media_type": ALLOWED_MEDIA[source.suffix.lower()],
+                                                          "sha256": sha256_bytes(raw_asset)})
+                        seen_managed.add(managed_id)
+                manifest_v2["assets"] = decorative_package_assets
                 contact = Image.new("RGB", (1000, max(120, ((len(asset_ids) + 5) // 6) * 180)), "#f5f2ed")
                 draw = ImageDraw.Draw(contact)
                 images: dict[str, bytes] = {}
@@ -609,31 +850,59 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                     except (OSError, ValueError):
                         pass
                     images[f"A{index + 1:02d}.jpg"] = raw
-                instructions = "Use only the A IDs in this package. Include package_id in your CollageDesignSpec v1 response. Return JSON only, with geometry in mm. Do not invent, redraw, or replace photos."
-                schema_path = Path(__file__).resolve().parent.parent / "collage" / "schemas" / "design-spec-v1.json"
-                schema = json.loads(schema_path.read_text(encoding="utf-8")) if schema_path.is_file() else {"format": "CollageDesignSpec", "schema_version": 1}
+                instructions = """# Photo Manager AI Design Package v2
+
+Design a professional scrapbook-style photo-book page using only the supplied
+real photo asset labels (A01, A02, ...). Do not invent, redraw, or replace
+photographs. Choose one or two hero images, preserve faces, use negative space,
+and keep text inside the page safe margin. Use deliberate rotation and restrained
+overlap. Decorative artwork may be supplied separately as safe SVG, PNG or WebP
+files under assets/; reference those files with a design_asset element and its
+asset_ref. Do not use scripts, HTML, remote URLs, or arbitrary SVG markup.
+
+Return JSON only as CollageDesignSpec v2. Geometry is in millimetres. Use the
+stable font roles serif, sans, script or display. Every element needs a unique
+id, z_index, x_mm, y_mm, width_mm and height_mm. Use text_fit shrink_to_fit
+for headings and wrap_and_shrink for notes. You may return 3-5 alternatives.
+Include this package_id in your response and do not include original photo files.
+"""
+                schema_path = Path(__file__).resolve().parent.parent / "collage" / "schemas" / "design-spec-v2.json"
+                schema = json.loads(schema_path.read_text(encoding="utf-8")) if schema_path.is_file() else {"format": "CollageDesignSpec", "schema_version": 2}
+                schema_v1_path = Path(__file__).resolve().parent.parent / "collage" / "schemas" / "design-spec-v1.json"
+                schema_v1 = json.loads(schema_v1_path.read_text(encoding="utf-8")) if schema_v1_path.is_file() else {"format": "CollageDesignSpec", "schema_version": 1}
                 target = root / f"{package_id}.zip"
                 with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
-                    archive.writestr("design-package.json", json.dumps(package, indent=2, default=str))
+                    archive.writestr("design-package.json", json.dumps(legacy_package, indent=2, default=str))
+                    archive.writestr("manifest.json", json.dumps(manifest_v2, indent=2, default=str))
+                    archive.writestr("design.json", json.dumps(design_spec, indent=2, default=str))
                     out = io.BytesIO(); contact.save(out, format="JPEG", quality=90); archive.writestr("contact-sheet.jpg", out.getvalue())
                     for name, raw in images.items():
                         if raw: archive.writestr(f"thumbnails/{name}", raw)
+                    for name, raw in decorative_files.items():
+                        archive.writestr(name, raw)
                     archive.writestr("collage-design.schema.json", json.dumps(schema, indent=2))
+                    archive.writestr("collage-design-v1.schema.json", json.dumps(schema_v1, indent=2))
                     archive.writestr("CHATGPT-INSTRUCTIONS.md", instructions)
                     archive.writestr("README-for-AI.txt", instructions)
-                    if isinstance(package.get("current_document"), dict): archive.writestr("current-layout.json", json.dumps(package["current_document"], indent=2))
-                self._json({"package_id": package_id, "download": f"/api/collage/design-packages/{package_id}", "asset_count": len(asset_ids), "manifest": package}, 201)
+                    archive.writestr("README.txt", "Photo Manager AI Design Package v2. Photo references stay in the local catalog; only thumbnails, optional safe decorative assets, and design metadata are included. Original files and local absolute paths are not included.")
+                    if isinstance(legacy_package.get("current_document"), dict): archive.writestr("current-layout.json", json.dumps(legacy_package["current_document"], indent=2))
+                self._json({"package_id": package_id, "download": f"/api/collage/design-packages/{package_id}", "asset_count": len(asset_ids), "manifest": manifest_v2, "legacy_manifest": legacy_package}, 201)
                 return
             if parsed.path in {"/api/collage/design-imports/validate", "/api/collage/design-imports"}:
                 checked, asset_map, package_id = _resolve_design_import(self.catalog_path, payload)
+                photo_ids = {asset_id for asset_id, item in asset_map.items() if not item.get("package_asset_id")}
+                design_asset_ids = {asset_id for asset_id, item in asset_map.items() if item.get("package_asset_id")}
+                checked, validation = validate_and_repair_design_spec(checked, photo_ids, design_asset_ids)
                 if parsed.path.endswith("/validate"):
-                    counts = [{"alternative": index, "elements": len(item["elements"]), "photos": sum(x["type"] == "photo" for x in item["elements"])} for index, item in enumerate(checked["alternatives"])]
-                    self._json({"valid": True, "warnings": [], "alternatives": counts, "package_id": package_id, "spec": checked})
+                    counts = [{"alternative": index, "elements": len(item["elements"]), "photos": sum(x["type"] == "photo" for x in item["elements"]), "design_assets": sum(x["type"] == "design_asset" for x in item["elements"])} for index, item in enumerate(checked["alternatives"])]
+                    self._json({"valid": True, "warnings": validation["warnings"], "repairs": validation["repairs"], "validation": validation, "alternatives": counts, "package_id": package_id, "spec": checked})
                     return
                 index = int(payload.get("alternative_index", 0))
                 if index < 0 or index >= len(checked["alternatives"]): raise ValueError("alternative_index is out of range")
                 document = to_collage_document(checked, index, asset_map)
                 document["metadata"]["package_id"] = package_id
+                document["metadata"]["layout_validation"] = validation
+                document["metadata"]["source"] = f"CollageDesignSpec v{checked.get('schema_version', 1)}"
                 document_root = self.catalog_path.parent / "collage-documents"
                 document_path = document_root / f"{document['document_id']}.json"
                 _write_json_atomic(document_path, document)
@@ -645,7 +914,7 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                     available = {str(row[0]) for row in connection.execute("SELECT DISTINCT asset_id FROM asset_locations WHERE missing_since IS NULL")}
                 finally:
                     connection.close()
-                checked = validate_collage_document(payload, available)
+                checked = validate_collage_document(payload, available, _managed_design_asset_ids(self.catalog_path))
                 original_id = str(checked.get("document_id") or "")
                 document = dict(checked)
                 document["document_id"] = "doc_" + uuid.uuid4().hex
@@ -956,9 +1225,9 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             self._json({"error": str(exc)}, 400)
 
-    def _read_json(self) -> dict[str, object]:
+    def _read_json(self, max_bytes: int = 1_000_000) -> dict[str, object]:
         length = int(self.headers.get("Content-Length", "0"))
-        if length > 1_000_000:
+        if length > max_bytes:
             raise ValueError("request body is too large")
         value = json.loads(self.rfile.read(length) or b"{}")
         if not isinstance(value, dict):

@@ -80,6 +80,19 @@ See [the audit and Phase 1 boundary](docs/smart-collage-poc-audit.md). Face
 protection, ranking and review UI are intentionally later phases pending
 visual review of these outputs.
 
+### Smart Collage Creator Mode
+
+The web Smart Collage page also provides a first-class **AI Design** creator
+flow. Select photos from a Topic or Section, choose a physical page preset,
+export the v2 design package, and manually give the ZIP plus contact sheet to
+ChatGPT. Import the returned `CollageDesignSpec` JSON or completed package,
+choose an alternative, and open it as a new editable variant. The editor uses
+one Fabric renderer for photos, text, decorative layers, crop, rotation,
+zoom, borders, guides, undo/redo, and high-resolution PNG export. Packages
+contain thumbnails and design metadata for the manual hand-off, never
+original photo files, GPS metadata, or local absolute paths. See
+[Smart Collage Creator Mode](docs/smart-collage-ai-design-package-v2.md).
+
 In the web Library, click a Topic to open its photos, click `Edit` to change
 its name or date range, and use `Create Topic` for a new one. Photo cards can
 be dragged onto a Topic card; alternatively select several cards and choose a

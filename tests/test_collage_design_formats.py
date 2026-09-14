@@ -1,6 +1,6 @@
 import unittest
 
-from photovault.collage.design_formats import to_collage_document, validate_design_spec
+from photovault.collage.design_formats import to_collage_document, validate_and_repair_design_spec, validate_design_spec
 
 
 class CollageDesignFormatTests(unittest.TestCase):
@@ -36,6 +36,19 @@ class CollageDesignFormatTests(unittest.TestCase):
         ])
         document = to_collage_document(spec, asset_map={"a1": spec["assets"][0]})
         self.assertEqual([x["element_id"] for x in document["elements"]], ["bg", "title"])
+
+    def test_v2_supports_object_masks_and_reports_text_repair(self):
+        spec = self.spec([
+            {"id": "photo-01", "type": "photo", "asset_id": "a1", "x_mm": 10, "y_mm": 10,
+             "width_mm": 100, "height_mm": 80, "mask": {"type": "circle"}},
+            {"id": "title", "type": "text", "content": "A very long heading that needs a bounded font repair",
+             "x_mm": 10, "y_mm": 250, "width_mm": 25, "height_mm": 10,
+             "text_style": {"font_id": "script", "font_size_pt": 44, "text_fit": "shrink_to_fit"}},
+        ])
+        spec["schema_version"] = 2
+        checked, report = validate_and_repair_design_spec(spec, {"a1"})
+        self.assertEqual(checked["alternatives"][0]["elements"][0]["mask"], {"type": "circle"})
+        self.assertTrue(report["repairs"])
 
 
 if __name__ == "__main__":

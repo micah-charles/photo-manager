@@ -8,6 +8,7 @@ This document is the license gate for the editor-engine spike. It records the ex
 | CEWE layout | [vincedarley/cewe-layout](https://github.com/vincedarley/cewe-layout) | Existing implementation | MIT | Existing approved subset only | Existing `src/photovault/collage/vendor/CEWE_LAYOUT_LICENSE` is retained |
 | BSP | [bjdekker/photo-collage](https://github.com/bjdekker/photo-collage) | Reference only | Upstream license not sufficiently clear for redistribution | No | Photo Manager BSP is a clean-room independent implementation; no upstream source copied |
 | Native | Photo Manager | N/A | Photo Manager-owned | N/A | No third-party notice required |
+| Creator Mode decorative artwork | User-supplied or AI-authored SVG/PNG/WebP imported through the v2 allow-list | N/A | The package must carry its own rights; Photo Manager does not bundle third-party artwork | No | Import is restricted to managed local assets and does not grant a redistribution licence |
 
 ## Excluded from this architecture
 
@@ -16,6 +17,10 @@ Polotno, commercial editor SDKs, cloud editing APIs, unknown repositories, and M
 ## ML gate
 
 The editor spike does not add an inference runtime or model weights. Any future face, subject, or saliency model must record runtime license, weight license, redistribution, commercial-use, and attribution terms separately before it is downloaded or vendorized.
+
+## Font roles
+
+The interchange format uses stable roles (`serif`, `sans`, `script`, `display`) rather than arbitrary font names. The current local editor maps those roles to its built-in rendering fallbacks; no font files or font licenses are committed in this repository. A production distribution must replace those fallbacks with a separately licensed, packaged font set before promising cross-machine typography fidelity.
 
 ## Security and provenance
 

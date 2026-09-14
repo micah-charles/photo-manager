@@ -12,11 +12,15 @@ import uuid
 from copy import deepcopy
 from typing import Any
 
+from .geometry import mm_to_px, page_dimensions_mm
+
 HEX = re.compile(r"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
 MASKS = {"rectangle", "rounded", "circle", "ellipse"}
 ROLES = {"hero", "secondary", "supporting", "detail", "background"}
+FONT_ROLES = {"serif", "sans", "script", "display"}
+TEXT_FITS = {"none", "shrink_to_fit", "wrap_and_shrink"}
 MAX_ELEMENTS = 200
-SUPPORTED_ELEMENT_TYPES = {"photo", "text", "rectangle", "ellipse", "line", "polygon"}
+SUPPORTED_ELEMENT_TYPES = {"photo", "text", "rectangle", "ellipse", "line", "polygon", "design_asset"}
 
 
 def _number(value: Any, name: str, low: float | None = None, high: float | None = None) -> float:
@@ -66,13 +70,15 @@ def _style(element: dict[str, Any]) -> dict[str, Any]:
     return {"border": border, "shadow": shadow}
 
 
-def validate_design_spec(payload: Any, asset_ids: set[str]) -> dict[str, Any]:
+def validate_design_spec(payload: Any, asset_ids: set[str], design_asset_ids: set[str] | None = None) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("design spec must be an object")
     if payload.get("format") not in {"PhotoManager Collage Design", "CollageDesignSpec"}:
         raise ValueError("unsupported design spec format")
-    if int(payload.get("schema_version", 0)) != 1:
+    schema_version = int(payload.get("schema_version", 0))
+    if schema_version not in {1, 2}:
         raise ValueError("unsupported design spec schema_version")
+    design_asset_ids = set(design_asset_ids or set())
     page = validate_page_spec(payload.get("page_spec") or {})
     alternatives = payload.get("alternatives")
     if not isinstance(alternatives, list) or not alternatives or len(alternatives) > 5:
@@ -124,6 +130,8 @@ def validate_design_spec(payload: Any, asset_ids: set[str]) -> dict[str, Any]:
                     raise ValueError("text content is required and must be short")
                 text_style = dict(element.get("text_style") or {})
                 text_style["font_id"] = str(text_style.get("font_id", "serif"))
+                if text_style["font_id"] not in FONT_ROLES:
+                    raise ValueError("unsupported font role")
                 text_style["font_size_pt"] = _number(text_style.get("font_size_pt", 12), "text_style.font_size_pt", 4, 300)
                 text_style["weight"] = str(text_style.get("weight", "normal"))
                 if text_style["weight"] not in {"normal", "bold", "600", "700"}:
@@ -134,9 +142,20 @@ def validate_design_spec(payload: Any, asset_ids: set[str]) -> dict[str, Any]:
                     raise ValueError("unsupported text alignment")
                 text_style["line_height"] = _number(text_style.get("line_height", 1.15), "text_style.line_height", .5, 3)
                 text_style["letter_spacing"] = _number(text_style.get("letter_spacing", 0), "text_style.letter_spacing", -20, 100)
+                text_style["text_fit"] = str(text_style.get("text_fit", "shrink_to_fit"))
+                if text_style["text_fit"] not in TEXT_FITS:
+                    raise ValueError("unsupported text_fit")
                 if "color" in text_style:
                     text_style["color"] = _colour(text_style["color"], "text_style.color")
                 element["text_style"] = text_style
+            elif kind == "design_asset":
+                package_asset_id = str(element.get("package_asset_id") or element.get("asset_id") or "")
+                if package_asset_id not in design_asset_ids:
+                    raise ValueError(f"design asset references an unknown package asset: {package_asset_id}")
+                element["package_asset_id"] = package_asset_id
+                if "asset_url" in element and not str(element["asset_url"]).startswith("/api/collage/design-assets/"):
+                    raise ValueError("design asset URL must be a managed Photo Manager asset URL")
+                element["allow_bleed"] = bool(element.get("allow_bleed", False))
             elif kind not in {"line"}:
                 fill = element.get("fill")
                 if fill is not None:
@@ -163,44 +182,159 @@ def validate_design_spec(payload: Any, asset_ids: set[str]) -> dict[str, Any]:
                 element["points"] = checked_points
             elements.append(element)
         checked.append({**alternative, "elements": sorted(elements, key=lambda x: (x["z_index"], x["id"]))})
-    return {**payload, "page_spec": page, "alternatives": checked}
+    return {**payload, "schema_version": schema_version, "page_spec": page, "alternatives": checked}
+
+
+def _text_metrics(content: str, style: dict[str, Any], width_mm: float) -> dict[str, float | int]:
+    """Deterministic, font-role based text estimate used before publication.
+
+    The editor uses the same role mapping.  This intentionally avoids host font
+    names and is conservative for script/display roles so text is repaired
+    before it reaches Fabric rather than being silently clipped there.
+    """
+    font_size = float(style.get("font_size_pt", 12))
+    role_factor = {"serif": .52, "sans": .54, "script": .47, "display": .58}.get(str(style.get("font_id", "serif")), .54)
+    spacing = float(style.get("letter_spacing", 0)) / 1000 * font_size
+    char_mm = max(.6, (font_size * .3528 * role_factor) + spacing)
+    line_mm = max(1.0, font_size * .3528 * float(style.get("line_height", 1.15)))
+    raw_lines = str(content).splitlines() or [""]
+    fit = str(style.get("text_fit", "shrink_to_fit"))
+    max_chars = max(1, int(float(width_mm) / char_mm))
+    lines = 0
+    widest = 0.0
+    for raw_line in raw_lines:
+        # A shrink-to-fit box must be measured as a single line first; if we
+        # wrap it here, the measured width can never exceed the box and the
+        # promised font repair would never run.  Explicit wrapping is only
+        # part of the wrap_and_shrink policy.
+        chunks = ([raw_line] if fit in {"none", "shrink_to_fit"} else
+                  [raw_line[index:index + max_chars] for index in range(0, max(1, len(raw_line)), max_chars)]) or [""]
+        lines += len(chunks)
+        widest = max(widest, max((len(chunk) for chunk in chunks), default=1) * char_mm)
+    return {"width_mm": widest, "height_mm": max(line_mm, lines * line_mm), "lines": lines, "char_mm": char_mm}
+
+
+def _rotated_bounds(element: dict[str, Any]) -> tuple[float, float, float, float]:
+    x, y = float(element.get("x_mm", 0)), float(element.get("y_mm", 0))
+    width, height = float(element.get("width_mm", 0)), float(element.get("height_mm", 0))
+    radians = math.radians(float(element.get("rotation_deg", 0)))
+    cos_v, sin_v = abs(math.cos(radians)), abs(math.sin(radians))
+    bound_width, bound_height = width * cos_v + height * sin_v, width * sin_v + height * cos_v
+    return x + width / 2 - bound_width / 2, y + height / 2 - bound_height / 2, bound_width, bound_height
+
+
+def validate_and_repair_design_spec(payload: Any, asset_ids: set[str], design_asset_ids: set[str] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate a design and apply only bounded, explainable layout repairs."""
+    checked = validate_design_spec(payload, asset_ids, design_asset_ids)
+    page_width, page_height = page_dimensions_mm(checked["page_spec"])
+    safe = float(checked["page_spec"].get("safe_margin_mm", 8))
+    warnings: list[dict[str, Any]] = []
+    repairs: list[dict[str, Any]] = []
+    for alternative in checked["alternatives"]:
+        for element in alternative["elements"]:
+            if element["type"] == "text":
+                style = element["text_style"]
+                fit = style.get("text_fit", "shrink_to_fit")
+                metrics = _text_metrics(str(element["content"]), style, float(element["width_mm"]))
+                original_size = float(style["font_size_pt"])
+                if fit in {"shrink_to_fit", "wrap_and_shrink"} and float(metrics["width_mm"]) > float(element["width_mm"]):
+                    while float(metrics["width_mm"]) > float(element["width_mm"]) and float(style["font_size_pt"]) > 6:
+                        style["font_size_pt"] = round(float(style["font_size_pt"]) * .94, 2)
+                        metrics = _text_metrics(str(element["content"]), style, float(element["width_mm"]))
+                    if float(style["font_size_pt"]) != original_size:
+                        repairs.append({"element_id": element["id"], "reason": "TEXT_SHRINK_TO_FIT", "from_font_size_pt": original_size, "to_font_size_pt": style["font_size_pt"]})
+                if fit == "wrap_and_shrink" and float(metrics["height_mm"]) > float(element["height_mm"]):
+                    available = page_height - safe - float(element["y_mm"])
+                    if available > float(element["height_mm"]):
+                        old_height = float(element["height_mm"])
+                        element["height_mm"] = round(min(available, float(metrics["height_mm"])), 2)
+                        repairs.append({"element_id": element["id"], "reason": "TEXT_BOX_EXPANDED", "from_height_mm": old_height, "to_height_mm": element["height_mm"]})
+                left, top, bound_width, bound_height = _rotated_bounds(element)
+                if not element.get("allow_bleed", False):
+                    dx = max(safe - left, 0) - max(left + bound_width - (page_width - safe), 0)
+                    dy = max(safe - top, 0) - max(top + bound_height - (page_height - safe), 0)
+                    if dx or dy:
+                        old_x, old_y = float(element["x_mm"]), float(element["y_mm"])
+                        element["x_mm"] = round(old_x + dx, 2)
+                        element["y_mm"] = round(old_y + dy, 2)
+                        new_left, new_top, new_width, new_height = _rotated_bounds(element)
+                        if new_left >= safe - .01 and new_top >= safe - .01 and new_left + new_width <= page_width - safe + .01 and new_top + new_height <= page_height - safe + .01:
+                            repairs.append({"element_id": element["id"], "reason": "TEXT_SAFE_MARGIN", "dx_mm": round(dx, 2), "dy_mm": round(dy, 2)})
+                        else:
+                            warnings.append({"element_id": element["id"], "code": "TEXT_OUTSIDE_SAFE_AREA", "message": "Text remains outside the safe margin after bounded repair."})
+                final_metrics = _text_metrics(str(element["content"]), style, float(element["width_mm"]))
+                if (float(final_metrics["width_mm"]) > float(element["width_mm"]) + .01 or
+                        float(final_metrics["height_mm"]) > float(element["height_mm"]) + .01):
+                    warnings.append({"element_id": element["id"], "code": "TEXT_OVERFLOW", "message": "Text may overflow its box; edit the text box or font size."})
+
+            left, top, bound_width, bound_height = _rotated_bounds(element)
+            if not element.get("allow_bleed", False) and (left < -float(checked["page_spec"].get("bleed_mm", 3)) or top < -float(checked["page_spec"].get("bleed_mm", 3)) or left + bound_width > page_width + float(checked["page_spec"].get("bleed_mm", 3)) or top + bound_height > page_height + float(checked["page_spec"].get("bleed_mm", 3))):
+                warnings.append({"element_id": element["id"], "code": "ELEMENT_OUTSIDE_PAGE", "message": "Element extends beyond the allowed bleed."})
+
+        photo_elements = [item for item in alternative["elements"] if item["type"] == "photo"]
+        for index, first in enumerate(photo_elements):
+            fx, fy, fw, fh = _rotated_bounds(first)
+            first_area = max(fw * fh, .001)
+            for second in photo_elements[index + 1:]:
+                sx, sy, sw, sh = _rotated_bounds(second)
+                overlap = max(0.0, min(fx + fw, sx + sw) - max(fx, sx)) * max(0.0, min(fy + fh, sy + sh) - max(fy, sy))
+                coverage = overlap / first_area
+                if coverage > .20 and str(first.get("role", "detail")) in {"hero", "secondary"}:
+                    warnings.append({"element_id": first["id"], "covered_by": second["id"], "code": "EXCESSIVE_PHOTO_OVERLAP", "coverage": round(coverage, 3), "message": "Major photo is covered by another photo; confirm that the overlap is intentional."})
+        text_elements = [item for item in alternative["elements"] if item["type"] == "text"]
+        for text in text_elements:
+            tx, ty, tw, th = _rotated_bounds(text)
+            for photo in photo_elements:
+                px, py, pw, ph = _rotated_bounds(photo)
+                overlap = max(0.0, min(tx + tw, px + pw) - max(tx, px)) * max(0.0, min(ty + th, py + ph) - max(ty, py))
+                if overlap / max(tw * th, .001) > .15 and int(photo.get("z_index", 0)) > int(text.get("z_index", 0)):
+                    warnings.append({"element_id": text["id"], "covered_by": photo["id"], "code": "TEXT_COVERED_BY_PHOTO", "message": "Text is behind a foreground photo."})
+
+    report = {"validation_status": "repaired" if repairs else ("warnings" if warnings else "valid"), "warnings": warnings, "repairs": repairs}
+    return checked, report
 
 
 def to_collage_document(spec: dict[str, Any], alternative_index: int = 0, asset_map: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
-    checked = validate_design_spec(spec, set((asset_map or {}).keys()))
+    resolved_assets = asset_map or {}
+    design_asset_ids = {key for key, value in resolved_assets.items() if isinstance(value, dict) and value.get("package_asset_id")}
+    photo_asset_ids = set(resolved_assets) - design_asset_ids
+    checked = validate_design_spec(spec, photo_asset_ids, design_asset_ids)
     alternative = checked["alternatives"][alternative_index]
     page = checked["page_spec"]
     width = float(page["width_mm"])
     if page["type"] == "spread":
         width *= 2
-    scale = 4
     elements = []
     for element in alternative["elements"]:
         item = deepcopy(element)
         item["element_id"] = item.pop("id")
-        item["x"] = round(float(item.get("x_mm", 0)) * scale)
-        item["y"] = round(float(item.get("y_mm", 0)) * scale)
-        item["width"] = round(float(item.get("width_mm", 0)) * scale)
-        item["height"] = round(float(item.get("height_mm", 0)) * scale)
+        item["x"] = mm_to_px(item.get("x_mm", 0))
+        item["y"] = mm_to_px(item.get("y_mm", 0))
+        item["width"] = mm_to_px(item.get("width_mm", 0))
+        item["height"] = mm_to_px(item.get("height_mm", 0))
         if item["type"] == "photo":
             item["photo_id"] = item.pop("asset_id")
             item["style"] = {"border": item.pop("border", {}), "shadow": item.pop("shadow", {})}
             item["clipping_shape"] = item.pop("mask", {}).get("type", "rectangle")
             item["transform"] = item.pop("image", {})
+        elif item["type"] == "design_asset":
+            item["asset_id"] = item.pop("package_asset_id")
+            item["asset_url"] = (asset_map or {}).get(item["asset_id"], {}).get("asset_url", item.get("asset_url"))
         elements.append(item)
     now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     return {"document_type": "CollageDocument", "schema_version": 2, "document_id": "doc_" + uuid.uuid4().hex, "created_at": now, "modified_at": now,
-            "page_spec": page, "canvas": {"width": round(width * scale), "height": round(float(page["height_mm"]) * scale), "gutter": round(float(page.get("gutter_mm", 4)) * scale)},
+            "page_spec": page, "canvas": {"width": mm_to_px(width), "height": mm_to_px(float(page["height_mm"])), "gutter": mm_to_px(float(page.get("gutter_mm", 4)))},
             "background": page.get("background", "#f5f2ed"), "elements": elements, "frames": [x for x in elements if x["type"] == "photo"], "cells": [x for x in elements if x["type"] == "photo"],
             "provider": "ai-design", "style": alternative.get("style", ""), "metadata": {
                 "design_id": alternative.get("id", ""),
                 "design_name": alternative.get("name") or alternative.get("title") or "",
                 "design_reason": alternative.get("reason", ""),
-                "source": "CollageDesignSpec v1",
+                "source": f"CollageDesignSpec v{checked.get('schema_version', 1)}",
+                "style_intent": spec.get("style_intent") or alternative.get("style") or spec.get("style") or "",
             }, "edited": True}
 
 
-def validate_collage_document(payload: Any, asset_ids: set[str]) -> dict[str, Any]:
+def validate_collage_document(payload: Any, asset_ids: set[str], design_asset_ids: set[str] | None = None) -> dict[str, Any]:
     """Validate the V2 document written by the editor before publishing it."""
     if not isinstance(payload, dict) or payload.get("document_type") != "CollageDocument":
         raise ValueError("payload must be a CollageDocument")
@@ -229,6 +363,10 @@ def validate_collage_document(payload: Any, asset_ids: set[str]) -> dict[str, An
             photo_id = str(item.get("photo_id") or "")
             if photo_id not in asset_ids:
                 raise ValueError(f"document references an unknown asset: {photo_id}")
+        if kind == "design_asset":
+            package_asset_id = str(item.get("asset_id") or item.get("package_asset_id") or "")
+            if package_asset_id not in set(design_asset_ids or set()):
+                raise ValueError(f"document references an unknown design asset: {package_asset_id}")
         if kind == "text" and (not isinstance(item.get("content"), str) or len(item["content"]) > 2000):
             raise ValueError("text content is required and must be short")
         checked.append(item)

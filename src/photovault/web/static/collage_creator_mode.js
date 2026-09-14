@@ -42,6 +42,40 @@
     setStatus(`Validated ${alternatives.length} AI design alternative${alternatives.length === 1 ? "" : "s"}. Choose one to open.`);
   }
 
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("The package file could not be read."));
+      reader.onload = () => {
+        const value = String(reader.result || "");
+        const comma = value.indexOf(",");
+        resolve(comma >= 0 ? value.slice(comma + 1) : value);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function importDesignPackage(file) {
+    setStatus("Uploading and validating AI Design Package…");
+    const packageZipBase64 = await readFileAsBase64(file);
+    const response = await fetch("/api/collage/design-import-packages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ package_zip_base64: packageZipBase64 }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    validatedSpec = result.spec;
+    packageId = result.package_id;
+    const selector = byId("creator-alternative");
+    const alternatives = result.alternatives || [];
+    if (!alternatives.length) throw new Error("The package contains no AI alternatives.");
+    selector.innerHTML = alternatives.map((item) => `<option value="${Number(item.alternative)}">Alternative ${Number(item.alternative) + 1} · ${Number(item.photos)} photos · ${Number(item.elements)} elements</option>`).join("");
+    byId("creator-import-panel")?.classList.remove("hidden");
+    const report = result.validation || {};
+    setStatus(`Package validated: ${alternatives.length} alternative${alternatives.length === 1 ? "" : "s"}, ${Number(report.warnings?.length || 0)} warning(s), ${Number(report.repairs?.length || 0)} bounded repair(s). Choose one to open.`);
+  }
+
   async function openImportedDesign() {
     if (!validatedSpec) { setStatus("Choose an AI design JSON first."); return; }
     const alternativeIndex = Number(byId("creator-alternative")?.value || 0);
@@ -75,10 +109,10 @@
       type: "photo",
       photo_id: assetId,
       asset_id: assetId,
-      x: Math.round((margin + (index % columns) * (cellWidth + gap)) * 4),
-      y: Math.round((margin + Math.floor(index / columns) * (cellHeight + gap)) * 4),
-      width: Math.round(cellWidth * 4),
-      height: Math.round(cellHeight * 4),
+      x: window.collageGeometry.mmToPx(margin + (index % columns) * (cellWidth + gap)),
+      y: window.collageGeometry.mmToPx(margin + Math.floor(index / columns) * (cellHeight + gap)),
+      width: window.collageGeometry.mmToPx(cellWidth),
+      height: window.collageGeometry.mmToPx(cellHeight),
       rotation_deg: 0,
       z_index: index,
       opacity: 1,
@@ -91,7 +125,7 @@
       schema_version: 2,
       document_id: `blank-${Date.now()}`,
       page_spec: page,
-      canvas: { width: Math.round(pageWidth * 4), height: Math.round(pageHeight * 4), gutter: Math.round(Number(page.gutter_mm || 4) * 4) },
+      canvas: { width: window.collageGeometry.mmToPx(pageWidth), height: window.collageGeometry.mmToPx(pageHeight), gutter: window.collageGeometry.mmToPx(Number(page.gutter_mm || 4)) },
       background: page.background || "#f5f2ed",
       elements,
       frames: elements,
@@ -119,6 +153,7 @@
   byId("method-cewe")?.addEventListener("change", () => setMethod("cewe-genetic"));
   byId("method-bsp")?.addEventListener("change", () => setMethod("bsp"));
   byId("import-ai-design")?.addEventListener("click", () => byId("import-ai-file")?.click());
+  byId("import-ai-package")?.addEventListener("click", () => byId("import-ai-package-file")?.click());
   byId("import-ai-file")?.addEventListener("change", (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -129,6 +164,11 @@
       catch (error) { setStatus(`AI JSON is invalid: ${error.message}`); }
     };
     reader.readAsText(file);
+  });
+  byId("import-ai-package-file")?.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) importDesignPackage(file).catch((error) => setStatus(`AI package import failed: ${error.message}`));
   });
   byId("creator-open")?.addEventListener("click", () => openImportedDesign().catch((error) => setStatus(`AI design import failed: ${error.message}`)));
   byId("start-blank")?.addEventListener("click", () => startBlank());

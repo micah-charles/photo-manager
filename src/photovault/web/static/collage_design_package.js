@@ -18,7 +18,8 @@ async function exportDesignPackage() {
       body: JSON.stringify({
         asset_ids: [...appState.selected],
         page_spec: page,
-        style: "organic",
+        style: document.querySelector("#style-intent")?.value || "organic scrapbook",
+        style_intent: document.querySelector("#style-intent")?.value || "organic scrapbook",
         mode: "from_scratch",
         topic_id: topicId,
         section_id: sectionId,

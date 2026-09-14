@@ -5,7 +5,7 @@
  */
 const $ = (id) => document.getElementById(id);
 const clone = (value) => JSON.parse(JSON.stringify(value));
-const PX_PER_MM = 4;
+const PX_PER_MM = window.collageGeometry?.PX_PER_MM || 4;
 const state = {
   runs: [], candidates: [], doc: null, savedDocumentUrl: null,
   photos: [], assetMap: new Map(), activeId: null, mode: "layout", renderMode: "funnel", renderFallbacks: [],
@@ -23,7 +23,8 @@ const api = async (url, options = {}) => {
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const elements = () => state.doc?.elements || [];
 const elementId = (element) => String(element?.element_id || element?.id || `element-${Math.random().toString(36).slice(2)}`);
-const photoId = (element) => element?.photo_id || element?.asset_id || null;
+const photoId = (element) => (element && (element.type === "photo" || !element.type) ? (element.photo_id || element.asset_id || null) : null);
+const isPhotoElement = (element) => Boolean(photoId(element));
 const activeElement = () => elements().find((element) => elementId(element) === state.activeId) || null;
 const canvasSize = () => ({ width: Number(state.doc?.canvas?.width || 1200), height: Number(state.doc?.canvas?.height || 800) });
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
@@ -46,10 +47,27 @@ function updateDocumentChrome() {
       summary.textContent = `${kind} · ${name}${packageLabel} · ${elements().length} elements`;
     }
   }
+  const report = state.doc?.metadata?.layout_validation;
+  const reportNode = $("validation-report");
+  if (reportNode) {
+    const warnings = Array.isArray(report?.warnings) ? report.warnings : [];
+    const repairs = Array.isArray(report?.repairs) ? report.repairs : [];
+    reportNode.hidden = !warnings.length && !repairs.length;
+    reportNode.textContent = reportNode.hidden ? "" : `Validation: ${report?.validation_status || "review"} · ${warnings.length} warning(s) · ${repairs.length} repair(s)`;
+  }
 }
-const photoControls = ["opacity", "border-width", "border-color", "mask", "zoom", "rotate", "reset", "raise", "lower"];
-function setInspectorState(hasPhoto) {
+const photoControls = ["border-width", "border-color", "mask", "zoom", "rotate", "reset"];
+function setInspectorState(element) {
+  const hasSelection = Boolean(element);
+  const hasPhoto = isPhotoElement(element);
+  const isText = element?.type === "text";
   photoControls.forEach((control) => { if ($(control)) $(control).disabled = !hasPhoto; });
+  if ($("opacity")) $("opacity").disabled = !hasSelection;
+  if ($("frame-rotation")) $("frame-rotation").disabled = !hasSelection;
+  ["text-content", "font-role", "text-fit"].forEach((control) => { if ($(control)) $(control).disabled = !isText; });
+  ["toggle-lock", "toggle-hide", "raise", "lower", "delete"].forEach((control) => { if ($(control)) $(control).disabled = !hasSelection; });
+  if ($("toggle-lock")) $("toggle-lock").textContent = element?.locked ? "Unlock layer" : "Lock layer";
+  if ($("toggle-hide")) $("toggle-hide").textContent = element?.hidden ? "Show layer" : "Hide layer";
   if ($("delete")) $("delete").disabled = !Boolean(activeElement());
 }
 const snapshot = () => clone(state.doc);
@@ -70,8 +88,9 @@ function normalizeDocument(raw) {
   documentValue.document_type ||= "CollageDocument";
   documentValue.schema_version ||= 2;
   documentValue.page_spec ||= { type: "single", width_mm: 300, height_mm: 200, background: "#f5f2ed" };
+  const pageWidth = Number(documentValue.page_spec.width_mm || 300) * (documentValue.page_spec.type === "spread" ? 2 : 1);
   documentValue.canvas ||= {
-    width: Math.round(Number(documentValue.page_spec.width_mm || 300) * PX_PER_MM),
+    width: Math.round(pageWidth * PX_PER_MM),
     height: Math.round(Number(documentValue.page_spec.height_mm || 200) * PX_PER_MM),
   };
   const source = Array.isArray(documentValue.elements)
@@ -125,6 +144,10 @@ function elementStyle(element) {
     },
     shadow,
   };
+}
+
+function designAssetUrl(element) {
+  return element?.asset_url || (element?.asset_id ? `/api/collage/design-assets/${encodeURIComponent(element.asset_id)}` : "");
 }
 
 function rgba(hex, opacity = 1) {
@@ -237,9 +260,37 @@ async function addPhoto(element) {
   state.canvas.add(frameObject(element));
 }
 
+async function addDesignAsset(element) {
+  const id = elementId(element);
+  const width = Number(element.width || 0);
+  const height = Number(element.height || 0);
+  const fallback = new fabric.Rect({
+    left: Number(element.x || 0) + width / 2, top: Number(element.y || 0) + height / 2,
+    originX: "center", originY: "center", width, height, fill: "rgba(192,141,88,.12)",
+    stroke: "#c08d58", strokeDashArray: [6, 4], angle: Number(element.rotation_deg || 0),
+    visible: !element.hidden, selectable: !element.locked && !element.hidden && state.mode === "layout",
+    evented: !element.locked && !element.hidden && state.mode === "layout", objectCaching: false,
+  });
+  fallback._elementId = id; fallback._kind = "design-asset";
+  const url = designAssetUrl(element);
+  let image = url ? await fabric.Image.fromURL(url, { crossOrigin: "anonymous" }).catch(() => null) : null;
+  if (!image) { state.canvas.add(fallback); return; }
+  const sourceWidth = Math.max(Number(image.width || 1), 1);
+  const sourceHeight = Math.max(Number(image.height || 1), 1);
+  image.set({
+    left: Number(element.x || 0) + width / 2, top: Number(element.y || 0) + height / 2,
+    originX: "center", originY: "center", scaleX: width / sourceWidth, scaleY: height / sourceHeight,
+    angle: Number(element.rotation_deg || 0), opacity: Number(element.opacity ?? 1),
+    visible: !element.hidden, selectable: !element.locked && !element.hidden && state.mode === "layout",
+    evented: !element.locked && !element.hidden && state.mode === "layout", objectCaching: false,
+  });
+  image._elementId = id; image._kind = "design-asset"; image._sourceWidth = sourceWidth; image._sourceHeight = sourceHeight;
+  state.canvas.add(image);
+}
+
 function textOptions(element) {
   const style = element.text_style || {};
-  const fontMap = { serif: "Georgia", sans: "Arial", script: "cursive" };
+  const fontMap = { serif: "Georgia", sans: "Arial", script: "cursive", display: "Impact" };
   return {
     left: Number(element.x || 0), top: Number(element.y || 0), width: Number(element.width || 240),
     fontFamily: fontMap[style.font_id] || "Georgia", fontSize: Number(style.font_size_pt || 12) * 1.333,
@@ -288,11 +339,10 @@ function inspect(object) {
   const element = activeElement();
   if (!element) {
     if ($("selection")) $("selection").textContent = "No element selected";
-    setInspectorState(false);
+    setInspectorState(null);
     refreshLayers(); return;
   }
-  const isPhoto = element.type === "photo" || photoId(element);
-  setInspectorState(isPhoto);
+  setInspectorState(element);
   $("selection").textContent = `${element.type} · ${elementId(element)}${photoId(element) ? ` · ${photoId(element)}` : ""}`;
   const style = elementStyle(element); const transform = imageTransform(element);
   if ($("opacity")) $("opacity").value = Number(element.opacity ?? 1);
@@ -300,6 +350,13 @@ function inspect(object) {
   if ($("border-color")) $("border-color").value = /^#[0-9a-f]{6}$/i.test(style.border.color) ? style.border.color : "#ffffff";
   if ($("mask")) $("mask").value = shapeName(element);
   if ($("zoom")) $("zoom").value = transform.zoom;
+  if ($("frame-rotation")) $("frame-rotation").value = clamp(Number(element.rotation_deg || 0), -180, 180);
+  if ($("text-content")) $("text-content").value = element.type === "text" ? String(element.content || "") : "";
+  if ($("font-role")) $("font-role").value = element.type === "text" ? String(element.text_style?.font_id || "serif") : "serif";
+  if ($("text-fit")) $("text-fit").value = element.type === "text" ? String(element.text_style?.text_fit || "shrink_to_fit") : "shrink_to_fit";
+  $("text-content-wrap")?.toggleAttribute("hidden", element.type !== "text");
+  $("font-role-wrap")?.toggleAttribute("hidden", element.type !== "text");
+  $("text-fit-wrap")?.toggleAttribute("hidden", element.type !== "text");
   state.canvas.getObjects().forEach((item) => {
     if (item._kind !== "photo-frame") return;
     const source = elements().find((candidate) => elementId(candidate) === item._elementId);
@@ -328,8 +385,26 @@ function syncObject(object) {
     transform.zoom = clamp(Number(object.scaleX || 1) / Math.max(Number(object._baseScale || 1), 0.0001), 0.5, 10);
     transform.rotation_deg = Number(object.angle || 0) - Number(element.rotation_deg || 0);
     element.transform = transform; element.image = transform;
+  } else if (object._kind === "text") {
+    const width = Number(object.width || 0) * Number(object.scaleX || 1);
+    const height = Number(object.height || 0) * Number(object.scaleY || 1);
+    element.x = Math.round(Number(object.left || 0)); element.y = Math.round(Number(object.top || 0));
+    element.width = Math.round(width); element.height = Math.round(height); element.rotation_deg = Number(object.angle || 0);
+    object.set({ scaleX: 1, scaleY: 1 });
+  } else if (object._kind === "design-asset") {
+    const width = Number(object.width || 0) * Number(object.scaleX || 1);
+    const height = Number(object.height || 0) * Number(object.scaleY || 1);
+    element.x = Math.round(Number(object.left || 0) - width / 2); element.y = Math.round(Number(object.top || 0) - height / 2);
+    element.width = Math.round(width); element.height = Math.round(height); element.rotation_deg = Number(object.angle || 0);
+    object.set({ scaleX: 1, scaleY: 1 });
   } else {
-    element.x = Math.round(Number(object.left || 0)); element.y = Math.round(Number(object.top || 0)); element.rotation_deg = Number(object.angle || 0);
+    const width = Number(object.width || 0) * Number(object.scaleX || 1);
+    const height = Number(object.height || 0) * Number(object.scaleY || 1);
+    const centered = object.originX === "center" || object.originY === "center";
+    element.x = Math.round(Number(object.left || 0) - (centered ? width / 2 : 0));
+    element.y = Math.round(Number(object.top || 0) - (centered ? height / 2 : 0));
+    element.width = Math.round(width); element.height = Math.round(height); element.rotation_deg = Number(object.angle || 0);
+    object.set({ scaleX: 1, scaleY: 1 });
   }
 }
 
@@ -337,7 +412,7 @@ function applyInteractivity() {
   state.canvas.getObjects().forEach((object) => {
     const element = elements().find((candidate) => elementId(candidate) === object._elementId);
     const enabled = Boolean(element && !element.locked && !element.hidden);
-    object.selectable = enabled && (object._kind === "photo-image" ? state.mode === "crop" : object._kind === "photo-frame" ? state.mode === "layout" : true);
+    object.selectable = enabled && (object._kind === "photo-image" ? state.mode === "crop" : state.mode === "layout");
     object.evented = object.selectable;
   });
 }
@@ -362,6 +437,16 @@ function fitPage() {
     container.style.height = `${page.height * scale}px`;
     container.style.maxWidth = "100%";
   }
+  const guides = $("guide-overlay");
+  if (guides) {
+    const pageSpec = state.doc?.page_spec || {};
+    const safe = Number(pageSpec.safe_margin_mm || 8) * PX_PER_MM * scale;
+    guides.style.width = `${page.width * scale}px`; guides.style.height = `${page.height * scale}px`;
+    guides.style.left = "50%"; guides.style.top = "14px"; guides.style.right = "auto"; guides.style.bottom = "auto";
+    guides.style.transform = "translateX(-50%)";
+    guides.querySelector(".safe")?.style.setProperty("inset", `${safe}px`);
+    guides.querySelector(".spine")?.toggleAttribute("hidden", pageSpec.type !== "spread");
+  }
 }
 
 async function renderNow() {
@@ -372,7 +457,8 @@ async function renderNow() {
   state.renderFallbacks = [];
   for (const element of ordered) {
     if (element.hidden) continue;
-    if (element.type === "photo" || photoId(element)) await addPhoto(element);
+    if (element.type === "photo") await addPhoto(element);
+    else if (element.type === "design_asset") await addDesignAsset(element);
     else addDecoration(element);
   }
   applyInteractivity(); fitPage(); state.canvas.renderAll(); refreshLayers();
@@ -447,7 +533,8 @@ function exportLayout() {
   const assets = [...new Set(elements().map(photoId).filter(Boolean))].map((id) => {
     const info = state.assetMap.get(String(id)) || {}; return { asset_id: id, filename: info.filename || null, source_id: info.source_id || null, width: info.width || null, height: info.height || null };
   });
-  downloadBlob(`photomanager-collage-${state.doc.document_id || "layout"}.json`, new Blob([JSON.stringify({ format: "PhotoManager Collage Layout", schema_version: 2, exported_at: new Date().toISOString(), document: state.doc, assets }, null, 2)], { type: "application/json" }));
+  const designAssets = elements().filter((element) => element.type === "design_asset").map((element) => ({ element_id: elementId(element), asset_id: element.asset_id || element.package_asset_id || null, asset_url: designAssetUrl(element) }));
+  downloadBlob(`photomanager-collage-${state.doc.document_id || "layout"}.json`, new Blob([JSON.stringify({ format: "PhotoManager Collage Layout", schema_version: 2, exported_at: new Date().toISOString(), document: state.doc, assets, design_assets: designAssets }, null, 2)], { type: "application/json" }));
   status(`Exported ${assets.length} assets and ${elements().length} elements.`);
 }
 
@@ -540,7 +627,7 @@ async function applyAiDesign() {
 
 async function loadSample() {
   try {
-    const response = await fetch("/examples/kew-gardens-ai-design-v1.json");
+    const response = await fetch("/examples/kew-gardens-ai-design-v2.json");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const sample = await response.json();
     const currentAssets = [...new Set(elements().map(photoId).filter(Boolean))];
@@ -562,31 +649,48 @@ function replacePhoto(assetId) {
 }
 
 function beginControl() { if (!state.controlBefore && state.doc) state.controlBefore = snapshot(); }
+function updateSelectedControl(mutator, message = "Unsaved change") {
+  const element = activeElement();
+  if (!element) { status("Select a layer first."); return false; }
+  beginControl(); mutator(element); queueRender().then(() => status(message));
+  return true;
+}
 function updatePhotoControl(mutator) {
-  const element = activeElement(); if (!element || element.type !== "photo") { status("Select a photo frame first."); return; }
-  beginControl(); mutator(element); queueRender().then(() => status("Unsaved change"));
+  const element = activeElement();
+  if (!element || element.type !== "photo") { status("Select a photo frame first."); return false; }
+  return updateSelectedControl(mutator);
 }
 function endControl() { if (state.controlBefore) { record(state.controlBefore); state.controlBefore = null; } }
 
 function setupControls() {
-  ["opacity", "border-width", "border-color", "zoom"].forEach((id) => $(id)?.addEventListener("pointerdown", beginControl));
-  $("opacity")?.addEventListener("input", (event) => updatePhotoControl((element) => { element.opacity = Number(event.target.value); }));
+  ["opacity", "frame-rotation", "border-width", "border-color", "zoom"].forEach((id) => {
+    $(id)?.addEventListener("pointerdown", beginControl);
+    $(id)?.addEventListener("change", endControl);
+    $(id)?.addEventListener("blur", endControl);
+  });
+  $("opacity")?.addEventListener("input", (event) => updateSelectedControl((element) => { element.opacity = Number(event.target.value); }));
+  $("frame-rotation")?.addEventListener("input", (event) => updateSelectedControl((element) => { element.rotation_deg = Number(event.target.value); }));
   $("border-width")?.addEventListener("input", (event) => updatePhotoControl((element) => { element.style ||= {}; element.style.border ||= {}; element.style.border.width_mm = Number(event.target.value); }));
   $("border-color")?.addEventListener("input", (event) => updatePhotoControl((element) => { element.style ||= {}; element.style.border ||= {}; element.style.border.color = event.target.value; }));
   $("zoom")?.addEventListener("input", (event) => updatePhotoControl((element) => { element.transform ||= imageTransform(element); element.transform.zoom = Number(event.target.value); element.image = element.transform; }));
-  ["opacity", "border-width", "border-color", "zoom"].forEach((id) => $(id)?.addEventListener("change", endControl));
   $("mask")?.addEventListener("change", (event) => { updatePhotoControl((element) => { element.clipping_shape = event.target.value; element.mask = { type: event.target.value }; }); endControl(); });
-  $("rotate")?.addEventListener("click", () => { updatePhotoControl((element) => { element.transform ||= imageTransform(element); element.transform.rotation_deg = (Number(element.transform.rotation_deg || 0) + 90) % 360; element.image = element.transform; }); endControl(); });
-  $("reset")?.addEventListener("click", () => { updatePhotoControl((element) => { element.transform = { zoom: 1, focus_x: 0.5, focus_y: 0.5, rotation_deg: 0 }; element.image = element.transform; }); endControl(); });
-  $("raise")?.addEventListener("click", () => { updatePhotoControl((element) => { element.z_index = Number(element.z_index || 0) + 1; }); endControl(); });
-  $("lower")?.addEventListener("click", () => { updatePhotoControl((element) => { element.z_index = Number(element.z_index || 0) - 1; }); endControl(); });
+  $("rotate")?.addEventListener("click", () => { if (updatePhotoControl((element) => { element.transform ||= imageTransform(element); element.transform.rotation_deg = (Number(element.transform.rotation_deg || 0) + 90) % 360; element.image = element.transform; })) endControl(); });
+  $("reset")?.addEventListener("click", () => { if (updatePhotoControl((element) => { element.transform = { zoom: 1, focus_x: 0.5, focus_y: 0.5, rotation_deg: 0 }; element.image = element.transform; })) endControl(); });
+  $("raise")?.addEventListener("click", () => { if (updateSelectedControl((element) => { element.z_index = Number(element.z_index || 0) + 1; })) endControl(); });
+  $("lower")?.addEventListener("click", () => { if (updateSelectedControl((element) => { element.z_index = Number(element.z_index || 0) - 1; })) endControl(); });
+  $("text-content")?.addEventListener("input", (event) => updateSelectedControl((element) => { if (element.type === "text") element.content = event.target.value; }));
+  $("text-content")?.addEventListener("change", endControl);
+  $("font-role")?.addEventListener("change", (event) => { if (updateSelectedControl((element) => { if (element.type === "text") { element.text_style ||= {}; element.text_style.font_id = event.target.value; } })) endControl(); });
+  $("text-fit")?.addEventListener("change", (event) => { if (updateSelectedControl((element) => { if (element.type === "text") { element.text_style ||= {}; element.text_style.text_fit = event.target.value; } })) endControl(); });
+  $("toggle-lock")?.addEventListener("click", () => { if (updateSelectedControl((element) => { element.locked = !Boolean(element.locked); })) endControl(); });
+  $("toggle-hide")?.addEventListener("click", () => { if (updateSelectedControl((element) => { element.hidden = !Boolean(element.hidden); })) endControl(); });
   $("delete")?.addEventListener("click", () => { const element = activeElement(); if (!element) return; const before = snapshot(); state.doc.elements = elements().filter((candidate) => elementId(candidate) !== elementId(element)); state.activeId = elements()[0] ? elementId(elements()[0]) : null; record(before); queueRender().then(() => status("Layer deleted. Save variant to keep the change.")); });
 }
 
 function setupCanvas() {
   state.canvas = new fabric.Canvas("canvas", { selection: false, preserveObjectStacking: true, enableRetinaScaling: true });
   state.canvas.on("selection:created", (event) => inspect(event.selected?.[0])); state.canvas.on("selection:updated", (event) => inspect(event.selected?.[0]));
-  state.canvas.on("selection:cleared", () => { state.activeId = null; $("selection").textContent = "No element selected"; setInspectorState(false); refreshLayers(); });
+  state.canvas.on("selection:cleared", () => { state.activeId = null; $("selection").textContent = "No element selected"; setInspectorState(null); refreshLayers(); });
   state.canvas.on("mouse:down", (event) => { if (event.target) { state.activeId = event.target._elementId; state.gestureBefore = snapshot(); } });
   state.canvas.on("object:moving", (event) => { if (state.mode === "crop" && event.target?._kind === "photo-image") { syncObject(event.target); state.canvas.requestRenderAll(); } });
   state.canvas.on("object:modified", (event) => { const before = state.gestureBefore || snapshot(); syncObject(event.target); record(before); state.gestureBefore = null; queueRender().then(() => status("Unsaved change")); });
@@ -598,7 +702,7 @@ function setupCanvas() {
   const upper = state.canvas.upperCanvasEl;
   upper?.addEventListener("dragover", (event) => event.preventDefault());
   upper?.addEventListener("drop", (event) => { event.preventDefault(); const id = event.dataTransfer.getData("text/plain"); if (id) replacePhoto(id); });
-  setInspectorState(false);
+  setInspectorState(null);
 }
 
 function wire() {
@@ -609,6 +713,7 @@ function wire() {
   $("reload")?.addEventListener("click", () => openDocument().catch((error) => status(error.message)));
   $("fit")?.addEventListener("click", () => { fitPage(); state.canvas.requestRenderAll(); status("Page fitted to the available window."); });
   $("save")?.addEventListener("click", saveVariant); $("export")?.addEventListener("click", exportLayout); $("export-png")?.addEventListener("click", exportPng); $("export-hires")?.addEventListener("click", exportHighResPng);
+  $("show-guides")?.addEventListener("change", (event) => { const guides = $("guide-overlay"); if (guides) guides.style.display = event.target.checked ? "block" : "none"; fitPage(); state.canvas?.requestRenderAll(); });
   $("import-ai")?.addEventListener("click", () => $("import-ai-file")?.click()); $("import-debug")?.addEventListener("click", () => $("import-debug-file")?.click());
   $("import-ai-file")?.addEventListener("change", (event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { try { validateAiSpec(JSON.parse(String(reader.result || ""))); } catch (error) { status(`AI JSON is invalid: ${error.message}`); } }; reader.readAsText(file); event.target.value = ""; });
   $("import-debug-file")?.addEventListener("change", (event) => { if (event.target.files?.[0]) importDebugDocument(event.target.files[0]); event.target.value = ""; });

@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://photovault.local/schemas/collage-design-spec-v2.json",
+  "title": "PhotoManager CollageDesignSpec v2",
+  "type": "object",
+  "required": ["format", "schema_version", "page_spec", "assets", "alternatives"],
+  "properties": {
+    "format": {"const": "CollageDesignSpec"},
+    "schema_version": {"const": 2},
+    "package_id": {"type": "string", "pattern": "^(pkg_[a-f0-9]{32}|fixture:[a-z0-9-]+)$"},
+    "catalog_id": {"type": "string", "maxLength": 200},
+    "style": {"type": "string", "maxLength": 200},
+    "style_intent": {"type": "string", "maxLength": 500},
+    "mode": {"enum": ["from_scratch", "improve_existing"]},
+    "page_spec": {"$ref": "#/$defs/pageSpec"},
+    "assets": {"type": "array", "minItems": 1, "maxItems": 200, "items": {"$ref": "#/$defs/photoAsset"}},
+    "alternatives": {"type": "array", "minItems": 0, "maxItems": 5, "description": "Empty for an exported request package; an imported AI response must contain 1-5 alternatives.", "items": {"$ref": "#/$defs/alternative"}}
+  },
+  "$defs": {
+    "pageSpec": {
+      "type": "object",
+      "required": ["type", "width_mm", "height_mm", "bleed_mm", "safe_margin_mm", "gutter_mm", "dpi", "background"],
+      "properties": {
+        "type": {"enum": ["single", "spread"]},
+        "width_mm": {"type": "number", "exclusiveMinimum": 20, "maximum": 2000},
+        "height_mm": {"type": "number", "exclusiveMinimum": 20, "maximum": 2000},
+        "orientation": {"enum": ["portrait", "landscape", "square"]},
+        "bleed_mm": {"type": "number", "minimum": 0, "maximum": 100},
+        "safe_margin_mm": {"type": "number", "minimum": 0, "maximum": 100},
+        "gutter_mm": {"type": "number", "minimum": 0, "maximum": 100},
+        "dpi": {"type": "integer", "minimum": 72, "maximum": 1200},
+        "background": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"},
+        "preset_id": {"type": "string", "maxLength": 80}
+      },
+      "additionalProperties": true
+    },
+    "photoAsset": {
+      "type": "object",
+      "required": ["asset_id"],
+      "properties": {
+        "label": {"type": "string", "pattern": "^A[0-9]{2,3}$"},
+        "asset_id": {"type": "string", "minLength": 1, "maxLength": 200},
+        "filename": {"type": "string", "maxLength": 300},
+        "media_type": {"type": "string", "maxLength": 100}
+      },
+      "additionalProperties": true
+    },
+    "alternative": {
+      "type": "object",
+      "required": ["id", "elements"],
+      "properties": {
+        "id": {"type": "string", "maxLength": 100},
+        "name": {"type": "string", "maxLength": 200},
+        "reason": {"type": "string", "maxLength": 1000},
+        "elements": {"type": "array", "minItems": 1, "maxItems": 200, "items": {"$ref": "#/$defs/element"}}
+      },
+      "additionalProperties": true
+    },
+    "element": {
+      "type": "object",
+      "required": ["id", "type", "x_mm", "y_mm", "width_mm", "height_mm"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 100},
+        "type": {"enum": ["photo", "text", "rectangle", "ellipse", "line", "polygon", "design_asset"]},
+        "x_mm": {"type": "number"}, "y_mm": {"type": "number"},
+        "width_mm": {"type": "number", "minimum": 0}, "height_mm": {"type": "number", "minimum": 0},
+        "rotation_deg": {"type": "number"}, "z_index": {"type": "integer"},
+        "asset_id": {"type": "string", "maxLength": 200},
+        "package_asset_id": {"type": "string", "maxLength": 80},
+        "asset_ref": {"type": "string", "maxLength": 300},
+        "allow_bleed": {"type": "boolean"},
+        "content": {"type": "string", "maxLength": 2000},
+        "text_style": {"$ref": "#/$defs/textStyle"},
+        "image": {"$ref": "#/$defs/imageTransform"},
+        "mask": {"$ref": "#/$defs/mask"}
+      },
+      "additionalProperties": true
+    },
+    "imageTransform": {
+      "type": "object",
+      "properties": {
+        "rotation_deg": {"type": "number"}, "focus_x": {"type": "number", "minimum": 0, "maximum": 1},
+        "focus_y": {"type": "number", "minimum": 0, "maximum": 1}, "zoom": {"type": "number", "minimum": 0.5, "maximum": 10}
+      },
+      "additionalProperties": false
+    },
+    "mask": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {"enum": ["rectangle", "rounded", "circle", "ellipse"]}
+      },
+      "additionalProperties": false
+    },
+    "textStyle": {
+      "type": "object",
+      "properties": {
+        "font_id": {"enum": ["serif", "sans", "script", "display"]},
+        "font_size_pt": {"type": "number", "minimum": 4, "maximum": 300},
+        "weight": {"enum": ["normal", "bold", "600", "700"]}, "italic": {"type": "boolean"},
+        "alignment": {"enum": ["left", "center", "right", "justify"]},
+        "line_height": {"type": "number", "minimum": 0.5, "maximum": 3},
+        "letter_spacing": {"type": "number", "minimum": -20, "maximum": 100},
+        "text_fit": {"enum": ["none", "shrink_to_fit", "wrap_and_shrink"]}
+      },
+      "additionalProperties": true
+    }
+  }
+}
