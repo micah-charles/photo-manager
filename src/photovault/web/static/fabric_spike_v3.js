@@ -8,7 +8,7 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const PX_PER_MM = 4;
 const state = {
   runs: [], candidates: [], doc: null, savedDocumentUrl: null,
-  photos: [], assetMap: new Map(), activeId: null, mode: "layout",
+  photos: [], assetMap: new Map(), activeId: null, mode: "layout", renderMode: "funnel", renderFallbacks: [],
   history: [], future: [], canvas: null, gestureBefore: null,
   controlBefore: null, aiSpec: null, aiPackageId: null, renderPromise: Promise.resolve(),
 };
@@ -69,10 +69,14 @@ function normalizeDocument(raw) {
   return documentValue;
 }
 
-function photoUrl(assetId) {
+function photoUrls(assetId) {
   const info = state.assetMap.get(String(assetId));
-  return info?.thumbnail || `/api/thumb/${encodeURIComponent(assetId)}`;
+  const thumbnail = info?.thumbnail || `/api/thumb/${encodeURIComponent(assetId)}`;
+  const original = info?.original_url || `/api/original/${encodeURIComponent(assetId)}`;
+  return state.renderMode === "view" ? [original, thumbnail] : [thumbnail];
 }
+
+function photoUrl(assetId) { return photoUrls(assetId)[0]; }
 
 function sourceSize(element) {
   const info = state.assetMap.get(String(photoId(element))) || {};
@@ -175,8 +179,14 @@ async function addPhoto(element) {
   state.canvas.add(fallbackFrame);
   const transform = imageTransform(element);
   const source = sourceSize(element);
-  const image = await fabric.Image.fromURL(photoUrl(photoId(element)), { crossOrigin: "anonymous" }).catch(() => null);
+  let image = null;
+  let usedOriginal = false;
+  for (const [index, url] of photoUrls(photoId(element)).entries()) {
+    image = await fabric.Image.fromURL(url, { crossOrigin: "anonymous" }).catch(() => null);
+    if (image) { usedOriginal = state.renderMode === "view" && index === 0; break; }
+  }
   if (!image) return;
+  if (state.renderMode === "view" && !usedOriginal) state.renderFallbacks.push(photoId(element));
   // The editor intentionally renders the catalog thumbnail.  Catalog metadata
   // may describe the original at a different resolution, so use the loaded
   // image's intrinsic dimensions for cover scaling while preserving its
@@ -340,13 +350,14 @@ async function renderNow() {
   const activeBeforeClear = state.activeId;
   state.canvas.clear(); state.activeId = activeBeforeClear; state.canvas.backgroundColor = state.doc.background || state.doc.page_spec?.background || "#f5f2ed";
   const ordered = [...elements()].sort((a, b) => (Number(a.z_index || 0) - Number(b.z_index || 0)) || elementId(a).localeCompare(elementId(b)));
+  state.renderFallbacks = [];
   for (const element of ordered) {
     if (element.hidden) continue;
     if (element.type === "photo" || photoId(element)) await addPhoto(element);
     else addDecoration(element);
   }
   applyInteractivity(); fitPage(); state.canvas.renderAll(); refreshLayers();
-  $("identity").textContent = `${state.doc.provider || "document"} · ${elements().length} elements · ${state.canvas.getObjects().length} layers`;
+  $("identity").textContent = `${state.doc.provider || "document"} · ${state.renderMode} · ${elements().length} elements · ${state.canvas.getObjects().length} layers`;
   if (state.activeId) {
     const desired = state.canvas.getObjects().find((object) => object._elementId === state.activeId && (state.mode === "crop" ? object._kind === "photo-image" : object._kind !== "photo-image"));
     if (desired) state.canvas.setActiveObject(desired); inspect(desired || { _elementId: state.activeId });
@@ -358,6 +369,20 @@ function setMode(nextMode) {
   state.mode = nextMode;
   $("layout")?.classList.toggle("primary", nextMode === "layout"); $("crop")?.classList.toggle("primary", nextMode === "crop");
   applyInteractivity(); state.canvas.discardActiveObject(); state.canvas.requestRenderAll(); status(`${nextMode === "crop" ? "Crop" : "Layout"} mode — select an element`); refreshLayers();
+}
+
+async function setRenderMode(nextMode) {
+  if (!["funnel", "view"].includes(nextMode)) return;
+  state.renderMode = nextMode;
+  if ($("render-mode")) $("render-mode").value = nextMode;
+  if (!state.doc) { status(nextMode === "view" ? "View mode ready: connected originals will be used." : "Fast funnel mode ready."); return; }
+  status(nextMode === "view" ? "Loading connected original photos…" : "Loading fast thumbnail preview…");
+  await queueRender();
+  if (nextMode === "view" && state.renderFallbacks.length) {
+    status(`View mode loaded with ${state.renderFallbacks.length} thumbnail fallback(s); original unavailable.`);
+  } else {
+    status(nextMode === "view" ? "View mode · original photos loaded." : "Fast funnel mode · thumbnail preview loaded.");
+  }
 }
 
 async function loadPhotos() {
@@ -374,7 +399,13 @@ async function loadPhotos() {
 
 async function loadCandidates() {
   const runId = $("run")?.value; if (!runId) return;
-  const data = await api(`/api/collage/runs/${encodeURIComponent(runId)}`); state.candidates = data.candidates || [];
+  const data = await api(`/api/collage/runs/${encodeURIComponent(runId)}`);
+  state.candidates = data.candidates || [];
+  // Keep the editor's source mode aligned with the run that produced the
+  // candidate. Older runs have no mode metadata and intentionally stay fast.
+  const runMode = data.render_mode === "view" ? "view" : "funnel";
+  state.renderMode = runMode;
+  if ($("render-mode")) $("render-mode").value = runMode;
   $("candidate").innerHTML = state.candidates.map((candidate, index) => `<option value="${index}">${esc(candidate.provider)} #${candidate.candidate_number}</option>`).join("") || `<option value="">No candidates</option>`;
   const queryIndex = Number(new URLSearchParams(location.search).get("candidate"));
   if (Number.isInteger(queryIndex) && queryIndex >= 0 && queryIndex < state.candidates.length) $("candidate").value = queryIndex;
@@ -402,7 +433,55 @@ function exportLayout() {
 
 function exportPng() {
   if (!state.doc) { status("Open a document first."); return; }
-  try { const dataUrl = state.canvas.toDataURL({ format: "png", multiplier: 2 }); const link = document.createElement("a"); link.href = dataUrl; link.download = `photomanager-collage-${state.doc.document_id || "layout"}.png`; link.click(); status("Exported PNG preview."); } catch (error) { status(`PNG export failed: ${error.message}`); }
+  try { const dataUrl = state.canvas.toDataURL({ format: "png", multiplier: 2 }); const link = document.createElement("a"); link.href = dataUrl; link.download = `photomanager-collage-preview-${state.doc.document_id || "layout"}.png`; link.click(); status("Exported 2× preview PNG."); } catch (error) { status(`PNG export failed: ${error.message}`); }
+}
+
+async function exportHighResPng() {
+  if (!state.doc) { status("Open a document first."); return; }
+  const previousMode = state.renderMode;
+  try {
+    state.renderMode = "view";
+    if ($("render-mode")) $("render-mode").value = "view";
+    status("Loading original photos for high-resolution export…");
+    await queueRender();
+    if (state.renderFallbacks.length) throw new Error(`${state.renderFallbacks.length} original photo(s) are offline; high-resolution export was not created.`);
+    const page = state.doc.page_spec || {};
+    const widthMm = Number(page.width_mm || 300) * (page.type === "spread" ? 2 : 1);
+    const heightMm = Number(page.height_mm || 200);
+    const dpi = clamp(Number(page.dpi || 300), 72, 1200);
+    const targetWidth = Math.max(1, Math.round(widthMm / 25.4 * dpi));
+    const targetHeight = Math.max(1, Math.round(heightMm / 25.4 * dpi));
+    const logical = canvasSize();
+    // fitPage() deliberately changes Fabric's backing canvas to the on-screen
+    // size. Export from logical document coordinates so the requested physical
+    // DPI is not multiplied from a 724px (or similarly fitted) viewport.
+    const fittedWidth = state.canvas.getWidth();
+    const fittedHeight = state.canvas.getHeight();
+    const fittedViewport = state.canvas.viewportTransform ? state.canvas.viewportTransform.slice() : null;
+    let dataUrl;
+    try {
+      state.canvas.setZoom(1);
+      state.canvas.setDimensions({ width: logical.width, height: logical.height });
+      const multiplier = targetWidth / Math.max(logical.width, 1);
+      dataUrl = state.canvas.toDataURL({ format: "png", multiplier, enableRetinaScaling: false });
+    } finally {
+      state.canvas.setDimensions({ width: fittedWidth, height: fittedHeight });
+      if (fittedViewport) state.canvas.setViewportTransform(fittedViewport);
+      fitPage();
+      state.canvas.requestRenderAll();
+    }
+    const link = document.createElement("a"); link.href = dataUrl;
+    link.download = `photomanager-collage-${state.doc.document_id || "layout"}-${targetWidth}x${targetHeight}px.png`; link.click();
+    status(`Exported high-resolution PNG ${targetWidth} × ${targetHeight}px from original photos.`);
+  } catch (error) {
+    status(`High-resolution export failed: ${error.message}`);
+  } finally {
+    if (previousMode !== "view") {
+      state.renderMode = previousMode;
+      if ($("render-mode")) $("render-mode").value = previousMode;
+      await queueRender();
+    }
+  }
 }
 
 async function saveVariant() {
@@ -495,9 +574,10 @@ function wire() {
   $("open")?.addEventListener("click", () => openDocument().catch((error) => status(error.message)));
   $("run")?.addEventListener("change", () => loadCandidates().catch((error) => status(error.message)));
   $("layout")?.addEventListener("click", () => setMode("layout")); $("crop")?.addEventListener("click", () => setMode("crop"));
+  $("render-mode")?.addEventListener("change", (event) => setRenderMode(event.target.value).catch((error) => status(`Photo source change failed: ${error.message}`)));
   $("reload")?.addEventListener("click", () => openDocument().catch((error) => status(error.message)));
   $("fit")?.addEventListener("click", () => { fitPage(); state.canvas.requestRenderAll(); status("Page fitted to the available window."); });
-  $("save")?.addEventListener("click", saveVariant); $("export")?.addEventListener("click", exportLayout); $("export-png")?.addEventListener("click", exportPng);
+  $("save")?.addEventListener("click", saveVariant); $("export")?.addEventListener("click", exportLayout); $("export-png")?.addEventListener("click", exportPng); $("export-hires")?.addEventListener("click", exportHighResPng);
   $("import-ai")?.addEventListener("click", () => $("import-ai-file")?.click()); $("import-debug")?.addEventListener("click", () => $("import-debug-file")?.click());
   $("import-ai-file")?.addEventListener("change", (event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { try { validateAiSpec(JSON.parse(String(reader.result || ""))); } catch (error) { status(`AI JSON is invalid: ${error.message}`); } }; reader.readAsText(file); event.target.value = ""; });
   $("import-debug-file")?.addEventListener("change", (event) => { if (event.target.files?.[0]) importDebugDocument(event.target.files[0]); event.target.value = ""; });

@@ -33,12 +33,15 @@ def run_poc_photos(photos, output: Path, seed: int = 42, started: float | None =
                    providers: list[str] | None = None, count: int = 10,
                    source_run_id: str = "", page_spec: PageSpec | dict[str, object] | None = None,
                    photo_transforms: dict[str, dict[str, object]] | None = None,
-                   progress_callback: Callable[[int, str], None] | None = None) -> dict[str, object]:
+                   progress_callback: Callable[[int, str], None] | None = None,
+                   preview_long_edge: int = 1200) -> dict[str, object]:
     started = started or time.perf_counter()
     if not 1 <= len(photos) <= 20:
         raise ValueError(f"POC expects 1–20 readable images, found {len(photos)}")
     page_spec = page_spec_from_dict(page_spec) if isinstance(page_spec, dict) else (page_spec or PageSpec())
-    canvas = page_spec.to_preview_canvas()
+    if not 600 <= int(preview_long_edge) <= 4000:
+        raise ValueError("preview_long_edge must be between 600 and 4000 pixels")
+    canvas = page_spec.to_preview_canvas(long_edge=int(preview_long_edge))
     selected_providers = providers or list(PROVIDER_TYPES)
     if not selected_providers or any(name not in PROVIDER_TYPES for name in selected_providers):
         raise ValueError("choose one or more valid layout providers")

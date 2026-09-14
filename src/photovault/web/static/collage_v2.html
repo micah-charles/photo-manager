@@ -17,10 +17,11 @@
       <div class="row"><label>Bleed mm <input id="page-bleed" type="number" min="0" max="20" step="0.5" value="3" style="width:60px"></label><label>Safe margin mm <input id="page-safe" type="number" min="0" max="50" step="0.5" value="8" style="width:60px"></label><label>Gutter mm <input id="page-gutter" type="number" min="0" max="50" step="0.5" value="4" style="width:60px"></label><label>DPI <input id="page-dpi" type="number" min="72" max="1200" value="300" style="width:70px"></label></div>
       <div id="photos" class="photos"></div><hr>
       <div class="row"><strong>Layout providers</strong><span class="muted">Select one or more</span></div><div class="providers"><label><input type="checkbox" name="provider" value="native" checked> Native</label><label><input type="checkbox" name="provider" value="cewe-genetic" checked> CEWE Fan genetic</label><label><input type="checkbox" name="provider" value="bsp" checked> BSP</label><label>Candidates/provider <input id="candidate-count" type="number" min="1" max="30" value="10" style="width:70px"></label></div>
+      <div class="row"><label>Generation mode <select id="render-mode"><option value="funnel" selected>Fast funnel · quick preview</option><option value="view">View photos · high-resolution preview</option></select></label><span class="muted">Both analyse originals; View mode writes a sharper 2400px candidate preview. Final editor export uses originals at page DPI.</span></div>
       <div class="row"><button id="generate" class="primary" disabled>Generate collages</button><span id="status" class="muted"></span></div>
     </section>
     <section id="results" class="panel hidden"><div class="row"><h2>Candidate gallery</h2><button id="regenerate">Regenerate</button><button id="change">Change photos</button><label><input id="show-rejected" type="checkbox"> Show rejected</label></div><div id="metrics" class="muted"></div><div id="gallery" class="gallery"></div></section>
   </main>
-  <script src="/collage_v2.js?v=20260913-1"></script><script src="/collage_design_package.js?v=20260913-1"></script>
+  <script src="/collage_v2.js?v=20260914-1"></script><script src="/collage_design_package.js?v=20260913-1"></script>
 </body>
 </html>

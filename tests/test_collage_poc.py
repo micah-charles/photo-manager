@@ -77,6 +77,16 @@ class CollagePocTests(unittest.TestCase):
             self.assertEqual(len(list((output / "previews").glob("*.jpg"))), 3)
             self.assertEqual(result["provider_seconds"].keys(), {"bsp"})
 
+    def test_runner_can_write_a_sharper_view_mode_preview(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, output = Path(temp) / "input", Path(temp) / "out"
+            root.mkdir()
+            for index in range(3):
+                Image.new("RGB", (800, 600), (index * 30, 100, 120)).save(root / f"photo-{index}.jpg")
+            run_poc_photos(discover_photos(root, 3), output, providers=["native"], count=1, preview_long_edge=2400)
+            document = json.loads(next((output / "documents").glob("*.json")).read_text())
+            self.assertEqual((document["canvas"]["width"], document["canvas"]["height"]), (2400, 2400))
+
     def test_runner_persists_page_spec_and_uses_its_ratio(self):
         with tempfile.TemporaryDirectory() as temp:
             root, output = Path(temp) / "input", Path(temp) / "out"

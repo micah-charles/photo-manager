@@ -143,6 +143,13 @@ def _run_collage_job(httpd, catalog_path: Path, payload: dict[str, object], job_
         providers = [str(value) for value in requested_providers] if isinstance(requested_providers, list) else None
         page_spec = page_spec_from_dict(payload.get("page_spec"))
         transforms = payload.get("photo_transforms") if isinstance(payload.get("photo_transforms"), dict) else None
+        render_mode = str(payload.get("render_mode") or "funnel").strip().lower()
+        if render_mode not in {"funnel", "view"}:
+            raise ValueError("render_mode must be funnel or view")
+        # Candidate generation always analyses the connected original files.
+        # The mode controls the disposable gallery preview size; the editor's
+        # View mode reloads originals for the final page export.
+        preview_long_edge = 1200 if render_mode == "funnel" else 2400
         job.update(progress=30, stage="generating candidates", run_id=run_id)
         metrics = run_poc_photos(
             photos,
@@ -153,11 +160,12 @@ def _run_collage_job(httpd, catalog_path: Path, payload: dict[str, object], job_
             source_run_id=run_id,
             page_spec=page_spec,
             photo_transforms=transforms,
+            preview_long_edge=preview_long_edge,
             progress_callback=lambda progress, stage: job.update(progress=progress, stage=stage),
         )
         job.update(progress=90, stage="saving candidates")
         candidates = json.loads((output / "candidates.json").read_text())
-        result = {"run_id": run_id, "timestamp": datetime.now(timezone.utc).isoformat(), "selected_asset_ids": asset_ids, "seed": int(payload.get("seed", 42)), "page_spec": page_spec.to_dict(), "metrics": metrics, "candidates": [{"document_id": c["document_id"], "provider": c["provider"], "candidate_number": c["candidate_number"], "seed": c["seed"], "rejected": c["rejected"], "rejection_reasons": c["rejection_reasons"], "preview": f"/api/collage/runs/{run_id}/previews/{c['provider']}-{c['candidate_number']:02d}-seed-{c['seed']}.jpg", "document": f"/api/collage/runs/{run_id}/documents/{c['document_id']}"} for c in candidates]}
+        result = {"run_id": run_id, "timestamp": datetime.now(timezone.utc).isoformat(), "selected_asset_ids": asset_ids, "seed": int(payload.get("seed", 42)), "page_spec": page_spec.to_dict(), "render_mode": render_mode, "preview_long_edge": preview_long_edge, "metrics": metrics, "candidates": [{"document_id": c["document_id"], "provider": c["provider"], "candidate_number": c["candidate_number"], "seed": c["seed"], "rejected": c["rejected"], "rejection_reasons": c["rejection_reasons"], "preview": f"/api/collage/runs/{run_id}/previews/{c['provider']}-{c['candidate_number']:02d}-seed-{c['seed']}.jpg", "document": f"/api/collage/runs/{run_id}/documents/{c['document_id']}"} for c in candidates]}
         (output / "run.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
         getattr(httpd, "collage_runs")[run_id] = {"output": output, "payload": result}
         job.update(status="complete", stage="complete", progress=100, result=result)

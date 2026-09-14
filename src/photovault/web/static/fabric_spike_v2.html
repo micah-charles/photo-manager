@@ -34,13 +34,15 @@
       <a href="/experimental/collage">← Back to Smart Collage</a>
     </header>
     <section class="bar">
+      <label>Photo source <select id="render-mode" aria-describedby="render-mode-help"><option value="funnel" selected>Fast funnel · thumbnail</option><option value="view">View photos · original</option></select></label>
+      <span id="render-mode-help" class="muted">Funnel is quick; View photos loads connected originals for inspection and final export.</span>
       <label>Run <select id="run"><option>Loading runs…</option></select></label>
       <label>Candidate <select id="candidate"><option>Choose a run</option></select></label>
       <button id="open" class="primary">Open candidate</button><span id="identity" class="badge">No document loaded</span>
     </section>
     <section class="bar">
       <button id="undo">Undo</button><button id="redo">Redo</button><button id="layout" class="primary">Layout mode</button><button id="crop">Crop mode</button><button id="fit">Fit page</button><button id="save" class="primary">Save variant</button><button id="reload">Reload saved</button>
-      <button id="export">Export layout JSON</button><button id="export-png">Export PNG</button><button id="export-package">Export ChatGPT package</button>
+      <button id="export">Export layout JSON</button><button id="export-png">Export preview PNG</button><button id="export-hires" class="primary">Export high-res PNG</button><button id="export-package">Export ChatGPT package</button>
       <button id="load-sample">Load Kew Gardens AI sample</button><button id="import-ai">Import AI design</button><button id="import-debug">Import CollageDocument (debug)</button>
       <input id="import-ai-file" type="file" accept="application/json,.json" hidden><input id="import-debug-file" type="file" accept="application/json,.json" hidden>
       <span id="alternative-picker" class="inline-control" hidden>Alternative <select id="alternative"></select><button id="apply-ai" disabled>Open selected</button></span>
@@ -53,7 +55,7 @@
     </section>
   </main>
   <script src="/vendor/fabric/index.min.js"></script>
-  <script src="/fabric_spike_v3.js?v=20260913-1"></script>
+  <script src="/fabric_spike_v3.js?v=20260914-1"></script>
   <script src="/collage_editor_package.js?v=20260913-1"></script>
 </body>
 </html>
