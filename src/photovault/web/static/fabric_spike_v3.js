@@ -138,6 +138,20 @@ function imageTransform(element) {
   };
 }
 
+// Catalog thumbnails are generated as plain JPEGs and therefore no longer
+// carry the source file's EXIF orientation. Originals may still carry it and
+// the browser applies it while decoding them. Normalize the thumbnail
+// projection here; the original projection is already orientation-correct.
+function exifRotation(orientation) {
+  return ({ 3: 180, 6: 90, 8: 270 })[Number(orientation)] || 0;
+}
+
+function sourceRotation(element, context, usedOriginal) {
+  if (usedOriginal) return 0;
+  const info = (context?.assetMap || state.assetMap).get(String(photoId(element))) || {};
+  return exifRotation(info.orientation);
+}
+
 function elementStyle(element) {
   const style = element.style || {};
   const oldBorder = typeof element.border === "object" ? element.border : {};
@@ -348,22 +362,21 @@ function frameObject(element, context = null) {
   return object;
 }
 
-function clipPath(element, imageScale) {
+function clipPath(element, imageScale, imageRotation = imageTransform(element).rotation) {
   const width = Number(element.width || 0) / Math.max(imageScale, 0.0001);
   const height = Number(element.height || 0) / Math.max(imageScale, 0.0001);
   const shape = shapeName(element);
-  const transform = imageTransform(element);
   if (shape === "circle") {
-    return new fabric.Circle({ left: 0, top: 0, originX: "center", originY: "center", radius: Math.min(width, height) / 2, angle: -transform.rotation });
+    return new fabric.Circle({ left: 0, top: 0, originX: "center", originY: "center", radius: Math.min(width, height) / 2, angle: -imageRotation });
   }
   if (shape === "ellipse") {
-    return new fabric.Ellipse({ left: 0, top: 0, originX: "center", originY: "center", rx: width / 2, ry: height / 2, angle: -transform.rotation });
+    return new fabric.Ellipse({ left: 0, top: 0, originX: "center", originY: "center", rx: width / 2, ry: height / 2, angle: -imageRotation });
   }
   return new fabric.Rect({
     left: 0, top: 0, originX: "center", originY: "center", width, height,
     rx: shape === "rounded" ? Math.min(width, height) * 0.12 : 0,
     ry: shape === "rounded" ? Math.min(width, height) * 0.12 : 0,
-    angle: -transform.rotation,
+    angle: -imageRotation,
   });
 }
 
@@ -377,7 +390,7 @@ async function loadPhotoImage(element, context = null) {
       if (image) { usedOriginal = (context?.renderMode || state.renderMode) === "view" && index === 0; break; }
     } catch (error) { lastError = error; }
   }
-  return { image, usedOriginal, error: image ? null : lastError || new Error(`Photo asset ${photoId(element)} could not be loaded.`) };
+  return { image, usedOriginal, sourceRotation: sourceRotation(element, context, usedOriginal), error: image ? null : lastError || new Error(`Photo asset ${photoId(element)} could not be loaded.`) };
 }
 
 async function addPhoto(element, loaded = null, context = null) {
@@ -404,7 +417,8 @@ async function addPhoto(element, loaded = null, context = null) {
   // image's intrinsic dimensions for cover scaling while preserving its
   // aspect ratio for high-resolution export.
   const loadedSource = { width: Number(image.width || source.width), height: Number(image.height || source.height) };
-  const quarterTurn = Math.abs(Math.round(transform.rotation / 90)) % 2 === 1;
+  const imageRotation = Number(loadedResult.sourceRotation || 0) + transform.rotation;
+  const quarterTurn = Math.abs(Math.round(imageRotation / 90)) % 2 === 1;
   const visualWidth = quarterTurn ? loadedSource.height : loadedSource.width;
   const visualHeight = quarterTurn ? loadedSource.width : loadedSource.height;
   const frameWidth = Number(element.width || 0);
@@ -417,12 +431,12 @@ async function addPhoto(element, loaded = null, context = null) {
     left: centerX + (0.5 - transform.focus_x) * visualWidth * imageScale,
     top: centerY + (0.5 - transform.focus_y) * visualHeight * imageScale,
     originX: "center", originY: "center", scaleX: imageScale, scaleY: imageScale,
-    angle: Number(element.rotation_deg || 0) + transform.rotation,
+    angle: Number(element.rotation_deg || 0) + imageRotation,
     opacity: Number(element.opacity ?? 1), objectCaching: false,
     visible: !element.hidden, selectable: ctx.interactive && !element.locked && !element.hidden && ctx.mode === "crop",
     evented: ctx.interactive && !element.locked && !element.hidden && ctx.mode === "crop",
   });
-  image.clipPath = clipPath(element, imageScale);
+  image.clipPath = clipPath(element, imageScale, imageRotation);
   image._elementId = id; image._kind = "photo-image"; image._baseScale = baseScale;
   image._visualWidth = visualWidth; image._visualHeight = visualHeight;
   ctx.canvas.remove(fallbackFrame);

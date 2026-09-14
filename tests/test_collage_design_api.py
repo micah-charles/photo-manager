@@ -27,7 +27,10 @@ class CollageDesignApiTests(unittest.TestCase):
             root = Path(directory) / "photos"
             root.mkdir()
             Image.new("RGB", (320, 240), "#d36c5c").save(root / "one.jpg")
-            Image.new("RGB", (240, 320), "#4b8f8c").save(root / "two.jpg")
+            oriented = Image.new("RGB", (240, 320), "#4b8f8c")
+            exif = Image.Exif()
+            exif[274] = 6  # camera-native portrait pixels, displayed landscape
+            oriented.save(root / "two.jpg", exif=exif)
             catalog = Path(directory) / "catalog.db"
             db = connect(catalog)
             volume_id = register_volume(db, root, _Provider())
@@ -72,6 +75,9 @@ class CollageDesignApiTests(unittest.TestCase):
             manifest = exported["manifest"]
             self.assertNotIn("absolute_path", json.dumps(manifest))
             self.assertNotIn("thumbnail_path", json.dumps(manifest))
+            oriented_asset = next(item for item in manifest["photo_assets"] if item["orientation"] == 6)
+            self.assertEqual(oriented_asset["width"], 240)
+            self.assertEqual(oriented_asset["height"], 320)
 
             status, package_bytes = request("GET", exported["download"])
             self.assertEqual(status, 200)
@@ -82,6 +88,10 @@ class CollageDesignApiTests(unittest.TestCase):
                 self.assertIn("contact-sheet.jpg", names)
                 self.assertIn("thumbnails/A01.jpg", names)
                 self.assertIn("README-for-AI.txt", names)
+                package = json.loads(archive.read("design-package.json"))
+                oriented_index = next(index for index, item in enumerate(package["assets"]) if item["orientation"] == 6)
+                with Image.open(archive.open(f"thumbnails/A{oriented_index + 1:02d}.jpg")) as normalized:
+                    self.assertGreater(normalized.width, normalized.height)
 
             spec = {
                 "format": "CollageDesignSpec",

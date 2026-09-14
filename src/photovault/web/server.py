@@ -39,7 +39,7 @@ from photovault.collage.design_formats import (
     validate_and_repair_design_spec, validate_collage_document,
     validate_design_spec, to_collage_document, validate_page_spec,
 )
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 STATIC_ROOT = Path(__file__).with_name("static")
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -404,7 +404,8 @@ def _row_payload(row) -> dict[str, object]:
         "absolute_path": absolute_path,
         "original_url": f"/api/original/{row['asset_id']}",
         "camera": " ".join(filter(None, (row["camera_make"], row["camera_model"]))) or None,
-        "width": row["width"], "height": row["height"], "latitude": row["latitude"], "longitude": row["longitude"],
+        "width": row["width"], "height": row["height"], "orientation": row["orientation"],
+        "latitude": row["latitude"], "longitude": row["longitude"],
         "favourite": bool(row["is_favourite"]), "review_status": row["review_status"], "rating": row["rating"],
         "topics": row["event_names"], "tags": row["tag_names"], "places": row["place_names"] or row["inherited_place_names"],
         "people": row["person_names"],
@@ -785,7 +786,8 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                         "source_id": item.get("source_id"), "source": item.get("source"),
                         "relative_path": item.get("relative_path"), "size_bytes": item.get("size_bytes"),
                         "capture_datetime": item.get("captured"), "width": item.get("width"),
-                        "height": item.get("height"), "camera": item.get("camera"),
+                        "height": item.get("height"), "orientation": item.get("orientation"),
+                        "camera": item.get("camera"),
                         "analysis": {"faces": "unavailable", "saliency": "unavailable"},
                         "thumbnail_file": f"thumbnails/A{index + 1:02d}.jpg",
                     })
@@ -839,10 +841,28 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                 images: dict[str, bytes] = {}
                 for index, asset_id in enumerate(asset_ids):
                     item = items_by_id[asset_id]; raw = b""
-                    path = item.get("thumbnail_path") or item.get("absolute_path")
+                    # Prefer the connected original while building package
+                    # thumbnails so EXIF orientation is normalized before the
+                    # safe, embedded copy is written. Offline assets fall back
+                    # to the cached thumbnail and use the catalog orientation.
+                    path = item.get("absolute_path") or item.get("thumbnail_path")
                     try:
                         with Image.open(str(path)) as source:
-                            thumb = source.convert("RGB"); thumb.thumbnail((145, 135))
+                            thumb = ImageOps.exif_transpose(source).convert("RGB")
+                            if not item.get("absolute_path"):
+                                orientation = int(item.get("orientation") or 1)
+                                transpose = {
+                                    2: Image.Transpose.FLIP_LEFT_RIGHT,
+                                    3: Image.Transpose.ROTATE_180,
+                                    4: Image.Transpose.FLIP_TOP_BOTTOM,
+                                    5: Image.Transpose.TRANSPOSE,
+                                    6: Image.Transpose.ROTATE_270,
+                                    7: Image.Transpose.TRANSVERSE,
+                                    8: Image.Transpose.ROTATE_90,
+                                }.get(orientation)
+                                if transpose is not None:
+                                    thumb = thumb.transpose(transpose)
+                            thumb.thumbnail((145, 135))
                             cell = Image.new("RGB", (150, 145), "white"); cell.paste(thumb, ((150-thumb.width)//2, 2));
                             x = (index % 6) * 165 + 5; y = (index // 6) * 180 + 5
                             contact.paste(cell, (x, y)); draw.text((x, y + 148), f"A{index + 1:02d} {item['filename'][:18]}", fill="#292521")

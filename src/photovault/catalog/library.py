@@ -198,7 +198,7 @@ def list_library_items(connection: sqlite3.Connection, query: LibraryQuery = Lib
                     THEN datetime(COALESCE(mm.capture_datetime, al.capture_date),
                                   printf('%+d seconds', COALESCE(sp.time_offset_seconds, 0)))
                     ELSE datetime(al.modified_ns / 1000000000, 'unixepoch') END AS display_captured,
-               mm.camera_make, mm.camera_model, mm.width, mm.height,
+               mm.camera_make, mm.camera_model, mm.width, mm.height, mm.orientation,
                gm.latitude, gm.longitude, mm.date_source,
                th.path AS thumbnail_path,
                EXISTS (SELECT 1 FROM asset_favourites f WHERE f.asset_id=al.asset_id) AS is_favourite,

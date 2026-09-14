@@ -17,6 +17,9 @@ class CollageEditorContractTests(unittest.TestCase):
         self.assertIn("strictAssets: true", source)
         self.assertIn("state.activeId = activeBeforeClear;", source)
         self.assertIn("state.savedDocumentUrl = documentUrl;", source)
+        self.assertIn("function exifRotation(orientation)", source)
+        self.assertIn("sourceRotation: sourceRotation(element, context, usedOriginal)", source)
+        self.assertIn("const imageRotation = Number(loadedResult.sourceRotation || 0) + transform.rotation;", source)
 
         export_section = source[source.index("async function exportRenderedPng"):source.index("async function saveVariant")]
         self.assertNotIn("state.canvas.setDimensions", export_section)
