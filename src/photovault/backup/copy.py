@@ -12,7 +12,9 @@ from typing import Callable
 
 from photovault.backup.reconcile import reconcile_backup_set
 from photovault.catalog.hashing import sha256_file
+from photovault.catalog.sources import register_source
 from photovault.observability import log_event
+from photovault.sources.base import SourceIdentity
 
 
 def _utc_now() -> str:
@@ -95,15 +97,33 @@ def build_copy_plan(connection: sqlite3.Connection, backup_set_id: str, backup_v
 
 def _record_destination(connection: sqlite3.Connection, plan: CopyPlan, item: CopyPlanItem) -> None:
     stat = item.destination_path.stat()
+    source_id = f"folder:{plan.backup_volume_id}"
+    volume = connection.execute(
+        "SELECT display_name FROM volumes WHERE id=?", (plan.backup_volume_id,)
+    ).fetchone()
+    register_source(connection, SourceIdentity(
+        source_id=source_id,
+        manufacturer="Local filesystem",
+        model="Folder / removable media",
+        display_name=str(volume[0] if volume else plan.backup_volume_id),
+        adapter="local_folder",
+    ))
+    # Upgrade a pre-provenance destination row rather than creating a second
+    # location for the same physical path.
+    connection.execute(
+        "UPDATE asset_locations SET source_id=? "
+        "WHERE volume_id=? AND relative_path=? AND source_id IS NULL",
+        (source_id, plan.backup_volume_id, item.relative_path),
+    )
     connection.execute(
         """
-        INSERT INTO asset_locations(asset_id, volume_id, relative_path, filename, size_bytes, modified_ns)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(volume_id, relative_path) DO UPDATE SET
+        INSERT INTO asset_locations(asset_id, volume_id, relative_path, filename, size_bytes, modified_ns, source_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(volume_id, relative_path, source_id) DO UPDATE SET
           asset_id=excluded.asset_id, filename=excluded.filename, size_bytes=excluded.size_bytes,
           modified_ns=excluded.modified_ns, missing_since=NULL
         """,
-        (item.asset_id, plan.backup_volume_id, item.relative_path, item.destination_path.name, stat.st_size, stat.st_mtime_ns),
+        (item.asset_id, plan.backup_volume_id, item.relative_path, item.destination_path.name, stat.st_size, stat.st_mtime_ns, source_id),
     )
 
 

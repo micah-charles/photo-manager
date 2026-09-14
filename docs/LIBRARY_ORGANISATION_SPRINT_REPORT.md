@@ -1,0 +1,113 @@
+# PhotoVault library organisation sprint
+
+**Updated:** 2026-09-02
+
+## Verified implementation status
+
+The catalog now has additive migration support for source provenance, source
+display-time offsets, events, tags, manual places, review status, and ratings.
+The Library query uses the same filters for listing and counting, hides rejected
+and hidden items by default, and keeps an explicit opt-in to show them.
+
+The desktop UI currently exposes:
+
+- Library source, event, tag, place, review, rating, and hidden-item filters;
+- batch review status, rating, Event, Tag, and Place actions;
+- Review queues with keyboard shortcuts in the Viewer (`P`, `R`, `H`, and arrows);
+- Event and Tag creation and filter navigation;
+- contextual Event Detail view with date/place/People/Tags summary, thumbnails,
+  Library handoff, and catalog-only membership removal;
+- Review dashboard counts for Unreviewed, Picked, Rejected, and Hidden queues;
+- Event type/default-place fields and inclusive date-range membership when both
+  event dates are supplied;
+- catalog-only manual People creation, rename/delete, assignment/removal, and
+  Library filtering alongside imported face groups;
+- manual Place creation;
+- Source listing, local folder/SD registration, background scan, and display-only
+  time-offset editing;
+- Viewer organisation metadata inspection;
+- source-aware unified Timeline display time while retaining raw capture time.
+- Timeline day grouping and a cross-source filter for chronological browsing.
+- Timeline date-range filtering and direct row-to-Viewer navigation.
+- Event Detail source filtering and direct member-to-Viewer navigation.
+- Paginated Library and Timeline browsing, with explicit page-size and
+  Previous/Next controls so large catalogs are not truncated to the first page.
+- Manual Places table with select-to-edit, update, delete, and Library assignment.
+- Durable import-batch history with per-run source/destination identity,
+  lifecycle status, verified counters, byte totals, and Activity-page display.
+- Native destination folder picker for Android backups, with manual path input
+  retained as a fallback.
+- The Photo Viewer now provides direct catalog-only Event, Tag, Place, Person,
+  and Album assignment controls without leaving the viewer.
+- Favourite can be toggled from a visible Viewer button or the `F` shortcut;
+  both paths update the same catalog-only annotation.
+- Visual duplicate analysis controls are kept in Settings; the normal duplicate
+  page is an advisory review entry point and never presents algorithm details as
+  a destructive action.
+- Android transfer worker count is now an advanced transfer setting; the normal
+  setup focuses on source folders, media type, destination, and verified backup.
+
+All organisation actions are catalog-only. They do not move, rename, delete, or
+rewrite original media. Existing verified import and backup safety boundaries are
+unchanged.
+
+The full entity model, provenance rules, and physical-versus-logical boundary
+are documented in `docs/LIBRARY_ORGANISATION_ARCHITECTURE.md`.
+
+## Verification evidence
+
+```text
+PYTHONUNBUFFERED=1 PYTHONWARNINGS=ignore QT_QPA_PLATFORM=offscreen \
+PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
+
+Ran 121 tests
+OK
+```
+
+The deterministic Qt capture harness covers 20 pages, including Timeline, Import, Event Detail and
+Settings. The existing screenshots
+are stored outside the repository at:
+
+`<visual-qa-root>/screenshots`
+
+The catalog fixture used for visual QA is a copy under
+`<visual-qa-root>`; the original regression
+catalog is not opened in write mode by the capture process.
+
+The current macOS release smoke check also passes:
+
+- PyInstaller 6.22.2 produced `dist/PhotoVault.app` for arm64;
+- the bundled executable responds to `--help`;
+- the bundle contains the native macOS Android MTP helper;
+- the Windows packaging path remains platform-neutral in Python, but requires
+  an actual Windows runner for final executable and removable-drive validation.
+  The last observed remote run (`33186919958`, older commit `962fd0c`) reached
+  the Windows test job but failed 35 tests with repeated `WinError 32` errors
+  while temporary SQLite catalogs were cleaned up; the current branch still
+  needs a fresh runner result.
+
+The user-facing Import page now supports mounted folder/camera-card preview and
+explicit Catalog in Place versus reviewed Managed Copy routing. Event default
+places are surfaced as explicit inherited context in Library/inspector when no
+asset place overrides them; original embedded metadata remains unchanged.
+Event suggestions now have explicit Accept and Dismiss actions; dismissals are
+remembered by date range and are not recreated on later suggestion scans.
+Settings now
+persist locally through the desktop user's QSettings store. Category
+analysis paths and limits, duplicate method/threshold, place cluster radius, and
+Vision people JSON path reload after restarting the app; saving them never writes
+to originals or catalog media.
+
+The live acceptance procedure is documented in
+`docs/PHASE_0_LIVE_ACCEPTANCE_RUNBOOK.md`. The latest offscreen capture on
+2026-09-02 produced 20 PNG pages successfully; interactive GUI inspection and
+live-device transfer still require an unlocked desktop.
+
+## Remaining work before final completion
+
+The master brief still requires a final product pass for multi-source import
+batch controls/resume UX, bulk metadata UX polish, accessibility checks,
+cross-platform packaging validation, and a final end-to-end acceptance
+walkthrough on representative media. These items remain deliberately open;
+the green regression suite is not treated as proof that the entire brief is
+complete.

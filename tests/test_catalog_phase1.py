@@ -9,6 +9,7 @@ from pathlib import Path
 from photovault.catalog.scanner import register_volume, scan_volume
 from photovault.catalog.volume_state import refresh_volume_statuses
 from photovault.database.connection import connect
+from photovault.database.migrations import MIGRATIONS
 from photovault.platform.base import VolumeIdentity
 from photovault.platform.macos.volume import MacOSVolumeProvider
 
@@ -22,7 +23,10 @@ class CatalogPhase1Tests(unittest.TestCase):
     def test_in_memory_catalog_does_not_create_a_filesystem_artifact(self) -> None:
         db = connect(":memory:")
         self.addCleanup(db.close)
-        self.assertEqual(db.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 8)
+        self.assertEqual(
+            db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0],
+            max(version for version, _ in MIGRATIONS),
+        )
 
     def test_register_scan_and_rescan_are_read_only_and_incremental(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -32,6 +36,7 @@ class CatalogPhase1Tests(unittest.TestCase):
             (root / "notes.txt").write_text("ignored", encoding="utf-8")
             catalog = Path(temp) / "catalog.db"
             db = connect(catalog)
+            self.addCleanup(db.close)
 
             volume_id = register_volume(db, root)
             first = scan_volume(db, volume_id, root)
@@ -49,6 +54,27 @@ class CatalogPhase1Tests(unittest.TestCase):
                 "SELECT missing_since FROM asset_locations WHERE relative_path='one.jpg'"
             ).fetchone()[0]
             self.assertIsNotNone(missing)
+            db.close()
+
+    def test_rescan_upgrades_legacy_null_source_in_place(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "photos"
+            root.mkdir()
+            (root / "one.jpg").write_bytes(b"one")
+            db = connect(Path(temp) / "catalog.db")
+            self.addCleanup(db.close)
+            volume_id = register_volume(db, root)
+            scan_volume(db, volume_id, root)
+            db.execute("UPDATE asset_locations SET source_id=NULL")
+            db.commit()
+
+            scan_volume(db, volume_id, root)
+
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM asset_locations").fetchone()[0], 1)
+            self.assertEqual(
+                db.execute("SELECT source_id FROM asset_locations").fetchone()[0],
+                f"folder:{volume_id}",
+            )
 
     def test_catalog_survives_when_volume_is_not_scanned(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -61,10 +87,12 @@ class CatalogPhase1Tests(unittest.TestCase):
             db.close()
 
             reopened = connect(Path(temp) / "catalog.db")
+            self.addCleanup(reopened.close)
             row = reopened.execute(
                 "SELECT filename, size_bytes FROM asset_locations WHERE volume_id=?", (volume_id,)
             ).fetchone()
             self.assertEqual((row[0], row[1]), ("photo.heic", 5))
+            reopened.close()
 
     def test_refresh_marks_missing_mount_offline_without_erasing_catalog(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -72,6 +100,7 @@ class CatalogPhase1Tests(unittest.TestCase):
             root.mkdir()
             (root / "photo.jpg").write_bytes(b"image")
             db = connect(Path(temp) / "catalog.db")
+            self.addCleanup(db.close)
             volume_id = register_volume(db, root)
             scan_volume(db, volume_id, root)
             (root / "photo.jpg").unlink()
@@ -79,6 +108,7 @@ class CatalogPhase1Tests(unittest.TestCase):
             self.assertEqual(refresh_volume_statuses(db)["offline"], 1)
             self.assertEqual(db.execute("SELECT status FROM volumes WHERE id=?", (volume_id,)).fetchone()[0], "OFFLINE")
             self.assertEqual(db.execute("SELECT COUNT(*) FROM assets").fetchone()[0], 1)
+            db.close()
 
     def test_byte_identical_files_become_one_asset_with_two_locations(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -89,6 +119,7 @@ class CatalogPhase1Tests(unittest.TestCase):
             (root / "a" / "photo.jpg").write_bytes(content)
             (root / "b" / "copy.jpg").write_bytes(content)
             db = connect(Path(temp) / "catalog.db")
+            self.addCleanup(db.close)
             volume_id = register_volume(db, root)
             scan_volume(db, volume_id, root)
             assets = db.execute("SELECT id FROM assets").fetchall()
@@ -99,6 +130,7 @@ class CatalogPhase1Tests(unittest.TestCase):
             self.assertEqual(len(db.execute("SELECT * FROM exact_hashes").fetchall()), 1)
             self.assertEqual({row[0] for row in locations}, {assets[0][0]})
             self.assertEqual([row[1] for row in locations], ["a/photo.jpg", "b/copy.jpg"])
+            db.close()
 
     def test_rename_preserves_asset_identity_and_changed_bytes_get_new_hash(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -108,6 +140,7 @@ class CatalogPhase1Tests(unittest.TestCase):
             renamed = root / "renamed.jpg"
             original.write_bytes(b"original")
             db = connect(Path(temp) / "catalog.db")
+            self.addCleanup(db.close)
             volume_id = register_volume(db, root)
             scan_volume(db, volume_id, root)
             asset_before = db.execute("SELECT asset_id FROM asset_locations").fetchone()[0]
@@ -130,6 +163,7 @@ class CatalogPhase1Tests(unittest.TestCase):
             # The old content remains catalogued at its historical missing path;
             # the replaced path is now a different logical asset.
             self.assertEqual(db.execute("SELECT COUNT(*) FROM exact_hashes").fetchone()[0], 2)
+            db.close()
 
     def test_same_stable_volume_identity_survives_remount_at_new_path(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -140,6 +174,7 @@ class CatalogPhase1Tests(unittest.TestCase):
             (first_root / "a.jpg").write_bytes(b"a")
             (second_root / "b.jpg").write_bytes(b"b")
             db = connect(Path(temp) / "catalog.db")
+            self.addCleanup(db.close)
             provider = FixedVolumeProvider()
             volume_id = register_volume(db, first_root, provider)
             scan_volume(db, volume_id, first_root)
@@ -152,6 +187,7 @@ class CatalogPhase1Tests(unittest.TestCase):
             scan_volume(db, remounted_id, second_root)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM volumes").fetchone()[0], 1)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM asset_locations").fetchone()[0], 2)
+            db.close()
 
     def test_macos_provider_reads_volume_uuid_without_core_logic_dependency(self) -> None:
         payload = plistlib.dumps({

@@ -30,6 +30,7 @@ class SemanticTests(unittest.TestCase):
             root = Path(temp) / "photos"; root.mkdir()
             (root / "a.jpg").write_bytes(b"a"); (root / "b.jpg").write_bytes(b"b")
             db = connect(Path(temp) / "catalog.db")
+            self.addCleanup(db.close)
             volume_id = register_volume(db, root, FixedProvider()); scan_volume(db, volume_id, root)
             engine = FakeEngine()
             self.assertEqual(index_embeddings(db, engine)["indexed"], 2)
@@ -37,6 +38,7 @@ class SemanticTests(unittest.TestCase):
             self.assertEqual(engine.calls, 2)
             expected = db.execute("SELECT asset_id FROM asset_locations WHERE filename='a.jpg'").fetchone()[0]
             self.assertEqual(search_embeddings(db, "test-model", [1.0, 0.0], 1)[0][0], expected)
+            db.close()
 
     def test_embedding_index_limit_is_an_asset_limit(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -44,9 +46,11 @@ class SemanticTests(unittest.TestCase):
             for name in ("a.jpg", "b.jpg"):
                 (root / name).write_bytes(name.encode())
             db = connect(Path(temp) / "catalog.db")
+            self.addCleanup(db.close)
             volume_id = register_volume(db, root, FixedProvider()); scan_volume(db, volume_id, root)
             result = index_embeddings(db, FakeEngine(), limit=1)
             self.assertEqual(result["assets"], 1)
             self.assertEqual(result["indexed"], 1)
+            db.close()
 
 if __name__ == "__main__": unittest.main()

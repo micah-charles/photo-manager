@@ -29,6 +29,7 @@ class CopyPlanTests(unittest.TestCase):
         backup.mkdir()
         (main / "missing.jpg").write_bytes(b"important")
         db = connect(Path(temp.name) / "catalog.db")
+        self.addCleanup(db.close)
         main_id = register_volume(db, main, FixedProvider("main"))
         backup_id = register_volume(db, backup, FixedProvider("backup"))
         scan_volume(db, main_id, main)
@@ -41,6 +42,7 @@ class CopyPlanTests(unittest.TestCase):
     def test_dry_run_creates_plan_and_changes_no_media(self) -> None:
         temp, db, set_id = self.setup_missing_backup()
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         plan = build_copy_plan(db, set_id)
         self.assertEqual(len(plan.items), 1)
         self.assertFalse(plan.items[0].destination_path.exists())
@@ -50,6 +52,7 @@ class CopyPlanTests(unittest.TestCase):
     def test_copy_reads_destination_and_catalogues_only_verified_result(self) -> None:
         temp, db, set_id = self.setup_missing_backup()
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         plan = build_copy_plan(db, set_id)
         result = execute_copy_plan(db, plan)
         self.assertEqual(result["status"], "COMPLETED")
@@ -61,6 +64,7 @@ class CopyPlanTests(unittest.TestCase):
     def test_corrupt_destination_fails_verification_and_is_not_catalogued(self) -> None:
         temp, db, set_id = self.setup_missing_backup()
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         plan = build_copy_plan(db, set_id)
 
         def corrupt_copy(source: str, destination: str):
@@ -75,6 +79,7 @@ class CopyPlanTests(unittest.TestCase):
     def test_existing_different_destination_is_never_overwritten(self) -> None:
         temp, db, set_id = self.setup_missing_backup()
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         plan = build_copy_plan(db, set_id)
         plan.items[0].destination_path.parent.mkdir(parents=True, exist_ok=True)
         plan.items[0].destination_path.write_bytes(b"different")
@@ -87,6 +92,7 @@ class CopyPlanTests(unittest.TestCase):
     def test_existing_identical_destination_is_catalogued_as_verified(self) -> None:
         temp, db, set_id = self.setup_missing_backup()
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         plan = build_copy_plan(db, set_id)
         destination = plan.items[0].destination_path
         destination.parent.mkdir(parents=True, exist_ok=True)

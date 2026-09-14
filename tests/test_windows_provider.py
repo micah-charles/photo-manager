@@ -23,9 +23,16 @@ class WindowsProviderTests(unittest.TestCase):
             with patch.object(ctypes, "WinDLL", return_value=FakeKernel32(), create=True):
                 identity = WindowsVolumeProvider().identify(Path(temp))
         self.assertEqual(identity.identity_kind, "windows_volume_serial")
-        self.assertEqual(identity.identity_value.split(":")[0], "1234abcd")
+        self.assertEqual(identity.identity_value, "1234abcd")
         self.assertEqual(identity.display_name, "PhotoVault Test Disk")
         self.assertEqual(identity.filesystem, "NTFS")
+
+    def test_drive_letter_is_not_part_of_stable_identity(self) -> None:
+        provider = WindowsVolumeProvider()
+        with patch.object(ctypes, "WinDLL", return_value=FakeKernel32(), create=True):
+            first = provider.identify(Path("E:/Photos"))
+            second = provider.identify(Path("F:/Photos"))
+        self.assertEqual(first.identity_value, second.identity_value)
 
     def test_degrades_to_path_fallback_when_windows_api_is_unavailable(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

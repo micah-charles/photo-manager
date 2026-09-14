@@ -1,10 +1,11 @@
 __pycache__/
 *.py[cod]
+.pytest_cache/
 .venv/
+.DS_Store
 *.db
 *.db-shm
 *.db-wal
-.DS_Store
 .PhotoVaultQuarantine/
 build/
 dist/
@@ -12,3 +13,12 @@ dist/
 .pyinstaller/
 *.egg-info/
 *.ses
+native/macos/android_mtp/photovault-android-mtp
+native/macos/android_mtp_libusb/photovault-android-libusb-mtp
+android-companion/build/
+android-companion/.debug.keystore
+.pip-cache/
+.test-noise-java/
+artifacts/
+models/
+reports/smart-collage-poc/

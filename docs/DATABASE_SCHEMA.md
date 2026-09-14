@@ -62,6 +62,23 @@ metadata when a removable disk is absent.
 
 All schema changes are applied through the migration registry; no ad-hoc tables are created at runtime.
 
+## Phase 15 Android source tables
+
+source_profiles stores normalized source identity and adapter observations;
+it does not store a complete device serial. source_items stores the latest
+logical-path/object metadata observation for a source. MTP object handles are
+replaceable session values and are not used as permanent asset identity.
+
+## Phase 19 import batches
+
+`import_batches` is the durable parent record for one source-to-destination
+transfer run. It stores source and destination identities, lifecycle status,
+planned/imported/already-imported/failed counters, verified byte totals,
+timestamps, and JSON run details such as worker and durability settings.
+`source_imports.batch_id` links each successfully recorded source import to the
+batch that published it. This is catalog history only and never authorizes
+deletion or alteration of source media.
+
 ## Phase 4 backup tables
 
 `backup_sets` stores a named policy, required copy count and optional relative scope. `backup_set_members` assigns one volume as `PRIMARY` and one or more distinct volumes as `BACKUP`, with an optional per-volume relative root. A unique set/volume pair prevents accidentally assigning one physical volume twice.

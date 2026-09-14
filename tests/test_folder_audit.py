@@ -28,6 +28,7 @@ class FolderAuditTests(unittest.TestCase):
         (old / "photo.jpg").write_bytes(old_bytes)
         (other / ("photo.jpg" if same_name else "copy.jpg")).write_bytes(other_bytes)
         db = connect(Path(temp.name) / "catalog.db")
+        self.addCleanup(db.close)
         old_id = register_volume(db, old, FixedProvider("old"))
         other_id = register_volume(db, other, FixedProvider("other"))
         scan_volume(db, old_id, old)
@@ -37,6 +38,7 @@ class FolderAuditTests(unittest.TestCase):
     def test_all_files_verified_elsewhere_is_safe_candidate(self) -> None:
         temp, db, old, _ = self.setup_catalog(b"same", b"same")
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         report = audit_folder(db, old)
         self.assertTrue(report.safe_candidate)
         self.assertEqual(report.verified_elsewhere, 1)
@@ -45,6 +47,7 @@ class FolderAuditTests(unittest.TestCase):
     def test_unique_file_is_not_safe(self) -> None:
         temp, db, old, _ = self.setup_catalog(b"old", b"other", same_name=False)
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         report = audit_folder(db, old)
         self.assertFalse(report.safe_candidate)
         self.assertEqual(report.unique_files, 1)
@@ -52,6 +55,7 @@ class FolderAuditTests(unittest.TestCase):
     def test_same_filename_different_content_is_conflict(self) -> None:
         temp, db, old, _ = self.setup_catalog(b"old", b"other")
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         report = audit_folder(db, old)
         self.assertEqual(report.conflicts, 1)
         self.assertFalse(report.safe_candidate)
@@ -59,6 +63,7 @@ class FolderAuditTests(unittest.TestCase):
     def test_offline_copy_is_not_claimed_safe(self) -> None:
         temp, db, old, other_id = self.setup_catalog(b"same", b"same")
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         db.execute("UPDATE volumes SET status='OFFLINE' WHERE id=?", (other_id,))
         db.commit()
         report = audit_folder(db, old)
@@ -68,6 +73,7 @@ class FolderAuditTests(unittest.TestCase):
     def test_file_added_after_scan_is_uncatalogued(self) -> None:
         temp, db, old, _ = self.setup_catalog(b"same", b"same")
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         (old / "new.jpg").write_bytes(b"new")
         report = audit_folder(db, old)
         self.assertEqual(report.uncatalogued, 1)

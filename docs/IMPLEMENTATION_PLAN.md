@@ -226,3 +226,10 @@ Use temporary directories and synthetic files only. Required tests include exact
 ## V1 definition of done
 
 V1 is complete only when removable disks, offline cataloging, stable asset identity, SHA-256 verification, backup sets, reconciliation, copy plans, dry-run, verified copying, operation journal, folder safety audit, quarantine/undo, basic PySide6 GUI and automated integrity tests all work without modifying originals by default.
+## Follow-up: Topic management parity
+
+- [ ] Expose Topic mutations through the local MCP server: create, edit, delete,
+  add photos, and remove photos from a Topic.
+- [ ] Keep the Web UI and MCP operations on the same catalog service methods.
+- [ ] Make the Topic-mode unlink action obvious and verify it with a real UI
+  smoke test, including Select day → Remove from Topic.

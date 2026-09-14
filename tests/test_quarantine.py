@@ -25,6 +25,7 @@ class QuarantineTests(unittest.TestCase):
         source.parent.mkdir()
         source.write_bytes(b"photo")
         db = connect(Path(temp.name) / "catalog.db")
+        self.addCleanup(db.close)
         volume_id = register_volume(db, root, FixedProvider())
         scan_volume(db, volume_id, root)
         return temp, db, source
@@ -32,6 +33,7 @@ class QuarantineTests(unittest.TestCase):
     def test_quarantine_manifest_journal_and_undo(self) -> None:
         temp, db, source = self.setup_catalog()
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         plan = build_quarantine_plan(db, [source], "old duplicate")
         self.assertTrue(source.exists())
         dry = db.execute("SELECT status, dry_run FROM operations WHERE id=?", (plan.operation_id,)).fetchone()
@@ -53,6 +55,7 @@ class QuarantineTests(unittest.TestCase):
     def test_source_changed_before_execute_is_not_moved(self) -> None:
         temp, db, source = self.setup_catalog()
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         plan = build_quarantine_plan(db, [source], "test")
         source.write_bytes(b"changed")
         result = execute_quarantine_plan(db, plan)
@@ -63,6 +66,7 @@ class QuarantineTests(unittest.TestCase):
     def test_existing_quarantine_destination_is_conflict(self) -> None:
         temp, db, source = self.setup_catalog()
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         plan = build_quarantine_plan(db, [source], "test")
         plan.items[0].destination_path.parent.mkdir(parents=True, exist_ok=True)
         plan.items[0].destination_path.write_bytes(b"different")
@@ -74,6 +78,7 @@ class QuarantineTests(unittest.TestCase):
     def test_undo_does_not_overwrite_recreated_conflicting_original(self) -> None:
         temp, db, source = self.setup_catalog()
         self.addCleanup(temp.cleanup)
+        self.addCleanup(db.close)
         plan = build_quarantine_plan(db, [source], "test")
         self.assertEqual(execute_quarantine_plan(db, plan)["status"], "COMPLETED")
         source.write_bytes(b"different original")

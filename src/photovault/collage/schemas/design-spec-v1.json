@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://photovault.local/schemas/collage-design-spec-v1.json",
+  "title": "PhotoManager CollageDesignSpec v1",
+  "type": "object",
+  "required": ["format", "schema_version", "page_spec", "alternatives"],
+  "properties": {
+    "format": {"const": "CollageDesignSpec"},
+    "schema_version": {"const": 1},
+    "package_id": {"type": "string", "pattern": "^(pkg_[a-f0-9]{32}|fixture:[a-z0-9-]+)$"},
+    "page_spec": {"type": "object"},
+    "alternatives": {
+      "type": "array", "minItems": 1, "maxItems": 5,
+      "items": {
+        "type": "object", "required": ["elements"],
+        "properties": {"elements": {"type": "array", "minItems": 1, "maxItems": 200}}
+      }
+    }
+  }
+}

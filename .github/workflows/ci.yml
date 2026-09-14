@@ -39,3 +39,17 @@ jobs:
       - name: Smoke-test macOS app executable
         if: runner.os == 'macOS'
         run: dist/PhotoVault.app/Contents/MacOS/PhotoVault --help
+      - name: Upload Windows package
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhotoVault-windows
+          path: dist/PhotoVault/
+          if-no-files-found: error
+      - name: Upload macOS package
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhotoVault-macos
+          path: dist/PhotoVault.app/
+          if-no-files-found: error

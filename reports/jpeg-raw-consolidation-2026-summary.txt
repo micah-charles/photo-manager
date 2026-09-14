@@ -1,0 +1,20 @@
+Photo Manager — JPEG/RAW Consolidation Report
+
+Source: <photo-root>
+Organized files: <photo-root>/YYYY-MM-DD/
+
+JPEG files without a matching NEF: 75
+
+By capture date (filenames intentionally omitted from this public report):
+- 2026-07-10: 1
+- 2026-07-23: 10
+- 2026-08-01: 3
+- 2026-08-12: 60
+- 2026-08-22: 1
+
+Total: 75 JPEG files
+RAW without a matching JPEG: 0
+
+The files remain at their date-folder paths. JPEG/RAW pairing uses the
+filename stem; consolidation does not rename, re-encode, or modify file
+metadata.

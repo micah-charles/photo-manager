@@ -3,25 +3,185 @@ from __future__ import annotations
 import unittest
 import time
 import tempfile
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
-from photovault.ui.spec import NAVIGATION_ITEMS
+from photovault.ui.spec import ADVANCED_PAGE_ITEMS, NAVIGATION_GROUPS, NAVIGATION_ITEMS
 from photovault.database.connection import connect
 from photovault.catalog.scanner import register_volume
 from photovault.platform.base import VolumeIdentity
 
 
 class UIFoundationTests(unittest.TestCase):
+    @classmethod
+    def tearDownClass(cls) -> None:
+        """Release the shared Qt application before macOS services tear down."""
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            return
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            for widget in app.topLevelWidgets():
+                widget.close()
+            app.processEvents()
+            app.quit()
+            app.processEvents()
+
     def test_integrity_first_navigation_contract(self) -> None:
         self.assertEqual(
             NAVIGATION_ITEMS,
             (
-                "Dashboard", "Disks", "Backup Sets", "Scan", "Redundancy Audit",
+                "Dashboard", "Library", "Import", "Review", "Events", "Event Detail", "Tags", "Sources", "Photo Viewer", "Collections", "People", "Disks", "Android Devices", "Backup Profiles", "Backup Sets", "Scan", "Redundancy Audit",
                 "Reconciliation", "Folder Safety Audit", "Copy Plans", "Quarantine", "Operations",
-                "Timeline", "Visual Duplicates", "Places",
+                "Catalog Recovery", "Timeline", "Favourites", "Visual Duplicates", "Places", "Categories", "Backup Health", "Advanced Tools", "Settings",
             ),
         )
+
+    def test_user_navigation_groups_preserve_every_existing_page(self) -> None:
+        grouped_pages = tuple(page for _group, pages in NAVIGATION_GROUPS for page in pages)
+        self.assertEqual(set(NAVIGATION_ITEMS) - set(grouped_pages), {"Photo Viewer", *ADVANCED_PAGE_ITEMS})
+        self.assertEqual(len(grouped_pages), len(set(grouped_pages)))
+
+    def test_technical_pages_are_reachable_without_primary_sidebar_clutter(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            visible_labels = [window.navigation.item(row).text() for row in window._navigation_page_rows]
+            self.assertNotIn("Scan", visible_labels)
+            self.assertNotIn("Redundancy Audit", visible_labels)
+            self.assertTrue(all(not window.navigation.item(row).icon().isNull() for row in window._navigation_page_rows))
+            window._select_page("Scan")
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Scan"))
+            window.close()
+            connection.close()
+
+    def test_primary_browse_controls_have_accessible_names(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            self.assertEqual(window.navigation.accessibleName(), "PhotoVault page navigation")
+            self.assertEqual(window.library_search.accessibleName(), "Search library")
+            self.assertEqual(window.library_grid.accessibleName(), "Photo library thumbnail grid")
+            self.assertTrue(window.library_category_filter.toolTip())
+            window._select_page("Timeline")
+            self.assertEqual(window.timeline_source_filter.accessibleName(), "Timeline source filter")
+            self.assertEqual(window.timeline_start_date.accessibleName(), "Timeline start date")
+            self.assertEqual(window.timeline_end_date.accessibleName(), "Timeline end date")
+            window.timeline_start_date.setText("2026-08-22")
+            window.timeline_end_date.setText("2026-08-26")
+            window._create_event_from_timeline_dates()
+            self.assertEqual(window.event_start.text(), "2026-08-22")
+            self.assertEqual(window.event_end.text(), "2026-08-26")
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Events"))
+            window._select_page("Timeline")
+            window.timeline_start_date.setText("not-a-date")
+            window._refresh_timeline()
+            self.assertIn("YYYY-MM-DD", window.timeline_summary.text())
+            window.close()
+            connection.close()
+
+    def test_interactive_controls_have_accessibility_fallbacks(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication, QAbstractButton, QComboBox, QLineEdit, QListWidget, QTableWidget, QWidget
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            unnamed = []
+            control_types = (QAbstractButton, QComboBox, QLineEdit, QListWidget, QTableWidget)
+            for widget in window.findChildren(QWidget):
+                if not isinstance(widget, control_types):
+                    continue
+                if widget.isVisible() and not widget.accessibleName():
+                    unnamed.append(widget.objectName() or widget.__class__.__name__)
+            self.assertEqual(unnamed, [])
+            window.close()
+            connection.close()
+
+    def test_timeline_row_opens_photo_viewer(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+        from photovault.catalog.scanner import scan_volume
+
+        class FixedProvider:
+            def identify(self, path: Path) -> VolumeIdentity:
+                return VolumeIdentity("timeline-ui", "timeline-ui-disk", "Timeline UI disk")
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "photos"
+            root.mkdir()
+            (root / "timeline.jpg").write_bytes(b"timeline-photo")
+            connection = connect(Path(temp) / "catalog.db")
+            volume_id = register_volume(connection, root, FixedProvider())
+            scan_volume(connection, volume_id, root)
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._select_page("Timeline")
+            self.assertEqual(window._tables["Timeline"].rowCount(), 1)
+            window._open_timeline_row(0, 0)
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Photo Viewer"))
+            self.assertIn("timeline.jpg", window.viewer_details.text())
+            window.close()
+            connection.close()
+
+    def test_library_is_timeline_first_and_reveals_actions_on_selection(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+        from photovault.catalog.scanner import scan_volume
+
+        class FixedProvider:
+            def identify(self, path: Path) -> VolumeIdentity:
+                return VolumeIdentity("library-ui", "library-ui-disk", "Library UI disk")
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "photos"
+            root.mkdir()
+            (root / "one.jpg").write_bytes(b"library-photo")
+            connection = connect(Path(temp) / "catalog.db")
+            volume_id = register_volume(connection, root, FixedProvider())
+            scan_volume(connection, volume_id, root)
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window.show()
+            window._select_page("Library")
+            self.assertFalse(window.library_filter_panel.isVisible())
+            self.assertEqual(window.library_months.count(), 1)
+            self.assertEqual(len(window._library_day_grids), 1)
+            self.assertFalse(window.library_action_panel.isVisible())
+            window._library_day_grids[0].setCurrentRow(0)
+            app.processEvents()
+            self.assertTrue(window.library_action_panel.isVisible())
+            self.assertEqual(window.library_selection_count.text(), "1 selected")
+            window.close()
+            connection.close()
 
     def test_gui_module_has_clear_optional_dependency_behavior(self) -> None:
         from photovault.ui import main_window
@@ -29,6 +189,431 @@ class UIFoundationTests(unittest.TestCase):
         if not main_window.QT_AVAILABLE:
             with self.assertRaisesRegex(RuntimeError, "PySide6 is not installed"):
                 main_window._require_qt()
+
+    def test_android_page_exposes_stateful_backup_status(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._select_page("Android Devices")
+            self.assertEqual(window.android_backup_status.text(), "Not connected")
+            self.assertFalse(window.android_transfer_group.isVisible())
+            self.assertFalse(window.android_profile_history_label.isVisible())
+            window.android_backup_status.setText("Phone connected")
+            self.assertEqual(window.android_backup_status.text(), "Phone connected")
+            window.close()
+            connection.close()
+
+    def test_android_destination_picker_fills_existing_directory(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            destination = str(Path(temp) / "backup")
+            Path(destination).mkdir()
+            with patch("photovault.ui.main_window.QFileDialog.getExistingDirectory", return_value=destination):
+                window._choose_android_destination()
+            self.assertEqual(window.android_transfer_destination.text(), destination)
+            self.assertIn("Destination selected", window.android_transfer_result.text())
+            window.close()
+            connection.close()
+
+    def test_source_folder_picker_is_explicitly_catalog_in_place(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            source = str(Path(temp) / "camera")
+            Path(source).mkdir()
+            with patch("photovault.ui.main_window.QFileDialog.getExistingDirectory", return_value=source):
+                window._choose_source_folder()
+            self.assertEqual(window.source_folder_path.text(), source)
+            self.assertIn("Catalog in Place", window.sources_result.text())
+            window._open_source_managed_copy()
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Copy Plans"))
+            self.assertIn("reviewed backup set/copy plan", window.copy_result.text())
+            window.close()
+            connection.close()
+
+    def test_android_backup_terminal_states_have_explicit_safe_summary(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._android_transfer_completed = 3
+            window._android_transfer_bytes = 3072
+            window._android_transfer_completed_result({
+                "imported": 3, "already_imported": 0, "planned": 3,
+                "results": [], "destination_volume": "test-volume",
+            })
+            self.assertIn("Backup complete", window.android_backup_completion.text())
+            self.assertIn("3 copied", window.android_backup_completion.text())
+            self.assertTrue(window.android_view_photos_button.isEnabled())
+            self.assertTrue(window.android_view_details_button.isEnabled())
+            self.assertFalse(window.android_create_event_button.isEnabled())
+            self.assertFalse(window.android_review_button.isEnabled())
+            window._android_transfer_cancelled("user requested")
+            self.assertIn("cancelled safely", window.android_backup_completion.text())
+            window._android_transfer_failed("destination unavailable")
+            self.assertIn("completed with issues", window.android_backup_completion.text())
+            window.close()
+            connection.close()
+
+    def test_android_transfer_progress_surfaces_speed_eta_and_current_file(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._android_transfer_started = time.monotonic() - 2
+            window._android_transfer_checkpoint = time.monotonic() - 1
+            window._android_transfer_progress({
+                "stage": "planned", "items": 2, "bytes_total": 10_000,
+                "conflicts": 0, "new": 2, "unchanged": 0, "missing": 0,
+                "destination_volume": "test-volume",
+            })
+            window._android_transfer_progress({
+                "stage": "file",
+                "row": {"destination": "/tmp/PXL_test.jpg", "bytes_written": 5_000},
+            })
+            self.assertIn("1/2 files", window.android_backup_summary.text())
+            self.assertIn("average", window.android_backup_summary.text())
+            self.assertIn("ETA", window.android_transfer_result.text())
+            self.assertIn("PXL_test.jpg", window.android_transfer_result.text())
+            self.assertEqual(window.android_backup_progress.value(), 50)
+            window.close()
+            connection.close()
+
+    def test_android_manifest_populates_checkable_folder_picker(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            folder = SimpleNamespace(
+                relative_path="Pictures", count=12, size_bytes=2048,
+                image_count=10, video_count=2,
+            )
+            window._android_companion_completed({
+                "identity": SimpleNamespace(display_name="Pixel 8 Pro", source_id="pixel-test"),
+                "device": {"media_count": 12},
+                "folders": [folder],
+            })
+            self.assertIn("12 media items", window.android_device_card.text())
+            self.assertIn("1 shared folders", window.android_device_card.text())
+            self.assertEqual(window.android_folder_selector.count(), 1)
+            picker_item = window.android_folder_selector.item(0)
+            picker_item.setCheckState(main_window.Qt.CheckState.Checked)
+            self.assertEqual(window.android_transfer_folders.toPlainText(), "Pictures")
+            window.close()
+            connection.close()
+
+    def test_gui_navigates_all_user_facing_pages_with_empty_catalog(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            for page in ("Dashboard", "Library", "Review", "Events", "Event Detail", "Tags", "Sources", "Photo Viewer", "Collections", "People", "Places", "Categories", "Visual Duplicates", "Android Devices", "Backup Profiles", "Backup Health", "Operations", "Settings", "Advanced Tools"):
+                window._select_page(page)
+                self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index(page))
+            self.assertIn("No photos indexed yet", [window.dashboard_recent_grid.item(i).text() for i in range(window.dashboard_recent_grid.count())])
+            self.assertTrue(any(button.text() == "View Timeline" for button in window.findChildren(main_window.QPushButton)))
+            self.assertIn("Choose a queue", window.review_result.text())
+            self.assertIn("reviewable item(s)", window.review_summary.text())
+            self.assertEqual(window.review_queue_buttons["UNREVIEWED"].text(), "Needs review (0)")
+            self.assertIn("event(s)", window.events_result.text())
+            self.assertIn("tag(s)", window.tags_result.text())
+            self.assertIn("source(s)", window.sources_result.text())
+            self.assertFalse(window._tables["Dashboard"].isVisible())
+            self.assertIn("No Android backup profiles yet", window.backup_profiles_result.text())
+            self.assertIn("No backup profiles", window.backup_health_result.text())
+            self.assertIn("No people groups yet", [window.people_grid.item(i).text() for i in range(window.people_grid.count())])
+            self.assertIn("No embedded GPS clusters yet", [window.places_grid.item(i).text() for i in range(window.places_grid.count())])
+            self.assertIn("No categories indexed yet", [window.category_grid.item(i).text() for i in range(window.category_grid.count())])
+            self.assertIn("No smart collections yet", [window.collections_grid.item(i).text() for i in range(window.collections_grid.count())])
+            self.assertIn("No registered drives yet", [window.disks_grid.item(i).text() for i in range(window.disks_grid.count())])
+            self.assertIn("No activity recorded yet", [window.activity_feed.item(i).text() for i in range(window.activity_feed.count())])
+            window.close()
+            connection.close()
+
+    def test_category_engineering_controls_live_in_settings(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication, QLineEdit, QSpinBox
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            categories_page = window.pages.widget(NAVIGATION_ITEMS.index("Categories"))
+            settings_page = window.pages.widget(NAVIGATION_ITEMS.index("Settings"))
+            self.assertEqual(categories_page.findChildren(QLineEdit), [])
+            self.assertGreaterEqual(len(settings_page.findChildren(QLineEdit)), 2)
+            self.assertGreaterEqual(len(settings_page.findChildren(QSpinBox)), 2)
+            window.close()
+            connection.close()
+
+    def test_category_settings_use_numeric_values(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window.category_limit.setValue(12)
+            window.category_top_k.setValue(3)
+            self.assertEqual(window.category_limit.value(), 12)
+            self.assertEqual(window.category_top_k.value(), 3)
+            window.close()
+            connection.close()
+
+    def test_import_page_exposes_explicit_folder_modes(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._select_page("Import")
+            self.assertEqual(window.import_mode.itemData(0), "catalog")
+            self.assertEqual(window.import_mode.itemData(1), "managed")
+            self.assertTrue(window.import_folder_path.accessibleName())
+            source = Path(temp) / "source"
+            source.mkdir()
+            (source / "sample.jpg").write_bytes(b"test image")
+            (source / "sample.mp4").write_bytes(b"test video")
+            window.import_folder_path.setText(str(source))
+            window._preview_import_folder()
+            self.assertIn("1 images, 1 videos", window.import_result.text())
+            window.close()
+            connection.close()
+
+    def test_collections_double_click_opens_library_for_empty_album(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window.new_collection_title.setText("Empty test album")
+            window._create_user_collection()
+            table = window._tables["Collections"]
+            self.assertEqual(table.rowCount(), 1)
+            window._open_collection_row(0, 0)
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Library"))
+            self.assertIn("empty", window.library_result.text().lower())
+            window.close()
+            connection.close()
+
+    def test_collections_album_tile_activation_opens_library(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window.new_collection_title.setText("Tile album")
+            window._create_user_collection()
+            self.assertEqual(window.collections_album_grid.count(), 1)
+            tile = window.collections_album_grid.item(0)
+            self.assertTrue(tile.data(main_window.Qt.ItemDataRole.UserRole))
+            window.collections_album_grid.itemDoubleClicked.emit(tile)
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Library"))
+            self.assertIn("empty", window.library_result.text().lower())
+            window.close()
+            connection.close()
+
+    def test_collections_album_single_click_only_selects_card(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window.new_collection_title.setText("Single click album")
+            window._create_user_collection()
+            tile = window.collections_album_grid.item(0)
+            window._select_page("Collections")
+            window.collections_album_grid.itemClicked.emit(tile)
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Collections"))
+            window.close()
+            connection.close()
+
+    def test_collections_empty_state_explains_no_action(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+
+        with tempfile.TemporaryDirectory() as temp:
+            connection = connect(Path(temp) / "catalog.db")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._open_collection_tile(window.collections_grid.item(0))
+            self.assertIn("no smart collections", window.collections_result.text().lower())
+            window.close()
+            connection.close()
+
+    def test_viewer_can_assign_logical_metadata_without_leaving(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+        from photovault.catalog.collections import add_to_user_collection, create_user_collection
+        from photovault.catalog.organization import create_event, create_place, create_tag
+        from photovault.catalog.people import create_person
+        from photovault.catalog.scanner import scan_volume
+
+        class FixedProvider:
+            def identify(self, path: Path) -> VolumeIdentity:
+                return VolumeIdentity("viewer-ui", "viewer-ui-disk", "Viewer UI disk")
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "photos"
+            root.mkdir()
+            (root / "viewer.jpg").write_bytes(b"viewer-photo")
+            connection = connect(Path(temp) / "catalog.db")
+            volume_id = register_volume(connection, root, FixedProvider())
+            scan_volume(connection, volume_id, root)
+            asset_id = str(connection.execute("SELECT id FROM assets LIMIT 1").fetchone()[0])
+            event_id = create_event(connection, "Viewer event")
+            tag_id = create_tag(connection, "Viewer tag")
+            place_id = create_place(connection, "Viewer place")
+            person_id = create_person(connection, "Viewer person")
+            collection_id = create_user_collection(connection, "Viewer album")
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._select_page("Library")
+            item = window.library_grid.item(0)
+            window._open_library_item(item)
+            for combo, value in (
+                (window.viewer_event_action, event_id),
+                (window.viewer_tag_action, tag_id),
+                (window.viewer_place_action, place_id),
+                (window.viewer_person_action, person_id),
+                (window.viewer_collection_action, collection_id),
+            ):
+                combo.setCurrentIndex(combo.findData(value))
+            window._assign_viewer_event()
+            window._assign_viewer_tag()
+            window._assign_viewer_place()
+            window._assign_viewer_person()
+            window._add_viewer_to_collection()
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM event_assets WHERE event_id=? AND asset_id=?", (event_id, asset_id)).fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM asset_tags WHERE tag_id=? AND asset_id=?", (tag_id, asset_id)).fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM asset_places WHERE place_id=? AND asset_id=?", (place_id, asset_id)).fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM person_members WHERE person_id=? AND asset_id=?", (person_id, asset_id)).fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM user_collection_members WHERE collection_id=? AND asset_id=?", (collection_id[5:], asset_id)).fetchone()[0], 1)
+            self.assertEqual(window.pages.currentIndex(), main_window.NAVIGATION_ITEMS.index("Photo Viewer"))
+            window.close()
+            connection.close()
+
+    def test_event_detail_shows_members_and_removes_only_membership(self) -> None:
+        from photovault.ui import main_window
+
+        if not main_window.QT_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+        from photovault.catalog.organization import add_assets_to_event, create_event
+        from photovault.catalog.scanner import scan_volume
+
+        class FixedProvider:
+            def identify(self, path: Path) -> VolumeIdentity:
+                return VolumeIdentity("event-ui", "event-ui-disk", "Event UI disk")
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "photos"
+            root.mkdir()
+            original = root / "event.jpg"
+            original.write_bytes(b"event-photo")
+            connection = connect(Path(temp) / "catalog.db")
+            volume_id = register_volume(connection, root, FixedProvider())
+            scan_volume(connection, volume_id, root)
+            asset_id = str(connection.execute("SELECT id FROM assets LIMIT 1").fetchone()[0])
+            event_id = create_event(connection, "Event detail test", event_type="trip")
+            self.assertEqual(add_assets_to_event(connection, event_id, [asset_id]), 1)
+            connection.execute("INSERT INTO tags(id, name, normalized_name, created_at, updated_at) VALUES ('tag-ui', 'Family', 'family', datetime('now'), datetime('now'))")
+            connection.execute("INSERT INTO asset_tags(asset_id, tag_id, created_at) VALUES (?, 'tag-ui', datetime('now'))", (asset_id,))
+            connection.commit()
+            app = QApplication.instance() or QApplication([])
+            window = main_window.MainWindow(connection)
+            window._refresh_events()
+            window._open_event_row(0, 0)
+            self.assertEqual(window.pages.currentIndex(), NAVIGATION_ITEMS.index("Event Detail"))
+            self.assertEqual(window.event_detail_source_filter.accessibleName(), "Event detail source filter")
+            self.assertEqual(window.event_detail_grid.count(), 1)
+            self.assertIn("Tags: Family", window.event_detail_summary.text())
+            window.event_detail_grid.item(0).setSelected(True)
+            window._remove_event_detail_selection()
+            self.assertIn("Removed 1", window.event_detail_result.text())
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM event_assets").fetchone()[0], 0)
+            self.assertTrue(original.exists())
+            window.close()
+            connection.close()
 
     def test_scan_uses_a_worker_thread_for_file_backed_catalog(self) -> None:
         from photovault.ui import main_window

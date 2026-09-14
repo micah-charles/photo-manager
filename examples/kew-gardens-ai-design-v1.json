@@ -1,0 +1,59 @@
+{
+  "format": "CollageDesignSpec",
+  "schema_version": 1,
+  "package_id": "fixture:kew-gardens",
+  "page_spec": {
+    "type": "single",
+    "width_mm": 300,
+    "height_mm": 300,
+    "orientation": "square",
+    "bleed_mm": 3,
+    "safe_margin_mm": 8,
+    "gutter_mm": 4,
+    "dpi": 300,
+    "background": "#f5f2ed",
+    "preset_id": "large-square"
+  },
+  "assets": [
+    {"label": "A01", "asset_id": "example_asset_01", "filename": "example-image-01.jpg"},
+    {"label": "A02", "asset_id": "example_asset_02", "filename": "example-image-02.jpg"},
+    {"label": "A03", "asset_id": "example_asset_03", "filename": "example-image-03.jpg"},
+    {"label": "A04", "asset_id": "example_asset_04", "filename": "example-image-04.jpg"},
+    {"label": "A05", "asset_id": "example_asset_05", "filename": "example-image-05.jpg"},
+    {"label": "A06", "asset_id": "example_asset_06", "filename": "example-image-06.jpg"},
+    {"label": "A07", "asset_id": "example_asset_07", "filename": "example-image-07.jpg"},
+    {"label": "A08", "asset_id": "example_asset_08", "filename": "example-image-08.jpg"},
+    {"label": "A09", "asset_id": "example_asset_09", "filename": "example-image-09.jpg"},
+    {"label": "A10", "asset_id": "example_asset_10", "filename": "example-image-10.jpg"},
+    {"label": "A11", "asset_id": "example_asset_11", "filename": "example-image-11.jpg"},
+    {"label": "A12", "asset_id": "example_asset_12", "filename": "example-image-12.jpg"}
+  ],
+  "alternatives": [
+    {
+      "id": "kew-gardens-organic-v1",
+      "style": "organic scrapbook",
+      "reason": "A loose garden scrapbook with two portraits, a large landscape anchor, angled photo cards, and quiet whitespace for the title.",
+      "elements": [
+        {"id": "paper", "type": "rectangle", "x_mm": 0, "y_mm": 0, "width_mm": 300, "height_mm": 300, "fill": "#f5f2ed", "z_index": 0},
+        {"id": "soft-leaf", "type": "ellipse", "x_mm": 246, "y_mm": 8, "width_mm": 42, "height_mm": 32, "fill": "#e6eee2", "opacity": 0.58, "rotation_deg": -18, "z_index": 2},
+        {"id": "photo-a04", "type": "photo", "asset_id": "A04", "role": "secondary", "x_mm": 9, "y_mm": 102, "width_mm": 93, "height_mm": 88, "rotation_deg": 1, "image": {"focus_x": 0.52, "focus_y": 0.48, "zoom": 1}, "mask": {"type": "rectangle"}, "border": {"width_mm": 1.8, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.16, "blur_mm": 2, "offset_x_mm": 0.6, "offset_y_mm": 1}, "z_index": 10},
+        {"id": "photo-a05", "type": "photo", "asset_id": "A05", "role": "hero", "x_mm": 102, "y_mm": 101, "width_mm": 117, "height_mm": 95, "rotation_deg": 1, "image": {"focus_x": 0.5, "focus_y": 0.48, "zoom": 1}, "mask": {"type": "rounded"}, "border": {"width_mm": 1.8, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.18, "blur_mm": 2.5, "offset_x_mm": 0.8, "offset_y_mm": 1.2}, "z_index": 20},
+        {"id": "photo-a01", "type": "photo", "asset_id": "A01", "role": "hero", "x_mm": 10, "y_mm": 8, "width_mm": 94, "height_mm": 94, "rotation_deg": 4, "image": {"focus_x": 0.5, "focus_y": 0.42, "zoom": 1}, "mask": {"type": "rectangle"}, "border": {"width_mm": 1.8, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.16, "blur_mm": 2, "offset_x_mm": 0.6, "offset_y_mm": 1}, "z_index": 30},
+        {"id": "photo-a02", "type": "photo", "asset_id": "A02", "role": "secondary", "x_mm": 97, "y_mm": 18, "width_mm": 89, "height_mm": 88, "rotation_deg": -3, "image": {"focus_x": 0.5, "focus_y": 0.44, "zoom": 1}, "mask": {"type": "rectangle"}, "border": {"width_mm": 1.8, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.17, "blur_mm": 2, "offset_x_mm": 0.7, "offset_y_mm": 1}, "z_index": 40},
+        {"id": "photo-a03", "type": "photo", "asset_id": "A03", "role": "detail", "x_mm": 183, "y_mm": 19, "width_mm": 69, "height_mm": 80, "rotation_deg": 0.5, "image": {"focus_x": 0.5, "focus_y": 0.5, "zoom": 1}, "mask": {"type": "rectangle"}, "border": {"width_mm": 1.8, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.14, "blur_mm": 2, "offset_x_mm": 0.6, "offset_y_mm": 1}, "z_index": 15},
+        {"id": "photo-a06", "type": "photo", "asset_id": "A06", "role": "detail", "x_mm": 217, "y_mm": 85, "width_mm": 76, "height_mm": 56, "rotation_deg": -4, "image": {"focus_x": 0.5, "focus_y": 0.5, "zoom": 1}, "mask": {"type": "rectangle"}, "border": {"width_mm": 1.8, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.14, "blur_mm": 2, "offset_x_mm": 0.6, "offset_y_mm": 1}, "z_index": 50},
+        {"id": "photo-a07", "type": "photo", "asset_id": "A07", "role": "secondary", "x_mm": 216, "y_mm": 139, "width_mm": 76, "height_mm": 57, "rotation_deg": 4, "image": {"focus_x": 0.5, "focus_y": 0.5, "zoom": 1}, "mask": {"type": "rectangle"}, "border": {"width_mm": 1.8, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.14, "blur_mm": 2, "offset_x_mm": 0.6, "offset_y_mm": 1}, "z_index": 60},
+        {"id": "photo-a08", "type": "photo", "asset_id": "A08", "role": "detail", "x_mm": 14, "y_mm": 184, "width_mm": 51, "height_mm": 53, "rotation_deg": -2, "image": {"focus_x": 0.5, "focus_y": 0.5, "zoom": 1}, "mask": {"type": "circle"}, "border": {"width_mm": 1.8, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.15, "blur_mm": 2, "offset_x_mm": 0.6, "offset_y_mm": 1}, "z_index": 70},
+        {"id": "photo-a09", "type": "photo", "asset_id": "A09", "role": "supporting", "x_mm": 64, "y_mm": 188, "width_mm": 57, "height_mm": 52, "rotation_deg": 4, "image": {"focus_x": 0.5, "focus_y": 0.5, "zoom": 1}, "mask": {"type": "rectangle"}, "border": {"width_mm": 1.8, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.15, "blur_mm": 2, "offset_x_mm": 0.6, "offset_y_mm": 1}, "z_index": 80},
+        {"id": "photo-a10", "type": "photo", "asset_id": "A10", "role": "detail", "x_mm": 122, "y_mm": 187, "width_mm": 55, "height_mm": 53, "rotation_deg": -2, "image": {"focus_x": 0.5, "focus_y": 0.5, "zoom": 1}, "mask": {"type": "rectangle"}, "border": {"width_mm": 1.8, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.15, "blur_mm": 2, "offset_x_mm": 0.6, "offset_y_mm": 1}, "z_index": 90},
+        {"id": "photo-a11", "type": "photo", "asset_id": "A11", "role": "supporting", "x_mm": 176, "y_mm": 195, "width_mm": 57, "height_mm": 52, "rotation_deg": 5, "image": {"focus_x": 0.5, "focus_y": 0.5, "zoom": 1}, "mask": {"type": "ellipse"}, "border": {"width_mm": 1.8, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.15, "blur_mm": 2, "offset_x_mm": 0.6, "offset_y_mm": 1}, "z_index": 100},
+        {"id": "photo-a12", "type": "photo", "asset_id": "A12", "role": "detail", "x_mm": 234, "y_mm": 195, "width_mm": 56, "height_mm": 53, "rotation_deg": -3, "image": {"focus_x": 0.5, "focus_y": 0.5, "zoom": 1}, "mask": {"type": "rectangle"}, "border": {"width_mm": 1.8, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.15, "blur_mm": 2, "offset_x_mm": 0.6, "offset_y_mm": 1}, "z_index": 110},
+        {"id": "title", "type": "text", "content": "Kew Gardens", "x_mm": 14, "y_mm": 246, "width_mm": 183, "height_mm": 28, "rotation_deg": -2, "text_style": {"font_id": "script", "font_size_pt": 44, "weight": "normal", "italic": false, "alignment": "left", "line_height": 1, "letter_spacing": 0, "color": "#304637"}, "z_index": 120},
+        {"id": "date", "type": "text", "content": "18 APR 2026", "x_mm": 21, "y_mm": 275, "width_mm": 57, "height_mm": 7, "text_style": {"font_id": "serif", "font_size_pt": 8, "weight": "normal", "italic": false, "alignment": "left", "line_height": 1, "letter_spacing": 4, "color": "#304637"}, "z_index": 121},
+        {"id": "date-rule", "type": "line", "x_mm": 80, "y_mm": 277, "width_mm": 14, "height_mm": 0, "stroke": "#304637", "stroke_width": 0.8, "z_index": 122},
+        {"id": "caption", "type": "text", "content": "A beautiful day with Mum.", "x_mm": 252, "y_mm": 264, "width_mm": 40, "height_mm": 16, "rotation_deg": 0, "text_style": {"font_id": "serif", "font_size_pt": 10, "weight": "normal", "italic": true, "alignment": "left", "line_height": 1.1, "letter_spacing": 0, "color": "#304637"}, "z_index": 123},
+        {"id": "tagline", "type": "text", "content": "FLOWERS · NATURE · GOOD COMPANY", "x_mm": 21, "y_mm": 285, "width_mm": 145, "height_mm": 7, "text_style": {"font_id": "serif", "font_size_pt": 7, "weight": "normal", "italic": false, "alignment": "left", "line_height": 1, "letter_spacing": 3, "color": "#304637"}, "z_index": 124}
+      ]
+    }
+  ]
+}

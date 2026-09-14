@@ -8,7 +8,7 @@ PySide6/PyInstaller entry point.
 
 `photovault.platform.windows.volume.WindowsVolumeProvider` calls
 `GetVolumeInformationW` through `ctypes` and records a stable volume-serial
-identity plus volume name/filesystem metadata. If the Windows API is
+identity (independent of the current drive letter) plus volume name/filesystem metadata. If the Windows API is
 unavailable, it records an explicit `path_fallback` identity rather than
 silently pretending the path is stable.
 
@@ -36,6 +36,13 @@ interrupted copies, locked files and permission errors.
 macOS. Mocked Windows API tests validate the provider contract on other hosts;
 they are not a substitute for the Windows runner.
 
+The first Windows run exposed a test-harness portability issue rather than a
+volume-provider failure: SQLite connections held open while
+`TemporaryDirectory` cleaned up produced `WinError 32`. Test fixtures now close
+connections before temporary directories are removed; the complete non-UI
+regression suite now passes 81/81 tests locally, including the stable
+drive-letter identity check.
+
 ## Remaining release checks
 
 - Validate stable identity after drive-letter changes and remounts.
@@ -45,4 +52,3 @@ they are not a substitute for the Windows runner.
 - Add Windows code signing and installer/update policy before distribution.
 - Select and validate a concrete ONNX embedding model with its required input
   shape and preprocessing; PhotoVault does not download model weights.
-

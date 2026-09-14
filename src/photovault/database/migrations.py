@@ -254,7 +254,448 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX idx_embeddings_model ON embeddings(model);
         """,
     ),
+    (
+        9,
+        """
+        CREATE TABLE source_profiles (
+            id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL UNIQUE,
+            manufacturer TEXT NOT NULL,
+            model TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            adapter TEXT NOT NULL,
+            usb_vendor_id INTEGER,
+            usb_product_id INTEGER,
+            first_seen TEXT NOT NULL,
+            last_seen TEXT NOT NULL
+        );
+
+        CREATE TABLE source_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id TEXT NOT NULL REFERENCES source_profiles(source_id) ON DELETE CASCADE,
+            object_id TEXT NOT NULL,
+            logical_path TEXT NOT NULL,
+            name TEXT NOT NULL,
+            media_type TEXT NOT NULL,
+            size_bytes INTEGER,
+            created_at TEXT,
+            modified_at TEXT,
+            last_seen TEXT NOT NULL,
+            UNIQUE(source_id, logical_path)
+        );
+        CREATE INDEX idx_source_items_source ON source_items(source_id);
+        """,
+    ),
+    (
+        10,
+        """
+        CREATE TABLE source_imports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id TEXT NOT NULL REFERENCES source_profiles(source_id) ON DELETE CASCADE,
+            logical_path TEXT NOT NULL,
+            source_object_id TEXT NOT NULL,
+            source_size_bytes INTEGER,
+            source_modified_at TEXT,
+            destination_volume_id TEXT NOT NULL REFERENCES volumes(id) ON DELETE CASCADE,
+            destination_relative_path TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            operation_id TEXT NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+            imported_at TEXT NOT NULL,
+            UNIQUE(source_id, logical_path, destination_volume_id, destination_relative_path)
+        );
+        CREATE INDEX idx_source_imports_lookup
+            ON source_imports(source_id, logical_path, destination_volume_id);
+        """,
+    ),
+    (
+        11,
+        """
+        CREATE TABLE android_backup_profiles (
+            id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL REFERENCES source_profiles(source_id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            folder_path TEXT NOT NULL,
+            media_filter TEXT NOT NULL CHECK (media_filter IN ('ALL', 'IMAGE', 'VIDEO')),
+            destination_volume_id TEXT NOT NULL REFERENCES volumes(id) ON DELETE RESTRICT,
+            destination_relative_root TEXT NOT NULL DEFAULT '',
+            workers INTEGER NOT NULL DEFAULT 5 CHECK (workers BETWEEN 1 AND 8),
+            fsync_mode TEXT NOT NULL DEFAULT 'batch' CHECK (fsync_mode IN ('per-file', 'batch')),
+            batch_files INTEGER NOT NULL DEFAULT 25 CHECK (batch_files >= 1),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_completed_at TEXT,
+            UNIQUE(source_id, folder_path, media_filter, destination_volume_id, destination_relative_root)
+        );
+        CREATE INDEX idx_android_backup_profiles_source ON android_backup_profiles(source_id);
+
+        CREATE TABLE android_backup_snapshots (
+            id TEXT PRIMARY KEY,
+            profile_id TEXT NOT NULL REFERENCES android_backup_profiles(id) ON DELETE CASCADE,
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            status TEXT NOT NULL CHECK (status IN ('RUNNING', 'COMPLETED', 'CANCELLED', 'FAILED')),
+            planned_items INTEGER NOT NULL DEFAULT 0,
+            planned_bytes INTEGER NOT NULL DEFAULT 0,
+            imported_items INTEGER NOT NULL DEFAULT 0,
+            already_imported_items INTEGER NOT NULL DEFAULT 0,
+            failed_items INTEGER NOT NULL DEFAULT 0,
+            imported_bytes INTEGER NOT NULL DEFAULT 0,
+            details_json TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX idx_android_backup_snapshots_profile ON android_backup_snapshots(profile_id, started_at DESC);
+        """,
+    ),
+    (
+        12,
+        """
+        CREATE TABLE asset_favourites (
+            asset_id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+            note TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_asset_favourites_updated ON asset_favourites(updated_at DESC);
+        """,
+    ),
+    (
+        13,
+        """
+        CREATE TABLE android_backup_profile_folders (
+            profile_id TEXT NOT NULL REFERENCES android_backup_profiles(id) ON DELETE CASCADE,
+            folder_path TEXT NOT NULL,
+            PRIMARY KEY(profile_id, folder_path)
+        );
+        CREATE INDEX idx_android_backup_profile_folders_profile
+            ON android_backup_profile_folders(profile_id);
+        """,
+    ),
+    (
+        14,
+        """
+        ALTER TABLE source_items ADD COLUMN source_latitude REAL;
+        ALTER TABLE source_items ADD COLUMN source_longitude REAL;
+        ALTER TABLE source_imports ADD COLUMN source_latitude REAL;
+        ALTER TABLE source_imports ADD COLUMN source_longitude REAL;
+        ALTER TABLE gps_metadata ADD COLUMN location_source TEXT NOT NULL DEFAULT 'embedded_exif';
+        """,
+    ),
+    (
+        15,
+        """
+        CREATE TABLE people (
+            id TEXT PRIMARY KEY,
+            engine TEXT NOT NULL,
+            external_key TEXT NOT NULL,
+            display_name TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(engine, external_key)
+        );
+        CREATE TABLE person_members (
+            person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            face_count INTEGER NOT NULL DEFAULT 1 CHECK(face_count >= 1),
+            PRIMARY KEY(person_id, asset_id)
+        );
+        CREATE INDEX idx_person_members_asset ON person_members(asset_id);
+        """,
+    ),
+    (
+        16,
+        """
+        CREATE TABLE image_categories (
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            model TEXT NOT NULL,
+            label TEXT NOT NULL,
+            score REAL NOT NULL CHECK(score >= 0 AND score <= 1),
+            source_sha256 TEXT NOT NULL,
+            computed_at TEXT NOT NULL,
+            PRIMARY KEY(asset_id, model, label)
+        );
+        CREATE INDEX idx_image_categories_label ON image_categories(model, label, score DESC);
+        """,
+    ),
+    (
+        17,
+        """
+        CREATE TABLE user_collections (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE user_collection_members (
+            collection_id TEXT NOT NULL REFERENCES user_collections(id) ON DELETE CASCADE,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            added_at TEXT NOT NULL,
+            PRIMARY KEY(collection_id, asset_id)
+        );
+        CREATE INDEX idx_user_collection_members_asset
+            ON user_collection_members(asset_id);
+        """,
+    ),
+    (
+        18,
+        """
+        ALTER TABLE source_profiles ADD COLUMN source_type TEXT NOT NULL DEFAULT 'unknown';
+        ALTER TABLE source_profiles ADD COLUMN persistent_device_id TEXT;
+        ALTER TABLE source_profiles ADD COLUMN time_offset_seconds INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE source_profiles ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}';
+        ALTER TABLE asset_locations ADD COLUMN source_id TEXT REFERENCES source_profiles(source_id) ON DELETE SET NULL;
+
+        CREATE TABLE events (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            start_datetime TEXT,
+            end_datetime TEXT,
+            event_type TEXT NOT NULL DEFAULT 'other',
+            description TEXT NOT NULL DEFAULT '',
+            default_place_id TEXT,
+            cover_asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+            is_suggested INTEGER NOT NULL DEFAULT 0 CHECK(is_suggested IN (0, 1)),
+            suggestion_confidence REAL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE event_assets (
+            event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            membership_source TEXT NOT NULL DEFAULT 'manual',
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(event_id, asset_id)
+        );
+        CREATE INDEX idx_events_dates ON events(start_datetime, end_datetime);
+        CREATE INDEX idx_event_assets_asset ON event_assets(asset_id);
+
+        CREATE TABLE tags (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            normalized_name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE asset_tags (
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+            source TEXT NOT NULL DEFAULT 'user',
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(asset_id, tag_id)
+        );
+        CREATE INDEX idx_asset_tags_tag ON asset_tags(tag_id);
+
+        CREATE TABLE places (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            country TEXT,
+            region TEXT,
+            city TEXT,
+            latitude REAL,
+            longitude REAL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE asset_places (
+            asset_id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+            place_id TEXT NOT NULL REFERENCES places(id) ON DELETE CASCADE,
+            source TEXT NOT NULL DEFAULT 'user_assigned',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_asset_places_place ON asset_places(place_id);
+
+        CREATE TABLE asset_reviews (
+            asset_id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+            review_status TEXT NOT NULL DEFAULT 'UNREVIEWED'
+                CHECK(review_status IN ('UNREVIEWED', 'PICKED', 'REJECTED', 'HIDDEN')),
+            rating INTEGER CHECK(rating IS NULL OR (rating BETWEEN 0 AND 5)),
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_asset_reviews_status ON asset_reviews(review_status);
+        CREATE INDEX idx_asset_reviews_rating ON asset_reviews(rating);
+        CREATE INDEX idx_asset_locations_source ON asset_locations(source_id);
+        """,
+    ),
+    (
+        19,
+        """
+        CREATE TABLE import_batches (
+            id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL REFERENCES source_profiles(source_id) ON DELETE CASCADE,
+            destination_volume_id TEXT NOT NULL REFERENCES volumes(id) ON DELETE CASCADE,
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            status TEXT NOT NULL
+                CHECK (status IN ('RUNNING', 'COMPLETED', 'CANCELLED', 'FAILED')),
+            planned_items INTEGER NOT NULL DEFAULT 0,
+            imported_items INTEGER NOT NULL DEFAULT 0,
+            already_imported_items INTEGER NOT NULL DEFAULT 0,
+            failed_items INTEGER NOT NULL DEFAULT 0,
+            imported_bytes INTEGER NOT NULL DEFAULT 0,
+            details_json TEXT NOT NULL DEFAULT '{}'
+        );
+        ALTER TABLE source_imports ADD COLUMN batch_id TEXT
+            REFERENCES import_batches(id) ON DELETE SET NULL;
+        CREATE INDEX idx_import_batches_source
+            ON import_batches(source_id, started_at DESC);
+        CREATE INDEX idx_import_batches_destination
+            ON import_batches(destination_volume_id, started_at DESC);
+        CREATE INDEX idx_source_imports_batch ON source_imports(batch_id);
+        """,
+    ),
+    (
+        20,
+        """
+        CREATE TABLE dismissed_event_suggestions (
+            suggestion_key TEXT PRIMARY KEY,
+            dismissed_at TEXT NOT NULL
+        );
+        """,
+    ),
+    (
+        21,
+        """
+        CREATE TABLE thumbnail_failures (
+            asset_id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+            reason TEXT NOT NULL,
+            failed_at TEXT NOT NULL
+        );
+        """,
+    ),
+    (
+        22,
+        """
+        CREATE TABLE asset_locations_v22 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            volume_id TEXT NOT NULL REFERENCES volumes(id) ON DELETE CASCADE,
+            relative_path TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            modified_ns INTEGER NOT NULL,
+            capture_date TEXT,
+            scan_session_id TEXT,
+            missing_since TEXT,
+            source_id TEXT REFERENCES source_profiles(source_id) ON DELETE SET NULL,
+            UNIQUE(volume_id, relative_path, source_id)
+        );
+        INSERT INTO asset_locations_v22(
+            id, asset_id, volume_id, relative_path, filename, size_bytes,
+            modified_ns, capture_date, scan_session_id, missing_since, source_id
+        )
+        SELECT id, asset_id, volume_id, relative_path, filename, size_bytes,
+               modified_ns, capture_date, scan_session_id, missing_since, source_id
+        FROM asset_locations;
+        DROP TABLE asset_locations;
+        ALTER TABLE asset_locations_v22 RENAME TO asset_locations;
+        CREATE INDEX idx_asset_locations_volume ON asset_locations(volume_id);
+        CREATE INDEX idx_asset_locations_asset ON asset_locations(asset_id);
+        CREATE INDEX idx_asset_locations_size ON asset_locations(size_bytes);
+        CREATE INDEX idx_asset_locations_source ON asset_locations(source_id);
+        """,
+    ),
+    (
+        23,
+        """
+        CREATE TABLE trusted_android_devices (
+            device_id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL REFERENCES source_profiles(source_id) ON DELETE CASCADE,
+            display_name TEXT NOT NULL,
+            public_key_fingerprint TEXT NOT NULL,
+            credential_reference_id TEXT NOT NULL,
+            protocol_version TEXT NOT NULL,
+            paired_at TEXT NOT NULL,
+            last_authenticated_at TEXT,
+            revoked_at TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX idx_trusted_android_source ON trusted_android_devices(source_id);
+        CREATE TABLE android_pairing_sessions (
+            id TEXT PRIMARY KEY,
+            device_id TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            state TEXT NOT NULL CHECK(state IN (
+                'DISCOVERED', 'CONNECTING', 'HANDSHAKING',
+                'AWAITING_NUMERIC_CONFIRMATION', 'LOCAL_CONFIRMED',
+                'REMOTE_CONFIRMED', 'PAIRED', 'FAILED', 'EXPIRED', 'CANCELLED'
+            )),
+            sas TEXT,
+            handshake_hash TEXT,
+            public_key_fingerprint TEXT,
+            protocol_version TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            error_code TEXT
+        );
+        CREATE INDEX idx_android_pairing_sessions_expiry ON android_pairing_sessions(expires_at);
+        """,
+    ),
+    (
+        24,
+        """
+        CREATE TABLE android_pairing_requests_v2 (
+            pair_request_id TEXT PRIMARY KEY,
+            device_id TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            remote_address TEXT NOT NULL,
+            android_certificate_fingerprint TEXT NOT NULL,
+            desktop_certificate_fingerprint TEXT NOT NULL,
+            pairing_nonce BLOB NOT NULL,
+            sas TEXT NOT NULL,
+            state TEXT NOT NULL,
+            android_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(android_confirmed IN (0, 1)),
+            desktop_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(desktop_confirmed IN (0, 1)),
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            failure_reason TEXT
+        );
+        CREATE UNIQUE INDEX idx_android_pairing_v2_active_device
+            ON android_pairing_requests_v2(device_id)
+            WHERE state NOT IN ('PAIRED', 'REJECTED', 'EXPIRED', 'FAILED');
+        CREATE INDEX idx_android_pairing_v2_expiry
+            ON android_pairing_requests_v2(expires_at);
+        """,
+    ),
+    (
+        25,
+        """
+        CREATE TABLE topic_sections (
+            id TEXT PRIMARY KEY,
+            topic_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            cover_asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+            date_start TEXT,
+            date_end TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(topic_id, title)
+        );
+        CREATE TABLE topic_section_assets (
+            section_id TEXT NOT NULL REFERENCES topic_sections(id) ON DELETE CASCADE,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            added_at TEXT NOT NULL,
+            PRIMARY KEY(section_id, asset_id)
+        );
+        CREATE INDEX idx_topic_sections_topic ON topic_sections(topic_id, sort_order);
+        CREATE INDEX idx_topic_section_assets_asset ON topic_section_assets(asset_id);
+        """,
+    ),
 ]
+
+
+MIGRATIONS.append((26, """
+CREATE TABLE topic_culling (
+ topic_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+ asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+ decision TEXT NOT NULL CHECK(decision IN ('pick','reject')),
+ updated_at TEXT NOT NULL,
+ PRIMARY KEY(topic_id,asset_id)
+);
+"""))
 
 
 def apply_migrations(connection: sqlite3.Connection) -> None:

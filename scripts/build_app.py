@@ -24,6 +24,9 @@ def main() -> int:
     if args.clean:
         command.append("--clean")
     command.extend(["--paths", str(project / "src"), str(project / "src" / "photovault" / "app.py")])
+    helper = project / "native" / "macos" / "android_mtp" / "photovault-android-mtp"
+    if sys.platform == "darwin" and helper.exists():
+        command.extend(["--add-binary", f"{helper}:native/macos/android_mtp"])
     config_dir = project / ".pyinstaller"
     config_dir.mkdir(exist_ok=True)
     environment = os.environ.copy()

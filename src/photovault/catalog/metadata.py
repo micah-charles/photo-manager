@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,8 +48,10 @@ def _date_value(raw: object) -> str | None:
 def _coordinate(value: object) -> float | None:
     try:
         if isinstance(value, (tuple, list)) and len(value) == 3:
-            return float(value[0]) + float(value[1]) / 60 + float(value[2]) / 3600
-        return float(value)
+            result = float(value[0]) + float(value[1]) / 60 + float(value[2]) / 3600
+        else:
+            result = float(value)
+        return result if math.isfinite(result) else None
     except (TypeError, ValueError, ZeroDivisionError):
         return None
 
@@ -61,14 +65,26 @@ def _image_metadata(path: Path) -> MetadataRecord:
         capture = _date_value(values.get("DateTimeOriginal")) or _date_value(values.get("DateTimeDigitized")) or _date_value(values.get("DateTime"))
         source = "exif" if capture else None
         latitude = longitude = None
-        gps = exif.get(34853)
-        if gps:
+        # Pillow exposes the EXIF GPS pointer through ``get`` on many JPEGs;
+        # the actual GPS tag mapping is available through ``get_ifd``.
+        # Retain a mapping fallback for older Pillow versions.
+        gps = exif.get_ifd(34853) if hasattr(exif, "get_ifd") else exif.get(34853)
+        # Some real-world files contain a malformed GPS pointer/value instead
+        # of the expected nested EXIF mapping. Treat that field as unavailable;
+        # one damaged tag must not abort a whole read-only library scan.
+        if isinstance(gps, Mapping):
             gps_values = {ExifTags.GPSTAGS.get(key, key): value for key, value in gps.items()} if ExifTags else {}
             latitude = _coordinate(gps_values.get("GPSLatitude"))
             longitude = _coordinate(gps_values.get("GPSLongitude"))
-            if latitude is not None and gps_values.get("GPSLatitudeRef", "N").upper() == "S":
+            latitude_ref = gps_values.get("GPSLatitudeRef", "N")
+            longitude_ref = gps_values.get("GPSLongitudeRef", "E")
+            if isinstance(latitude_ref, bytes):
+                latitude_ref = latitude_ref.decode("ascii", errors="ignore")
+            if isinstance(longitude_ref, bytes):
+                longitude_ref = longitude_ref.decode("ascii", errors="ignore")
+            if latitude is not None and str(latitude_ref).upper() == "S":
                 latitude = -latitude
-            if longitude is not None and gps_values.get("GPSLongitudeRef", "E").upper() == "W":
+            if longitude is not None and str(longitude_ref).upper() == "W":
                 longitude = -longitude
         keywords = values.get("XPKeywords") or values.get("Keywords") or ()
         if isinstance(keywords, bytes):
@@ -93,8 +109,6 @@ def _image_metadata(path: Path) -> MetadataRecord:
             latitude=latitude,
             longitude=longitude,
         )
-
-
 def _video_metadata(path: Path) -> MetadataRecord:
     ffprobe = shutil.which("ffprobe")
     if not ffprobe:
@@ -121,11 +135,11 @@ def _video_metadata(path: Path) -> MetadataRecord:
 
 def extract_metadata(path: Path) -> MetadataRecord:
     try:
-        if path.suffix.lower() in {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tif", ".tiff", ".webp", ".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf", ".orf", ".rw2"}:
+        if path.suffix.lower() in {".jpg", ".jpeg", ".png", ".gif", ".heic", ".heif", ".tif", ".tiff", ".webp", ".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf", ".orf", ".rw2"}:
             return _image_metadata(path)
         if path.suffix.lower() in {".mov", ".mp4", ".m4v", ".avi"}:
             return _video_metadata(path)
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, AttributeError):
         pass
     return MetadataRecord()
 
@@ -148,7 +162,7 @@ def store_metadata(connection, asset_id: str, record: MetadataRecord) -> None:
     )
     if record.latitude is not None and record.longitude is not None:
         connection.execute(
-            "INSERT INTO gps_metadata(asset_id, latitude, longitude, extracted_at) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(asset_id) DO UPDATE SET latitude=excluded.latitude, longitude=excluded.longitude, extracted_at=excluded.extracted_at",
+            "INSERT INTO gps_metadata(asset_id, latitude, longitude, extracted_at, location_source) VALUES (?, ?, ?, ?, 'embedded_exif') "
+            "ON CONFLICT(asset_id) DO UPDATE SET latitude=excluded.latitude, longitude=excluded.longitude, extracted_at=excluded.extracted_at, location_source='embedded_exif'",
             (asset_id, record.latitude, record.longitude, _utc_now()),
         )

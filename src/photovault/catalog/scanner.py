@@ -15,10 +15,12 @@ from .thumbnails import generate_thumbnail
 from photovault.observability import log_event
 from photovault.platform.base import VolumeProvider
 from photovault.platform.provider import default_volume_provider
+from photovault.catalog.sources import register_source
+from photovault.sources.base import SourceIdentity
 
 
 MEDIA_EXTENSIONS = {
-    ".jpg": "IMAGE", ".jpeg": "IMAGE", ".png": "IMAGE", ".heic": "IMAGE",
+    ".jpg": "IMAGE", ".jpeg": "IMAGE", ".png": "IMAGE", ".gif": "IMAGE", ".heic": "IMAGE",
     ".heif": "IMAGE", ".tif": "IMAGE", ".tiff": "IMAGE", ".webp": "IMAGE",
     ".cr2": "IMAGE", ".cr3": "IMAGE", ".nef": "IMAGE", ".arw": "IMAGE",
     ".dng": "IMAGE", ".raf": "IMAGE", ".orf": "IMAGE", ".rw2": "IMAGE",
@@ -130,6 +132,15 @@ def scan_volume(
     row = connection.execute("SELECT id FROM volumes WHERE id = ?", (volume_id,)).fetchone()
     if row is None:
         raise ValueError(f"unknown volume: {volume_id}")
+    volume = connection.execute("SELECT display_name FROM volumes WHERE id=?", (volume_id,)).fetchone()
+    source_id = f"folder:{volume_id}"
+    register_source(connection, SourceIdentity(
+        source_id=source_id,
+        manufacturer="Local filesystem",
+        model="Folder / removable media",
+        display_name=str(volume[0] if volume else volume_id),
+        adapter="local_folder",
+    ))
     session_id = "scan_" + uuid.uuid4().hex
     started = utc_now()
     started_clock = time.monotonic()
@@ -146,9 +157,11 @@ def scan_volume(
                 stat = path.stat()
                 relative = path.relative_to(root).as_posix()
                 existing = connection.execute(
-                    "SELECT al.asset_id, al.size_bytes, al.modified_ns, eh.sha256 "
+                    "SELECT al.asset_id, al.size_bytes, al.modified_ns, eh.sha256, al.source_id "
                     "FROM asset_locations al LEFT JOIN exact_hashes eh ON eh.asset_id=al.asset_id "
-                    "WHERE al.volume_id=? AND al.relative_path=?",
+                    "WHERE al.volume_id=? AND al.relative_path=? "
+                    "ORDER BY CASE WHEN al.source_id LIKE 'folder:%' OR al.source_id IS NULL THEN 1 ELSE 0 END "
+                    "LIMIT 1",
                     (volume_id, relative),
                 ).fetchone()
                 asset_id = existing[0] if existing else "asset_" + uuid.uuid4().hex
@@ -176,20 +189,32 @@ def scan_volume(
                 store_metadata(connection, asset_id, metadata)
                 if thumbnail_root is not None:
                     generate_thumbnail(connection, asset_id, path, thumbnail_root)
+                # Older catalogs predate location provenance and have a NULL
+                # source_id. Upgrade that row in place before the upsert below;
+                # inserting a second row would make the same physical file
+                # appear twice after reindexing.
+                if existing and existing[4] is None:
+                    connection.execute(
+                        "UPDATE asset_locations SET source_id=? "
+                        "WHERE volume_id=? AND relative_path=? AND source_id IS NULL",
+                        (source_id, volume_id, relative),
+                    )
                 connection.execute(
                     """
                     INSERT INTO asset_locations(asset_id, volume_id, relative_path, filename,
-                                                size_bytes, modified_ns, capture_date, scan_session_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(volume_id, relative_path) DO UPDATE SET
+                                                size_bytes, modified_ns, capture_date, scan_session_id, source_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(volume_id, relative_path, source_id) DO UPDATE SET
                       asset_id=excluded.asset_id,
                       size_bytes=excluded.size_bytes, modified_ns=excluded.modified_ns,
                       filename=excluded.filename, capture_date=excluded.capture_date,
                       scan_session_id=excluded.scan_session_id,
+                      source_id=excluded.source_id,
                       missing_since=NULL
                     """,
                     (asset_id, volume_id, relative, path.name, stat.st_size, stat.st_mtime_ns,
-                     metadata.capture_datetime[:10] if metadata.capture_datetime else None, session_id),
+                     metadata.capture_datetime[:10] if metadata.capture_datetime else None, session_id,
+                     existing[4] if existing and existing[4] else source_id),
                 )
                 if obsolete_asset_id:
                     remaining = connection.execute(
