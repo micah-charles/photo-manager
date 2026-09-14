@@ -192,7 +192,12 @@ def to_collage_document(spec: dict[str, Any], alternative_index: int = 0, asset_
     return {"document_type": "CollageDocument", "schema_version": 2, "document_id": "doc_" + uuid.uuid4().hex, "created_at": now, "modified_at": now,
             "page_spec": page, "canvas": {"width": round(width * scale), "height": round(float(page["height_mm"]) * scale), "gutter": round(float(page.get("gutter_mm", 4)) * scale)},
             "background": page.get("background", "#f5f2ed"), "elements": elements, "frames": [x for x in elements if x["type"] == "photo"], "cells": [x for x in elements if x["type"] == "photo"],
-            "provider": "ai-design", "style": alternative.get("style", ""), "metadata": {"design_reason": alternative.get("reason", ""), "source": "CollageDesignSpec v1"}, "edited": True}
+            "provider": "ai-design", "style": alternative.get("style", ""), "metadata": {
+                "design_id": alternative.get("id", ""),
+                "design_name": alternative.get("name") or alternative.get("title") or "",
+                "design_reason": alternative.get("reason", ""),
+                "source": "CollageDesignSpec v1",
+            }, "edited": True}
 
 
 def validate_collage_document(payload: Any, asset_ids: set[str]) -> dict[str, Any]:

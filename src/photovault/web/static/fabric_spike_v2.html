@@ -34,11 +34,11 @@
       <a href="/experimental/collage">← Back to Smart Collage</a>
     </header>
     <section class="bar">
-      <label>Photo source <select id="render-mode" aria-describedby="render-mode-help"><option value="funnel" selected>Fast funnel · thumbnail</option><option value="view">View photos · original</option></select></label>
+      <label id="photo-source-control">Photo source <select id="render-mode" aria-describedby="render-mode-help"><option value="funnel" selected>Fast funnel · thumbnail</option><option value="view">View photos · original</option></select></label>
       <span id="render-mode-help" class="muted">Funnel is quick; View photos loads connected originals for inspection and final export.</span>
-      <label>Run <select id="run"><option>Loading runs…</option></select></label>
-      <label>Candidate <select id="candidate"><option>Choose a run</option></select></label>
-      <button id="open" class="primary">Open candidate</button><span id="identity" class="badge">No document loaded</span>
+      <label id="run-control">Run <select id="run"><option>Loading runs…</option></select></label>
+      <label id="candidate-control">Candidate <select id="candidate"><option>Choose a run</option></select></label>
+      <button id="open" class="primary">Open candidate</button><span id="ai-document-summary" class="badge" hidden></span><span id="identity" class="badge">No document loaded</span>
     </section>
     <section class="bar">
       <button id="undo">Undo</button><button id="redo">Redo</button><button id="layout" class="primary">Layout mode</button><button id="crop">Crop mode</button><button id="fit">Fit page</button><button id="save" class="primary">Save variant</button><button id="reload">Reload saved</button>

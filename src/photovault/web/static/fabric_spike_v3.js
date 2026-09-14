@@ -28,6 +28,25 @@ const activeElement = () => elements().find((element) => elementId(element) === 
 const canvasSize = () => ({ width: Number(state.doc?.canvas?.width || 1200), height: Number(state.doc?.canvas?.height || 800) });
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const status = (message) => { if ($("status")) $("status").textContent = message; };
+function updateDocumentChrome() {
+  const creatorDocument = ["ai-design", "blank"].includes(String(state.doc?.provider || ""));
+  ["photo-source-control", "render-mode-help", "run-control", "candidate-control", "open"].forEach((id) => {
+    const node = $(id);
+    if (node) node.hidden = creatorDocument;
+  });
+  const summary = $("ai-document-summary");
+  if (summary) {
+    summary.hidden = !creatorDocument;
+    if (creatorDocument) {
+      const metadata = state.doc?.metadata || {};
+      const kind = state.doc?.provider === "blank" ? "Start blank" : "AI Design";
+      const alternative = metadata.design_id ? `Alternative ${metadata.design_id}` : "Imported alternative";
+      const name = metadata.design_name || (state.doc?.provider === "blank" ? "editable grid" : alternative);
+      const packageLabel = metadata.package_id && !String(metadata.package_id).startsWith("fixture:") ? ` · ${String(metadata.package_id).slice(0, 16)}` : "";
+      summary.textContent = `${kind} · ${name}${packageLabel} · ${elements().length} elements`;
+    }
+  }
+}
 const photoControls = ["opacity", "border-width", "border-color", "mask", "zoom", "rotate", "reset", "raise", "lower"];
 function setInspectorState(hasPhoto) {
   photoControls.forEach((control) => { if ($(control)) $(control).disabled = !hasPhoto; });
@@ -357,7 +376,8 @@ async function renderNow() {
     else addDecoration(element);
   }
   applyInteractivity(); fitPage(); state.canvas.renderAll(); refreshLayers();
-  $("identity").textContent = `${state.doc.provider || "document"} · ${state.renderMode} · ${elements().length} elements · ${state.canvas.getObjects().length} layers`;
+  updateDocumentChrome();
+  $("identity").textContent = `${state.doc.provider || "document"} · ${elements().length} elements · ${state.canvas.getObjects().length} layers`;
   if (state.activeId) {
     const desired = state.canvas.getObjects().find((object) => object._elementId === state.activeId && (state.mode === "crop" ? object._kind === "photo-image" : object._kind !== "photo-image"));
     if (desired) state.canvas.setActiveObject(desired); inspect(desired || { _elementId: state.activeId });
@@ -415,7 +435,7 @@ async function openDocument(url) {
   const documentUrl = url || state.savedDocumentUrl || state.candidates[Number($("candidate")?.value)]?.document;
   if (!documentUrl) { status("Choose a candidate first, or import an AI design."); return; }
   state.doc = normalizeDocument(await api(documentUrl)); state.history = []; state.future = []; state.activeId = elements()[0] ? elementId(elements()[0]) : null;
-  await loadPhotos(); await queueRender(); status("Document loaded. Fabric canvas ready.");
+  await loadPhotos(); await queueRender(); updateDocumentChrome(); status("Document loaded. Fabric canvas ready.");
 }
 
 function downloadBlob(name, blob) {

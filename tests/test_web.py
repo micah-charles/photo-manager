@@ -39,6 +39,26 @@ class WebLibraryTests(unittest.TestCase):
         self.assertTrue((STATIC_ROOT / "style.css").is_file())
         self.assertTrue((STATIC_ROOT / "app.js").is_file())
 
+    def test_creator_mode_has_first_class_creation_methods(self) -> None:
+        collage = (STATIC_ROOT / "collage_v2.html").read_text(encoding="utf-8")
+        for marker in (
+            'id="method-ai"',
+            'id="method-native"',
+            'id="method-cewe"',
+            'id="method-bsp"',
+            'id="export-design"',
+            'id="import-ai-design"',
+            'id="creator-alternative"',
+            'id="start-blank"',
+            'collage_creator_mode.js',
+        ):
+            self.assertIn(marker, collage)
+        self.assertIn("Nothing is sent to an AI service automatically", collage)
+
+        editor = (STATIC_ROOT / "fabric_spike_v2.html").read_text(encoding="utf-8")
+        self.assertIn('id="ai-document-summary"', editor)
+        self.assertIn('id="run-control"', editor)
+
     def test_topics_payload_exposes_editable_event_and_count(self) -> None:
         class Provider:
             def identify(self, path: Path) -> VolumeIdentity:

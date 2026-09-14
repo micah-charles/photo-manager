@@ -9,7 +9,7 @@ class CollageDesignFormatTests(unittest.TestCase):
             "format": "CollageDesignSpec", "schema_version": 1,
             "page_spec": {"width_mm": 300, "height_mm": 300, "background": "#f5f2ed"},
             "assets": [{"asset_id": "a1", "filename": "one.jpg"}],
-            "alternatives": [{"id": "alt-1", "elements": elements}],
+            "alternatives": [{"id": "alt-1", "name": "Test alternative", "elements": elements}],
         }
 
     def test_validates_photo_and_converts_to_stable_element_document(self):
@@ -20,6 +20,8 @@ class CollageDesignFormatTests(unittest.TestCase):
         self.assertEqual(document["schema_version"], 2)
         self.assertEqual(document["elements"][0]["element_id"], "photo-01")
         self.assertEqual(document["elements"][0]["photo_id"], "a1")
+        self.assertEqual(document["metadata"]["design_id"], "alt-1")
+        self.assertEqual(document["metadata"]["design_name"], "Test alternative")
 
     def test_rejects_unknown_asset_and_unsafe_numbers(self):
         with self.assertRaisesRegex(ValueError, "outside the package"):
