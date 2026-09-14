@@ -25,6 +25,18 @@ class _Provider:
 
 
 class CollageDesignPackageV2Tests(unittest.TestCase):
+    def test_svg_normalizer_publishes_explicit_geometry_and_preserves_aspect_ratio(self) -> None:
+        raw = b'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><rect x="-2" y="-1" width="24" height="12" fill="#e6eee2" stroke="#61775A" stroke-width="2"/></svg>'
+        cleaned = sanitize_svg(raw)
+        self.assertIn(b'width="20"', cleaned)
+        self.assertIn(b'height="10"', cleaned)
+        self.assertIn(b'viewBox="-3 -2 26 14"', cleaned)
+        self.assertIn(b'preserveAspectRatio="xMidYMid meet"', cleaned)
+
+    def test_svg_normalizer_rejects_missing_or_invalid_dimensions(self) -> None:
+        with self.assertRaisesRegex(ValueError, "positive width/height"):
+            sanitize_svg(b'<svg xmlns="http://www.w3.org/2000/svg" width="0" height="10"><circle cx="1" cy="1" r="1"/></svg>')
+
     def test_safe_svg_allows_namespace_and_rejects_script(self) -> None:
         safe = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M1 9 L9 1" stroke="#61775A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5" cy="5" r="4" fill="#e6eee2"/></svg>'
         cleaned = sanitize_svg(safe)

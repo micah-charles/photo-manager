@@ -320,6 +320,12 @@ def to_collage_document(spec: dict[str, Any], alternative_index: int = 0, asset_
         elif item["type"] == "design_asset":
             item["asset_id"] = item.pop("package_asset_id")
             item["asset_url"] = (asset_map or {}).get(item["asset_id"], {}).get("asset_url", item.get("asset_url"))
+        elif item["type"] == "polygon":
+            item["points"] = [{"x": mm_to_px(point["x"]), "y": mm_to_px(point["y"])} for point in item.get("points", [])]
+        if "stroke_width" in item:
+            # DesignSpec geometry is physical. Keep the V2 document in the same
+            # logical pixels used by every Fabric object, including strokes.
+            item["stroke_width"] = mm_to_px(item["stroke_width"])
         elements.append(item)
     now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     return {"document_type": "CollageDocument", "schema_version": 2, "document_id": "doc_" + uuid.uuid4().hex, "created_at": now, "modified_at": now,

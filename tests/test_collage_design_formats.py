@@ -37,6 +37,17 @@ class CollageDesignFormatTests(unittest.TestCase):
         document = to_collage_document(spec, asset_map={"a1": spec["assets"][0]})
         self.assertEqual([x["element_id"] for x in document["elements"]], ["bg", "title"])
 
+    def test_converts_polygon_points_and_strokes_from_mm_to_pixels(self):
+        spec = self.spec([{
+            "id": "shape", "type": "polygon", "points": [{"x": 1, "y": 2}, {"x": 4, "y": 6}, {"x": 7, "y": 3}],
+            "x_mm": 0, "y_mm": 0, "width_mm": 20, "height_mm": 20,
+            "stroke_width": 1.5, "fill": "#ffffff", "z_index": 2,
+        }])
+        document = to_collage_document(spec, asset_map={"a1": spec["assets"][0]})
+        shape = document["elements"][0]
+        self.assertEqual(shape["points"], [{"x": 4, "y": 8}, {"x": 16, "y": 24}, {"x": 28, "y": 12}])
+        self.assertEqual(shape["stroke_width"], 6)
+
     def test_v2_supports_object_masks_and_reports_text_repair(self):
         spec = self.spec([
             {"id": "photo-01", "type": "photo", "asset_id": "a1", "x_mm": 10, "y_mm": 10,

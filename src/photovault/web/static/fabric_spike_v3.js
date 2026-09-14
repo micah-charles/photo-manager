@@ -11,6 +11,7 @@ const state = {
   photos: [], assetMap: new Map(), activeId: null, mode: "layout", renderMode: "funnel", renderFallbacks: [],
   history: [], future: [], canvas: null, gestureBefore: null,
   controlBefore: null, aiSpec: null, aiPackageId: null, renderPromise: Promise.resolve(),
+  renderValidation: { validation_status: "valid", warnings: [], repairs: [] },
 };
 window.fabricSpikeState = state;
 
@@ -47,13 +48,14 @@ function updateDocumentChrome() {
       summary.textContent = `${kind} · ${name}${packageLabel} · ${elements().length} elements`;
     }
   }
-  const report = state.doc?.metadata?.layout_validation;
+  const reports = [state.doc?.metadata?.layout_validation, state.doc?.metadata?.render_validation].filter(Boolean);
   const reportNode = $("validation-report");
   if (reportNode) {
-    const warnings = Array.isArray(report?.warnings) ? report.warnings : [];
-    const repairs = Array.isArray(report?.repairs) ? report.repairs : [];
+    const warnings = reports.flatMap((report) => Array.isArray(report.warnings) ? report.warnings : []);
+    const repairs = reports.flatMap((report) => Array.isArray(report.repairs) ? report.repairs : []);
+    const statuses = reports.map((report) => String(report.validation_status || "valid"));
     reportNode.hidden = !warnings.length && !repairs.length;
-    reportNode.textContent = reportNode.hidden ? "" : `Validation: ${report?.validation_status || "review"} · ${warnings.length} warning(s) · ${repairs.length} repair(s)`;
+    reportNode.textContent = reportNode.hidden ? "" : `Validation: ${statuses.join(" + ")} · ${warnings.length} warning(s) · ${repairs.length} repair(s)`;
   }
 }
 const photoControls = ["border-width", "border-color", "mask", "zoom", "rotate", "reset"];
@@ -150,6 +152,133 @@ function designAssetUrl(element) {
   return element?.asset_url || (element?.asset_id ? `/api/collage/design-assets/${encodeURIComponent(element.asset_id)}` : "");
 }
 
+const PT_TO_PX = (25.4 / 72) * PX_PER_MM;
+const FONT_STACKS = Object.freeze({
+  serif: 'Georgia, "Noto Serif CJK TC", "PingFang TC", serif',
+  sans: 'Arial, "Noto Sans CJK TC", "PingFang TC", sans-serif',
+  script: '"Brush Script MT", "Segoe Script", cursive',
+  display: 'Impact, "Arial Black", sans-serif',
+});
+
+function renderWarning(element, code, message, details = {}) {
+  state.renderValidation.warnings.push({ element_id: elementId(element), code, message, ...details });
+}
+
+function renderRepair(element, reason, details = {}) {
+  state.renderValidation.repairs.push({ element_id: elementId(element), reason, ...details });
+}
+
+function actualTextMetrics(object) {
+  object.initDimensions?.();
+  const lineCount = Math.max(1, Array.isArray(object._textLines) ? object._textLines.length : 1);
+  const widths = Array.from({ length: lineCount }, (_, index) => {
+    try { return Number(object.getLineWidth?.(index) || 0); } catch (_) { return 0; }
+  });
+  return {
+    width: Math.max(0, ...widths),
+    height: Number(object.getScaledHeight?.() || object.height || 0),
+  };
+}
+
+function setTextFontSize(object, sizePx) {
+  object.set({ fontSize: sizePx, scaleX: 1, scaleY: 1 });
+  object.initDimensions?.();
+  object.setCoords?.();
+}
+
+function fitTextObject(object, element) {
+  const style = element.text_style || {};
+  const targetWidth = Math.max(1, Number(element.width || 1));
+  const targetHeight = Math.max(1, Number(element.height || 1));
+  const fit = String(style.text_fit || "shrink_to_fit");
+  const originalSizePx = Number(object.fontSize || 12 * PT_TO_PX);
+  const minSizePx = Math.max(4, Number(style.min_font_size_pt || 6)) * PT_TO_PX;
+  let sizePx = originalSizePx;
+
+  const measureUnwrapped = () => {
+    object.set({ width: Math.max(targetWidth, 100000) });
+    object.initDimensions?.();
+    const measured = actualTextMetrics(object);
+    object.set({ width: targetWidth });
+    object.initDimensions?.();
+    return measured;
+  };
+
+  if (fit === "shrink_to_fit") {
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      setTextFontSize(object, sizePx);
+      const measured = measureUnwrapped();
+      if (measured.width <= targetWidth + 0.01 && measured.height <= targetHeight + 0.01) break;
+      const next = Math.max(minSizePx, sizePx * 0.94);
+      if (Math.abs(next - sizePx) < 0.01) break;
+      sizePx = next;
+    }
+  } else if (fit === "wrap_and_shrink") {
+    object.set({ width: targetWidth });
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      object.initDimensions?.();
+      const measured = actualTextMetrics(object);
+      if (measured.width <= targetWidth + 0.01 && measured.height <= targetHeight + 0.01) break;
+      const next = Math.max(minSizePx, sizePx * 0.94);
+      if (Math.abs(next - sizePx) < 0.01) break;
+      sizePx = next;
+      setTextFontSize(object, sizePx);
+    }
+  }
+  object.set({ width: targetWidth });
+  object.initDimensions?.();
+  object.setCoords?.();
+  const finalMetrics = actualTextMetrics(object);
+  const finalSizePt = Number(object.fontSize || originalSizePx) / PT_TO_PX;
+  if (Math.abs(finalSizePt - Number(style.font_size_pt || finalSizePt)) > 0.01) {
+    const before = Number(style.font_size_pt || finalSizePt);
+    element.text_style ||= {};
+    element.text_style.font_size_pt = Number(finalSizePt.toFixed(2));
+    renderRepair(element, "FABRIC_TEXT_SHRINK_TO_FIT", { from_font_size_pt: before, to_font_size_pt: element.text_style.font_size_pt });
+  }
+  if (finalMetrics.width > targetWidth + 0.5 || finalMetrics.height > targetHeight + 0.5) {
+    renderWarning(element, "FABRIC_TEXT_OVERFLOW", "Text still exceeds its declared box after browser-metric fitting.", { width_px: finalMetrics.width, height_px: finalMetrics.height });
+  }
+}
+
+function fabricBounds(object) {
+  try {
+    const bounds = object.getBoundingRect({ absolute: true, includeStroke: false, includeShadow: false });
+    return { left: Number(bounds.left || 0), top: Number(bounds.top || 0), right: Number(bounds.left || 0) + Number(bounds.width || 0), bottom: Number(bounds.top || 0) + Number(bounds.height || 0) };
+  } catch (_) {
+    const width = Number(object.width || 0) * Number(object.scaleX || 1);
+    const height = Number(object.height || 0) * Number(object.scaleY || 1);
+    return { left: Number(object.left || 0), top: Number(object.top || 0), right: Number(object.left || 0) + width, bottom: Number(object.top || 0) + height };
+  }
+}
+
+function keepTextInsideSafeArea(object, element) {
+  if (element.allow_bleed) return;
+  const page = canvasSize();
+  const safe = Number(state.doc?.page_spec?.safe_margin_mm || 8) * PX_PER_MM;
+  const before = fabricBounds(object);
+  let dx = 0;
+  let dy = 0;
+  if (before.left < safe) dx = safe - before.left;
+  if (before.right > page.width - safe) dx = (page.width - safe) - before.right;
+  if (before.top < safe) dy = safe - before.top;
+  if (before.bottom > page.height - safe) dy = (page.height - safe) - before.bottom;
+  if (dx || dy) {
+    object.set({ left: Number(object.left || 0) + dx, top: Number(object.top || 0) + dy });
+    object.setCoords?.();
+    const oldX = Number(element.x || 0), oldY = Number(element.y || 0);
+    element.x = Math.round(Number(object.left || 0));
+    element.y = Math.round(Number(object.top || 0));
+    if (Number.isFinite(Number(element.x_mm))) element.x_mm = Number((element.x / PX_PER_MM).toFixed(2));
+    if (Number.isFinite(Number(element.y_mm))) element.y_mm = Number((element.y / PX_PER_MM).toFixed(2));
+    renderRepair(element, "FABRIC_TEXT_SAFE_AREA", { from_x: oldX, from_y: oldY, to_x: element.x, to_y: element.y });
+  }
+  const after = fabricBounds(object);
+  if (after.left < safe - 0.5 || after.top < safe - 0.5 || after.right > page.width - safe + 0.5 || after.bottom > page.height - safe + 0.5) {
+    renderWarning(element, "FABRIC_TEXT_OUTSIDE_SAFE_AREA", "Text remains outside the safe margin after bounded repair.");
+  }
+}
+
 function rgba(hex, opacity = 1) {
   const value = String(hex || "#000000").replace("#", "");
   if (value.length !== 6) return hex;
@@ -215,18 +344,23 @@ function clipPath(element, imageScale) {
   });
 }
 
-async function addPhoto(element) {
-  const id = elementId(element);
-  const fallbackFrame = frameObject(element);
-  state.canvas.add(fallbackFrame);
-  const transform = imageTransform(element);
-  const source = sourceSize(element);
+async function loadPhotoImage(element) {
   let image = null;
   let usedOriginal = false;
   for (const [index, url] of photoUrls(photoId(element)).entries()) {
     image = await fabric.Image.fromURL(url, { crossOrigin: "anonymous" }).catch(() => null);
     if (image) { usedOriginal = state.renderMode === "view" && index === 0; break; }
   }
+  return { image, usedOriginal };
+}
+
+async function addPhoto(element, loaded = null) {
+  const id = elementId(element);
+  const fallbackFrame = frameObject(element);
+  state.canvas.add(fallbackFrame);
+  const transform = imageTransform(element);
+  const source = sourceSize(element);
+  const { image, usedOriginal } = loaded || await loadPhotoImage(element);
   if (!image) return;
   if (state.renderMode === "view" && !usedOriginal) state.renderFallbacks.push(photoId(element));
   // The editor intentionally renders the catalog thumbnail.  Catalog metadata
@@ -273,27 +407,37 @@ async function addDesignAsset(element) {
   });
   fallback._elementId = id; fallback._kind = "design-asset";
   const url = designAssetUrl(element);
-  let image = url ? await fabric.Image.fromURL(url, { crossOrigin: "anonymous" }).catch(() => null) : null;
+  let image = null;
+  if (url && /\.svg(?:$|[?#])/i.test(url) && typeof fabric.loadSVGFromURL === "function") {
+    try {
+      const parsed = await fabric.loadSVGFromURL(url);
+      const objects = (parsed?.objects || []).filter(Boolean);
+      if (objects.length && typeof fabric.util?.groupSVGElements === "function") {
+        image = fabric.util.groupSVGElements(objects, parsed.options || {});
+      }
+    } catch (_) { image = null; }
+  }
+  if (!image && url) image = await fabric.Image.fromURL(url, { crossOrigin: "anonymous" }).catch(() => null);
   if (!image) { state.canvas.add(fallback); return; }
   const sourceWidth = Math.max(Number(image.width || 1), 1);
   const sourceHeight = Math.max(Number(image.height || 1), 1);
+  const scale = Math.min(width / sourceWidth, height / sourceHeight);
   image.set({
     left: Number(element.x || 0) + width / 2, top: Number(element.y || 0) + height / 2,
-    originX: "center", originY: "center", scaleX: width / sourceWidth, scaleY: height / sourceHeight,
+    originX: "center", originY: "center", scaleX: scale, scaleY: scale,
     angle: Number(element.rotation_deg || 0), opacity: Number(element.opacity ?? 1),
     visible: !element.hidden, selectable: !element.locked && !element.hidden && state.mode === "layout",
     evented: !element.locked && !element.hidden && state.mode === "layout", objectCaching: false,
   });
-  image._elementId = id; image._kind = "design-asset"; image._sourceWidth = sourceWidth; image._sourceHeight = sourceHeight;
+  image._elementId = id; image._kind = "design-asset"; image._sourceWidth = sourceWidth; image._sourceHeight = sourceHeight; image._frameWidth = width; image._frameHeight = height;
   state.canvas.add(image);
 }
 
 function textOptions(element) {
   const style = element.text_style || {};
-  const fontMap = { serif: "Georgia", sans: "Arial", script: "cursive", display: "Impact" };
   return {
     left: Number(element.x || 0), top: Number(element.y || 0), width: Number(element.width || 240),
-    fontFamily: fontMap[style.font_id] || "Georgia", fontSize: Number(style.font_size_pt || 12) * 1.333,
+    fontFamily: FONT_STACKS[style.font_id] || FONT_STACKS.serif, fontSize: Number(style.font_size_pt || 12) * PT_TO_PX,
     fontWeight: style.weight || "normal", fontStyle: style.italic ? "italic" : "normal",
     textAlign: style.alignment || "left", lineHeight: Number(style.line_height || 1.15),
     charSpacing: Number(style.letter_spacing || 0) * 10, fill: style.color || "#292521",
@@ -307,13 +451,17 @@ function textOptions(element) {
 function addDecoration(element) {
   const x = Number(element.x || 0), y = Number(element.y || 0), width = Number(element.width || 0), height = Number(element.height || 0);
   let object;
-  if (element.type === "text") object = new fabric.Textbox(String(element.content || ""), textOptions(element));
-  else if (element.type === "line") object = new fabric.Line([0, 0, width, height], { left: x, top: y, stroke: element.stroke || "#292521", strokeWidth: Number(element.stroke_width || 1), opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: !element.locked && !element.hidden, evented: !element.locked && !element.hidden, objectCaching: false });
-  else if (element.type === "ellipse") object = new fabric.Ellipse({ left: x + width / 2, top: y + height / 2, originX: "center", originY: "center", rx: width / 2, ry: height / 2, fill: element.fill || "transparent", stroke: element.stroke || "transparent", strokeWidth: Number(element.stroke_width || 1), opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: !element.locked && !element.hidden, evented: !element.locked && !element.hidden, objectCaching: false });
+  const strokeWidth = Number(element.stroke_width || 0) * PX_PER_MM;
+  if (element.type === "text") {
+    object = new fabric.Textbox(String(element.content || ""), textOptions(element));
+    fitTextObject(object, element);
+    keepTextInsideSafeArea(object, element);
+  } else if (element.type === "line") object = new fabric.Line([0, 0, width, height], { left: x, top: y, stroke: element.stroke || "#292521", strokeWidth, opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: !element.locked && !element.hidden, evented: !element.locked && !element.hidden, objectCaching: false });
+  else if (element.type === "ellipse") object = new fabric.Ellipse({ left: x + width / 2, top: y + height / 2, originX: "center", originY: "center", rx: width / 2, ry: height / 2, fill: element.fill || "transparent", stroke: element.stroke || "transparent", strokeWidth, opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: !element.locked && !element.hidden, evented: !element.locked && !element.hidden, objectCaching: false });
   else if (element.type === "polygon") {
     const points = (element.points || []).map((point) => ({ x: Number(point.x || 0), y: Number(point.y || 0) }));
-    object = new fabric.Polygon(points, { left: x, top: y, fill: element.fill || "transparent", stroke: element.stroke || "transparent", strokeWidth: Number(element.stroke_width || 1), opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: !element.locked && !element.hidden, evented: !element.locked && !element.hidden, objectCaching: false });
-  } else object = new fabric.Rect({ left: x + width / 2, top: y + height / 2, originX: "center", originY: "center", width, height, fill: element.fill || "transparent", stroke: element.stroke || "transparent", strokeWidth: Number(element.stroke_width || 1), opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: !element.locked && !element.hidden, evented: !element.locked && !element.hidden, objectCaching: false });
+    object = new fabric.Polygon(points, { left: x, top: y, fill: element.fill || "transparent", stroke: element.stroke || "transparent", strokeWidth, opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: !element.locked && !element.hidden, evented: !element.locked && !element.hidden, objectCaching: false });
+  } else object = new fabric.Rect({ left: x + width / 2, top: y + height / 2, originX: "center", originY: "center", width, height, fill: element.fill || "transparent", stroke: element.stroke || "transparent", strokeWidth, opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: !element.locked && !element.hidden, evented: !element.locked && !element.hidden, objectCaching: false });
   object._elementId = elementId(element); object._kind = element.type === "text" ? "text" : "decoration";
   state.canvas.add(object);
 }
@@ -431,7 +579,10 @@ function fitPage() {
   // one hit-test/render viewport.
   state.canvas.setZoom(scale);
   state.canvas.setDimensions({ width: page.width * scale, height: page.height * scale });
-  const container = state.canvas.wrapperEl?.parentElement;
+  // Resize Fabric's own wrapper, not the outer grid item. Resizing the
+  // parent canvas-wrap collapses the workspace column to the page width and
+  // leaves a large blank gap beside the editor at normal desktop widths.
+  const container = state.canvas.wrapperEl;
   if (container) {
     container.style.width = `${page.width * scale}px`;
     container.style.height = `${page.height * scale}px`;
@@ -452,16 +603,33 @@ function fitPage() {
 async function renderNow() {
   if (!state.doc || !state.canvas) return;
   const activeBeforeClear = state.activeId;
+  const page = canvasSize();
+  // Geometry checks and Fabric objects are built in document pixels. Fit the
+  // viewport only after the complete projection has been created.
+  state.canvas.setZoom(1);
+  state.canvas.setDimensions({ width: page.width, height: page.height });
   state.canvas.clear(); state.activeId = activeBeforeClear; state.canvas.backgroundColor = state.doc.background || state.doc.page_spec?.background || "#f5f2ed";
+  state.renderValidation = { validation_status: "valid", warnings: [], repairs: [] };
+  if (document.fonts?.ready) await document.fonts.ready;
   const ordered = [...elements()].sort((a, b) => (Number(a.z_index || 0) - Number(b.z_index || 0)) || elementId(a).localeCompare(elementId(b)));
   state.renderFallbacks = [];
+  // Fetch photo pixels concurrently, then project them in document layer
+  // order. This keeps stacking deterministic without making view/original
+  // mode wait for every photo one-by-one.
+  const photoLoads = new Map(await Promise.all(
+    ordered.filter((element) => element.type === "photo").map(async (element) => [elementId(element), await loadPhotoImage(element)]),
+  ));
   for (const element of ordered) {
     if (element.hidden) continue;
-    if (element.type === "photo") await addPhoto(element);
+    if (element.type === "photo") await addPhoto(element, photoLoads.get(elementId(element)));
     else if (element.type === "design_asset") await addDesignAsset(element);
     else addDecoration(element);
   }
   applyInteractivity(); fitPage(); state.canvas.renderAll(); refreshLayers();
+  const renderReport = state.renderValidation;
+  renderReport.validation_status = renderReport.warnings.length ? "warnings" : (renderReport.repairs.length ? "repaired" : "valid");
+  state.doc.metadata ||= {};
+  state.doc.metadata.render_validation = clone(renderReport);
   updateDocumentChrome();
   $("identity").textContent = `${state.doc.provider || "document"} · ${elements().length} elements · ${state.canvas.getObjects().length} layers`;
   if (state.activeId) {
@@ -616,6 +784,38 @@ async function validateAiSpec(spec) {
   if ((result.alternatives || []).length === 1) await applyAiDesign();
 }
 
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("The package file could not be read."));
+    reader.onload = () => {
+      const value = String(reader.result || "");
+      const comma = value.indexOf(",");
+      resolve(comma >= 0 ? value.slice(comma + 1) : value);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function importDesignPackage(file) {
+  status("Uploading and validating AI Design Package…");
+  const packageZipBase64 = await readFileAsBase64(file);
+  const result = await api("/api/collage/design-import-packages", {
+    method: "POST",
+    body: JSON.stringify({ package_zip_base64: packageZipBase64 }),
+  });
+  state.aiSpec = result.spec;
+  state.aiPackageId = result.package_id;
+  const alternatives = result.alternatives || [];
+  const selector = $("alternative");
+  if (!selector || !alternatives.length) throw new Error("The package contains no AI alternatives.");
+  selector.innerHTML = alternatives.map((item) => `<option value="${Number(item.alternative)}">Alternative ${Number(item.alternative) + 1} · ${Number(item.photos)} photos · ${Number(item.elements)} elements</option>`).join("");
+  $("alternative-picker").hidden = false;
+  $("apply-ai").disabled = false;
+  const report = result.validation || {};
+  status(`Package validated: ${alternatives.length} alternative${alternatives.length === 1 ? "" : "s"}, ${Number(report.warnings?.length || 0)} warning(s), ${Number(report.repairs?.length || 0)} bounded repair(s). Choose one to open.`);
+}
+
 async function applyAiDesign() {
   if (!state.aiSpec) { status("Validate an AI design first."); return; }
   try {
@@ -715,7 +915,9 @@ function wire() {
   $("save")?.addEventListener("click", saveVariant); $("export")?.addEventListener("click", exportLayout); $("export-png")?.addEventListener("click", exportPng); $("export-hires")?.addEventListener("click", exportHighResPng);
   $("show-guides")?.addEventListener("change", (event) => { const guides = $("guide-overlay"); if (guides) guides.style.display = event.target.checked ? "block" : "none"; fitPage(); state.canvas?.requestRenderAll(); });
   $("import-ai")?.addEventListener("click", () => $("import-ai-file")?.click()); $("import-debug")?.addEventListener("click", () => $("import-debug-file")?.click());
+  $("import-ai-package")?.addEventListener("click", () => $("import-ai-package-file")?.click());
   $("import-ai-file")?.addEventListener("change", (event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { try { validateAiSpec(JSON.parse(String(reader.result || ""))); } catch (error) { status(`AI JSON is invalid: ${error.message}`); } }; reader.readAsText(file); event.target.value = ""; });
+  $("import-ai-package-file")?.addEventListener("change", (event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) importDesignPackage(file).catch((error) => status(`AI package import failed: ${error.message}`)); });
   $("import-debug-file")?.addEventListener("change", (event) => { if (event.target.files?.[0]) importDebugDocument(event.target.files[0]); event.target.value = ""; });
   $("apply-ai")?.addEventListener("click", applyAiDesign); $("load-sample")?.addEventListener("click", loadSample);
   $("undo")?.addEventListener("click", async () => { if (!state.history.length) return; state.future.push(snapshot()); state.doc = normalizeDocument(state.history.pop()); state.activeId = elements()[0] ? elementId(elements()[0]) : null; await loadPhotos(); await queueRender(); status("Undid the last operation."); });
