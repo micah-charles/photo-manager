@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Photo Manager · Organise Picks</title>
+  <link rel="stylesheet" href="/organise_picks.css">
+</head>
+<body>
+  <header class="page-head">
+    <a id="back-link" href="#">← Topic Workspace</a>
+    <p class="eyebrow">TOPIC · CURATION</p>
+    <h1 id="title">Organise Picks</h1>
+    <p id="topic-summary" class="lede">Loading picked photos…</p>
+  </header>
+
+  <div class="toolbar" role="toolbar" aria-label="Organise picks actions">
+    <strong id="counts">0 Picks · 0 Sections · 0 Unassigned</strong>
+    <button id="suggest-sections" type="button">Suggest sections</button>
+    <button id="new-section" type="button" class="primary">+ New section</button>
+    <button id="board-view" type="button" aria-pressed="true">Board</button>
+    <button id="timeline-view" type="button" aria-pressed="false">Timeline</button>
+    <select id="move-target" aria-label="Move selected photos to">
+      <option value="">Move selected to…</option>
+      <option value="__unassigned__">Unassigned picks</option>
+    </select>
+    <button id="move-selected" type="button" disabled>Move</button>
+    <button id="clear-selection" type="button" disabled>Clear selection</button>
+  </div>
+
+  <div id="status" class="status" role="status" aria-live="polite"></div>
+
+  <main>
+    <section id="suggestion-panel" class="suggestion-panel" hidden aria-labelledby="suggestion-title"></section>
+    <section id="board" class="board" aria-label="Section board"></section>
+    <section id="timeline" class="timeline" aria-label="Picked photo timeline" hidden></section>
+  </main>
+
+  <dialog id="section-dialog">
+    <form id="section-form" method="dialog">
+      <h2 id="section-dialog-title">New section</h2>
+      <p id="section-dialog-help" class="dialog-help"></p>
+      <label>Section name<input id="section-name" required maxlength="150" autocomplete="off"></label>
+      <label>Description <span class="optional">(optional)</span><textarea id="section-description" maxlength="1000"></textarea></label>
+      <div class="dialog-actions"><button id="cancel-section" type="button">Cancel</button><button type="submit" class="primary">Create section</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="rename-dialog">
+    <form id="rename-form" method="dialog">
+      <h2>Rename section</h2>
+      <label>Section name<input id="rename-name" required maxlength="150" autocomplete="off"></label>
+      <div class="dialog-actions"><button id="cancel-rename" type="button">Cancel</button><button type="submit" class="primary">Save name</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="split-dialog">
+    <form id="split-form" method="dialog">
+      <h2>Split selected photos</h2>
+      <p id="split-help" class="dialog-help"></p>
+      <label>New section name<input id="split-name" required maxlength="150" autocomplete="off"></label>
+      <div class="dialog-actions"><button id="cancel-split" type="button">Cancel</button><button type="submit" class="primary">Split section</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="merge-dialog">
+    <form id="merge-form" method="dialog">
+      <h2>Merge section</h2>
+      <p id="merge-help" class="dialog-help"></p>
+      <label>Merge into<select id="merge-target" required></select></label>
+      <label>New name <span class="optional">(optional)</span><input id="merge-name" maxlength="150" autocomplete="off"></label>
+      <div class="dialog-actions"><button id="cancel-merge" type="button">Cancel</button><button type="submit" class="primary">Merge sections</button></div>
+    </form>
+  </dialog>
+
+  <script src="/organise_picks.js"></script>
+</body>
+</html>

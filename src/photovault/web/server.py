@@ -18,7 +18,14 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from photovault.catalog.library import LibraryQuery, count_library_items, library_asset_ids, library_day_counts, library_facets, list_library_items
-from photovault.catalog.organization import add_assets_to_event, add_assets_to_topic_section, create_event, create_topic_section, delete_event, list_events, list_places, list_sources, list_tags, list_topic_sections, remove_assets_from_event, remove_assets_from_topic_section, update_event
+from photovault.catalog.organization import (
+    add_assets_to_event, add_assets_to_topic_section, apply_topic_section_suggestions,
+    create_event, create_topic_organise_section, create_topic_section, delete_event,
+    delete_topic_section, list_events, list_places, list_sources, list_tags,
+    list_topic_sections, merge_topic_sections, move_topic_picks, remove_assets_from_event,
+    remove_assets_from_topic_section, rename_topic_section, reorder_topic_sections,
+    split_topic_section, topic_organise_state, update_event,
+)
 from photovault.catalog.scanner import scan_volume
 from photovault.catalog.people import list_people
 from photovault.catalog.collections import list_collections
@@ -797,6 +804,22 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
             try: self._json({"topic_id": topic_id, "sections": list_topic_sections(connection, topic_id)})
             finally: connection.close()
             return
+        if parsed.path.startswith("/api/topics/") and parsed.path.endswith("/organise-picks"):
+            topic_id = parsed.path.removeprefix("/api/topics/").removesuffix("/organise-picks").strip("/")
+            connection = connect(self.catalog_path)
+            try:
+                state = topic_organise_state(connection, topic_id)
+                pick_ids = tuple(str(asset_id) for asset_id in state["pick_ids"])
+                rows = list_library_items(
+                    connection,
+                    LibraryQuery(asset_ids=pick_ids, media_type="IMAGE", include_rejected=True, limit=max(1, len(pick_ids))),
+                ) if pick_ids else []
+                by_id = {str(row["asset_id"]): _row_payload(row) for row in rows}
+                state["photos"] = [by_id[asset_id] for asset_id in pick_ids if asset_id in by_id]
+                self._json(state)
+            finally:
+                connection.close()
+            return
         if parsed.path.startswith("/api/sections/") and parsed.path.endswith("/assets"):
             section_id = parsed.path.removeprefix("/api/sections/").removesuffix("/assets").strip("/")
             connection = connect(self.catalog_path)
@@ -863,7 +886,7 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
         if parsed.path.startswith("/api/thumb/"):
             self._thumbnail(parsed.path.removeprefix("/api/thumb/"))
             return
-        relative = "index.html" if parsed.path in {"", "/"} else ("topic_workspace.html" if parsed.path == "/topic-workspace" else ("collage_v2.html" if parsed.path == "/experimental/collage" else ("fabric_spike_v2.html" if parsed.path == "/experimental/collage/fabric-v2" else ("fabric_spike.html" if parsed.path == "/experimental/collage/fabric" else parsed.path.removeprefix("/")))))
+        relative = "index.html" if parsed.path in {"", "/"} else ("topic_workspace.html" if parsed.path == "/topic-workspace" else ("organise_picks.html" if parsed.path == "/organise-picks" else ("collage_v2.html" if parsed.path == "/experimental/collage" else ("fabric_spike_v2.html" if parsed.path == "/experimental/collage/fabric-v2" else ("fabric_spike.html" if parsed.path == "/experimental/collage/fabric" else parsed.path.removeprefix("/"))))))
         if parsed.path.startswith("/examples/"):
             relative_example = parsed.path.removeprefix("/examples/")
             target = (EXAMPLES_ROOT / relative_example).resolve()
@@ -896,6 +919,44 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
         try:
             package_limit = MAX_PACKAGE_BYTES * 2 if parsed.path == "/api/collage/design-import-packages" else 1_000_000
             payload = self._read_json(package_limit)
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) >= 5 and parts[:2] == ["api", "topics"] and parts[3] == "organise-picks":
+                topic_id = parts[2]
+                action = "/".join(parts[4:])
+                connection = connect(self.catalog_path)
+                try:
+                    if action == "sections":
+                        asset_ids = payload.get("asset_ids", [])
+                        if not isinstance(asset_ids, list):
+                            raise ValueError("asset_ids must be a list")
+                        section_id = create_topic_organise_section(connection, topic_id, str(payload.get("title", "")), [str(item) for item in asset_ids], description=str(payload.get("description", "")))
+                        self._json({"ok": True, "id": section_id}, 201)
+                        return
+                    if action == "move":
+                        asset_ids = payload.get("asset_ids", [])
+                        if not isinstance(asset_ids, list):
+                            raise ValueError("asset_ids must be a list")
+                        target = payload.get("target_section_id")
+                        self._json({"ok": True, "moved": move_topic_picks(connection, topic_id, [str(item) for item in asset_ids], str(target) if target else None)})
+                        return
+                    if action == "reorder":
+                        section_ids = payload.get("section_ids", [])
+                        if not isinstance(section_ids, list):
+                            raise ValueError("section_ids must be a list")
+                        reorder_topic_sections(connection, topic_id, [str(item) for item in section_ids])
+                        self._json({"ok": True})
+                        return
+                    if action == "apply-suggestions":
+                        suggestions = payload.get("suggestions", [])
+                        if not isinstance(suggestions, list):
+                            raise ValueError("suggestions must be a list")
+                        created = apply_topic_section_suggestions(connection, topic_id, suggestions)
+                        self._json({"ok": True, "ids": created})
+                        return
+                    self._json({"error": "Not found"}, 404)
+                    return
+                finally:
+                    connection.close()
             if parsed.path == "/api/collage/generate":
                 asset_ids = [str(value) for value in payload.get("asset_ids", []) if str(value)]
                 if not 2 <= len(asset_ids) <= 20: raise ValueError("select between 2 and 20 photographs")
@@ -1280,6 +1341,20 @@ Include this package_id in your response and do not include original photo files
                     if not isinstance(asset_ids, list): raise ValueError("asset_ids must be a list")
                     self._json({"ok": True, "added": add_assets_to_topic_section(connection, section_id, [str(item) for item in asset_ids])})
                     return
+                if len(parts) == 4 and parts[:2] == ["api", "sections"] and parts[3] == "split":
+                    section_id = parts[2]
+                    asset_ids = payload.get("asset_ids", [])
+                    if not isinstance(asset_ids, list):
+                        raise ValueError("asset_ids must be a list")
+                    new_id = split_topic_section(connection, section_id, str(payload.get("title", "")), [str(item) for item in asset_ids])
+                    self._json({"ok": True, "id": new_id}, 201)
+                    return
+                if len(parts) == 4 and parts[:2] == ["api", "sections"] and parts[3] == "merge":
+                    target_id = parts[2]
+                    source_id = str(payload.get("source_section_id", ""))
+                    merge_topic_sections(connection, target_id, source_id, str(payload["new_title"]) if payload.get("new_title") is not None else None)
+                    self._json({"ok": True})
+                    return
                 prefix = "/api/topics/"
                 if parsed.path.startswith(prefix) and parsed.path.endswith("/assets"):
                     event_id = parsed.path[len(prefix):-len("/assets")].strip("/")
@@ -1309,6 +1384,20 @@ Include this package_id in your response and do not include original photo files
 
     def do_PUT(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+        section_prefix = "/api/sections/"
+        if parsed.path.startswith(section_prefix) and len(parsed.path.removeprefix(section_prefix).strip("/").split("/")) == 1:
+            section_id = parsed.path.removeprefix(section_prefix).strip("/")
+            try:
+                payload = self._read_json()
+                connection = connect(self.catalog_path)
+                try:
+                    rename_topic_section(connection, section_id, str(payload.get("title", "")))
+                    self._json({"ok": True, "id": section_id})
+                finally:
+                    connection.close()
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                self._json({"error": str(exc)}, 400)
+            return
         prefix = "/api/topics/"
         if not parsed.path.startswith(prefix):
             self._json({"error": "Not found"}, 404)
@@ -1343,6 +1432,19 @@ Include this package_id in your response and do not include original photo files
             finally: connection.close()
             return
         parsed = urlparse(self.path)
+        section_prefix = "/api/sections/"
+        section_suffix = parsed.path.removeprefix(section_prefix).strip("/") if parsed.path.startswith(section_prefix) else ""
+        if section_suffix and "/" not in section_suffix:
+            try:
+                connection = connect(self.catalog_path)
+                try:
+                    delete_topic_section(connection, section_suffix)
+                    self._json({"ok": True, "id": section_suffix})
+                finally:
+                    connection.close()
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                self._json({"error": str(exc)}, 400)
+            return
         section_prefix = "/api/sections/"
         if parsed.path.startswith(section_prefix) and parsed.path.endswith("/assets"):
             section_id = parsed.path.removeprefix(section_prefix).removesuffix("/assets").strip("/")

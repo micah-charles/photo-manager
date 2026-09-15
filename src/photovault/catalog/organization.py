@@ -10,6 +10,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 
+from .library import visible_asset_sql
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -195,6 +197,252 @@ def remove_assets_from_topic_section(connection: sqlite3.Connection, section_id:
     connection.executemany("DELETE FROM topic_section_assets WHERE section_id=? AND asset_id=?", ((section_id, str(asset_id)) for asset_id in dict.fromkeys(asset_ids)))
     connection.commit()
     return connection.total_changes - before
+
+
+def topic_picked_asset_ids(connection: sqlite3.Connection, topic_id: str) -> list[str]:
+    """Return the visible, picked assets in a topic in capture order.
+
+    Section Builder works on the culling decision (``pick``), not on the
+    temporary selection state in any browser page.  The shared visibility
+    predicate keeps JPEG/RAW pairs from appearing twice here.
+    """
+    if connection.execute("SELECT 1 FROM events WHERE id=?", (topic_id,)).fetchone() is None:
+        raise ValueError("unknown topic")
+    rows = connection.execute(
+        f"""SELECT DISTINCT ea.asset_id
+            FROM event_assets ea
+            JOIN assets a ON a.id=ea.asset_id
+            JOIN asset_locations al ON al.asset_id=a.id
+            JOIN topic_culling tc ON tc.topic_id=ea.event_id AND tc.asset_id=ea.asset_id
+            LEFT JOIN media_metadata mm ON mm.asset_id=a.id
+            WHERE ea.event_id=? AND a.media_type='IMAGE'
+              AND al.missing_since IS NULL AND tc.decision='pick'
+              AND {visible_asset_sql('al')}
+            ORDER BY COALESCE(mm.capture_datetime, al.capture_date) DESC, ea.asset_id""",
+        (topic_id,),
+    ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
+def topic_organise_state(connection: sqlite3.Connection, topic_id: str) -> dict[str, object]:
+    """Return the relationship snapshot consumed by the Section Builder."""
+    picked = topic_picked_asset_ids(connection, topic_id)
+    picked_set = set(picked)
+    sections: list[dict[str, object]] = []
+    for section in list_topic_sections(connection, topic_id):
+        asset_rows = connection.execute(
+            "SELECT asset_id FROM topic_section_assets WHERE section_id=? ORDER BY sort_order, asset_id",
+            (section["id"],),
+        ).fetchall()
+        asset_ids = [str(row[0]) for row in asset_rows]
+        picked_ids = [asset_id for asset_id in asset_ids if asset_id in picked_set]
+        sections.append({
+            **section,
+            "asset_ids": picked_ids,
+            "item_count": len(picked_ids),
+            "total_item_count": len(asset_ids),
+        })
+    assigned = {asset_id for section in sections for asset_id in section["asset_ids"]}
+    return {
+        "topic_id": topic_id,
+        "pick_ids": picked,
+        "sections": sections,
+        "unassigned_ids": [asset_id for asset_id in picked if asset_id not in assigned],
+    }
+
+
+def _topic_section(connection: sqlite3.Connection, section_id: str, topic_id: str | None = None) -> sqlite3.Row:
+    query = "SELECT * FROM topic_sections WHERE id=?"
+    args: list[object] = [section_id]
+    if topic_id is not None:
+        query += " AND topic_id=?"
+        args.append(topic_id)
+    row = connection.execute(query, args).fetchone()
+    if row is None:
+        raise ValueError("unknown section")
+    return row
+
+
+def _picked_ids_for_topic(connection: sqlite3.Connection, topic_id: str, asset_ids: list[str] | tuple[str, ...]) -> list[str]:
+    requested = list(dict.fromkeys(str(asset_id) for asset_id in asset_ids if str(asset_id)))
+    if not requested:
+        raise ValueError("at least one picked photo is required")
+    # Reuse the same visibility rule as the Board read endpoint so callers
+    # cannot assign a hidden RAW companion or a missing asset by crafting an
+    # API request with a valid catalog ID.
+    valid = set(topic_picked_asset_ids(connection, topic_id))
+    invalid = [asset_id for asset_id in requested if asset_id not in valid]
+    if invalid:
+        raise ValueError("photo is not a picked photo in this topic")
+    return requested
+
+
+def move_topic_picks(connection: sqlite3.Connection, topic_id: str, asset_ids: list[str] | tuple[str, ...], target_section_id: str | None = None) -> int:
+    """Move picked photos to one section, or back to Unassigned.
+
+    A move deliberately removes the photos from every section in this topic
+    before adding them to the target.  This makes the Board's assignment
+    model predictable while leaving Pick decisions untouched.
+    """
+    picked_ids = _picked_ids_for_topic(connection, topic_id, asset_ids)
+    if target_section_id:
+        _topic_section(connection, target_section_id, topic_id)
+    now = _now()
+    placeholders = ",".join("?" for _ in picked_ids)
+    connection.execute(
+        f"DELETE FROM topic_section_assets WHERE asset_id IN ({placeholders}) AND section_id IN (SELECT id FROM topic_sections WHERE topic_id=?)",
+        [*picked_ids, topic_id],
+    )
+    if target_section_id:
+        start = connection.execute(
+            "SELECT COALESCE(MAX(sort_order), -1)+1 FROM topic_section_assets WHERE section_id=?",
+            (target_section_id,),
+        ).fetchone()[0]
+        connection.executemany(
+            "INSERT INTO topic_section_assets(section_id, asset_id, sort_order, added_at) VALUES(?,?,?,?)",
+            [(target_section_id, asset_id, int(start) + index, now) for index, asset_id in enumerate(picked_ids)],
+        )
+    connection.execute("UPDATE topic_sections SET updated_at=? WHERE topic_id=?", (now, topic_id))
+    connection.commit()
+    return len(picked_ids)
+
+
+def create_topic_organise_section(connection: sqlite3.Connection, topic_id: str, title: str, asset_ids: list[str] | tuple[str, ...] = (), *, description: str = "") -> str:
+    """Create a section from picked photos only, for Board operations."""
+    picked_ids = [] if not asset_ids else _picked_ids_for_topic(connection, topic_id, asset_ids)
+    clean = " ".join(title.strip().split())
+    if connection.execute("SELECT 1 FROM topic_sections WHERE topic_id=? AND lower(title)=lower(?)", (topic_id, clean)).fetchone() is not None:
+        raise ValueError("a section with this name already exists")
+    return create_topic_section(connection, topic_id, title, picked_ids, description=description, cover_asset_id=picked_ids[0] if picked_ids else None)
+
+
+def rename_topic_section(connection: sqlite3.Connection, section_id: str, title: str) -> None:
+    clean = " ".join(title.strip().split())
+    if not clean:
+        raise ValueError("section title is required")
+    section = _topic_section(connection, section_id)
+    duplicate = connection.execute(
+        "SELECT 1 FROM topic_sections WHERE topic_id=? AND lower(title)=lower(?) AND id<>?",
+        (section["topic_id"], clean, section_id),
+    ).fetchone()
+    if duplicate is not None:
+        raise ValueError("a section with this name already exists")
+    connection.execute("UPDATE topic_sections SET title=?, updated_at=? WHERE id=?", (clean, _now(), section_id))
+    connection.commit()
+
+
+def reorder_topic_sections(connection: sqlite3.Connection, topic_id: str, section_ids: list[str] | tuple[str, ...]) -> None:
+    sections = list_topic_sections(connection, topic_id)
+    expected = [str(section["id"]) for section in sections]
+    ordered = [str(section_id) for section_id in section_ids]
+    if len(ordered) != len(set(ordered)) or set(ordered) != set(expected):
+        raise ValueError("section order must contain every section exactly once")
+    now = _now()
+    connection.executemany("UPDATE topic_sections SET sort_order=?, updated_at=? WHERE id=? AND topic_id=?", [(index, now, section_id, topic_id) for index, section_id in enumerate(ordered)])
+    connection.commit()
+
+
+def split_topic_section(connection: sqlite3.Connection, section_id: str, title: str, asset_ids: list[str] | tuple[str, ...]) -> str:
+    section = _topic_section(connection, section_id)
+    picked_ids = _picked_ids_for_topic(connection, str(section["topic_id"]), asset_ids)
+    placeholders = ",".join("?" for _ in picked_ids)
+    members = connection.execute(
+        f"SELECT asset_id FROM topic_section_assets WHERE section_id=? AND asset_id IN ({placeholders})",
+        [section_id, *picked_ids],
+    ).fetchall()
+    if len(members) != len(picked_ids):
+        raise ValueError("split photos must belong to the source section")
+    clean = " ".join(title.strip().split())
+    if not clean:
+        raise ValueError("section title is required")
+    if connection.execute("SELECT 1 FROM topic_sections WHERE topic_id=? AND lower(title)=lower(?)", (section["topic_id"], clean)).fetchone() is not None:
+        raise ValueError("a section with this name already exists")
+    new_id, now = str(uuid.uuid4()), _now()
+    try:
+        connection.execute("BEGIN")
+        order = connection.execute("SELECT COALESCE(MAX(sort_order), -1)+1 FROM topic_sections WHERE topic_id=?", (section["topic_id"],)).fetchone()[0]
+        connection.execute("INSERT INTO topic_sections(id,topic_id,title,description,sort_order,cover_asset_id,date_start,date_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)", (new_id, section["topic_id"], clean, "", order, picked_ids[0], None, None, now, now))
+        connection.execute(f"DELETE FROM topic_section_assets WHERE section_id=? AND asset_id IN ({placeholders})", [section_id, *picked_ids])
+        connection.executemany("INSERT INTO topic_section_assets(section_id,asset_id,sort_order,added_at) VALUES(?,?,?,?)", [(new_id, asset_id, index, now) for index, asset_id in enumerate(picked_ids)])
+        connection.execute("UPDATE topic_sections SET updated_at=? WHERE id=?", (now, section_id))
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    return new_id
+
+
+def merge_topic_sections(connection: sqlite3.Connection, target_section_id: str, source_section_id: str, new_title: str | None = None) -> None:
+    target = _topic_section(connection, target_section_id)
+    source = _topic_section(connection, source_section_id, str(target["topic_id"]))
+    if target_section_id == source_section_id:
+        raise ValueError("cannot merge a section into itself")
+    clean_title = None
+    if new_title is not None and str(new_title).strip():
+        clean_title = " ".join(str(new_title).strip().split())
+        if connection.execute("SELECT 1 FROM topic_sections WHERE topic_id=? AND lower(title)=lower(?) AND id NOT IN (?,?)", (target["topic_id"], clean_title, target_section_id, source_section_id)).fetchone() is not None:
+            raise ValueError("a section with this name already exists")
+    source_assets = [row[0] for row in connection.execute("SELECT asset_id FROM topic_section_assets WHERE section_id=? ORDER BY sort_order, asset_id", (source_section_id,))]
+    now = _now()
+    try:
+        connection.execute("BEGIN")
+        start = connection.execute("SELECT COALESCE(MAX(sort_order), -1)+1 FROM topic_section_assets WHERE section_id=?", (target_section_id,)).fetchone()[0]
+        existing = {row[0] for row in connection.execute("SELECT asset_id FROM topic_section_assets WHERE section_id=?", (target_section_id,))}
+        connection.executemany("INSERT OR IGNORE INTO topic_section_assets(section_id,asset_id,sort_order,added_at) VALUES(?,?,?,?)", [(target_section_id, asset_id, int(start) + index, now) for index, asset_id in enumerate(asset for asset in source_assets if asset not in existing)])
+        connection.execute("DELETE FROM topic_sections WHERE id=?", (source_section_id,))
+        if clean_title:
+            connection.execute("UPDATE topic_sections SET title=?, updated_at=? WHERE id=?", (clean_title, now, target_section_id))
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
+def delete_topic_section(connection: sqlite3.Connection, section_id: str) -> None:
+    _topic_section(connection, section_id)
+    connection.execute("DELETE FROM topic_sections WHERE id=?", (section_id,))
+    connection.commit()
+
+
+def apply_topic_section_suggestions(connection: sqlite3.Connection, topic_id: str, suggestions: list[dict[str, object]]) -> list[str]:
+    """Atomically apply a client-reviewed suggestion draft."""
+    if not isinstance(suggestions, list) or not suggestions:
+        raise ValueError("suggestions are required")
+    all_ids = [str(asset_id) for suggestion in suggestions for asset_id in (suggestion.get("asset_ids", []) if isinstance(suggestion, dict) else [])]
+    _picked_ids_for_topic(connection, topic_id, all_ids)
+    if len(all_ids) != len(set(all_ids)):
+        raise ValueError("a photo cannot appear in more than one suggestion")
+    now = _now()
+    titles: set[str] = set()
+    existing_titles = {str(row[0]).casefold() for row in connection.execute("SELECT title FROM topic_sections WHERE topic_id=?", (topic_id,))}
+    for suggestion in suggestions:
+        if not isinstance(suggestion, dict):
+            raise ValueError("invalid suggestion")
+        title = " ".join(str(suggestion.get("title", "")).strip().split())
+        if not title or title.casefold() in existing_titles or title.casefold() in titles:
+            raise ValueError("suggestion section names must be unique")
+        titles.add(title.casefold())
+    created: list[str] = []
+    try:
+        connection.execute("BEGIN")
+        next_order = int(connection.execute("SELECT COALESCE(MAX(sort_order), -1)+1 FROM topic_sections WHERE topic_id=?", (topic_id,)).fetchone()[0])
+        for suggestion in suggestions:
+            if not isinstance(suggestion, dict):
+                raise ValueError("invalid suggestion")
+            title = " ".join(str(suggestion.get("title", "")).strip().split())
+            asset_ids = [str(asset_id) for asset_id in suggestion.get("asset_ids", [])]
+            if not title or not asset_ids:
+                raise ValueError("each suggestion needs a title and photos")
+            section_id = str(uuid.uuid4())
+            connection.execute("INSERT INTO topic_sections(id,topic_id,title,description,sort_order,cover_asset_id,date_start,date_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)", (section_id, topic_id, title, "", next_order, asset_ids[0], None, None, now, now))
+            connection.executemany("INSERT INTO topic_section_assets(section_id,asset_id,sort_order,added_at) VALUES(?,?,?,?)", [(section_id, asset_id, index, now) for index, asset_id in enumerate(asset_ids)])
+            created.append(section_id)
+            next_order += 1
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    return created
 
 
 def update_event(connection: sqlite3.Connection, event_id: str, *, name: str, start_datetime: str | None = None, end_datetime: str | None = None, event_type: str = "other", description: str = "", default_place_id: str | None = None) -> None:
