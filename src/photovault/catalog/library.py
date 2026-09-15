@@ -42,6 +42,48 @@ _SORTS = {
 }
 
 
+# A camera often writes a JPEG and a RAW file with the same basename into the
+# same folder. They are two catalog assets, but one user-facing photograph.
+_RAW_SUFFIXES = (".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf", ".orf", ".rw2", ".pef", ".srw", ".3fr", ".iiq")
+_JPEG_SUFFIXES = (".jpg", ".jpeg")
+
+
+def _filename_stem_sql(alias: str) -> str:
+    cases = " ".join(
+        f"WHEN lower({alias}.filename) LIKE '%{suffix}' THEN substr(lower({alias}.filename), 1, length({alias}.filename)-{len(suffix)})"
+        for suffix in (*_JPEG_SUFFIXES, *_RAW_SUFFIXES)
+    )
+    return f"CASE {cases} ELSE lower({alias}.filename) END"
+
+
+def _same_photo_key_sql(alias: str) -> str:
+    """Return a SQL key for files in the same folder with the same basename."""
+    folder = f"substr(lower({alias}.relative_path), 1, length({alias}.relative_path)-length({alias}.filename))"
+    return f"{folder} || {_filename_stem_sql(alias)}"
+
+
+def _suffixes_sql(alias: str, suffixes: tuple[str, ...]) -> str:
+    return "(" + " OR ".join(f"lower({alias}.filename) LIKE '%{suffix}'" for suffix in suffixes) + ")"
+
+
+def visible_asset_sql(alias: str = "al") -> str:
+    """Hide a RAW location when its matching JPEG location is present.
+
+    This predicate is shared by list, count, facets, day counts and culling so
+    pagination and selection totals cannot disagree with the visible grid.
+    """
+    raw = _suffixes_sql(alias, _RAW_SUFFIXES)
+    jpeg = _suffixes_sql("paired", _JPEG_SUFFIXES)
+    key = _same_photo_key_sql(alias)
+    paired_key = _same_photo_key_sql("paired")
+    return f"NOT ({raw} AND EXISTS (SELECT 1 FROM asset_locations paired WHERE paired.volume_id={alias}.volume_id AND paired.missing_since IS NULL AND {jpeg} AND {paired_key}={key}))"
+
+
+def _paired_raw_column_sql(column: str) -> str:
+    raw = _suffixes_sql("paired_raw", _RAW_SUFFIXES)
+    return f"(SELECT paired_raw.{column} FROM asset_locations paired_raw WHERE paired_raw.volume_id=al.volume_id AND paired_raw.missing_since IS NULL AND {raw} AND {_same_photo_key_sql('paired_raw')}={_same_photo_key_sql('al')} LIMIT 1)"
+
+
 def _display_captured_expr() -> str:
     """Return the catalog's single capture-time expression used by the UI."""
     return "CASE WHEN COALESCE(mm.capture_datetime, al.capture_date) IS NOT NULL THEN datetime(COALESCE(mm.capture_datetime, al.capture_date), printf('%+d seconds', COALESCE(sp.time_offset_seconds, 0))) ELSE datetime(al.modified_ns / 1000000000, 'unixepoch') END"
@@ -83,7 +125,7 @@ def _where_for_query(query: LibraryQuery) -> tuple[list[str], list[object]]:
         raise ValueError("invalid review status")
     if query.min_rating is not None and query.min_rating not in range(0, 6):
         raise ValueError("min_rating must be between 0 and 5")
-    where = ["al.missing_since IS NULL"]
+    where = ["al.missing_since IS NULL", visible_asset_sql()]
     params: list[object] = []
     if not query.include_rejected and not query.review_status:
         where.append("COALESCE(ar.review_status, 'UNREVIEWED') NOT IN ('REJECTED', 'HIDDEN')")
@@ -206,6 +248,8 @@ def list_library_items(connection: sqlite3.Connection, query: LibraryQuery = Lib
                mm.camera_make, mm.camera_model, mm.width, mm.height, mm.orientation,
                gm.latitude, gm.longitude, mm.date_source,
                th.path AS thumbnail_path,
+               {_paired_raw_column_sql('asset_id')} AS paired_raw_asset_id,
+               {_paired_raw_column_sql('filename')} AS paired_raw_filename,
                EXISTS (SELECT 1 FROM asset_favourites f WHERE f.asset_id=al.asset_id) AS is_favourite,
                al.source_id, sp.display_name AS source_name,
                COALESCE(ar.review_status, 'UNREVIEWED') AS review_status,

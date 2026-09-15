@@ -3,11 +3,16 @@ from __future__ import annotations
 
 import hashlib
 import io
+import shutil
+import subprocess
 from pathlib import Path
 from urllib.parse import parse_qs
 
 from photovault.database.connection import connect
-from photovault.catalog.library import LibraryQuery, list_library_items
+from photovault.catalog.library import LibraryQuery, list_library_items, visible_asset_sql
+
+
+_RAW_SUFFIXES = {".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf", ".orf", ".rw2", ".pef", ".srw", ".3fr", ".iiq"}
 
 
 def require_topic(db, topic):
@@ -19,7 +24,7 @@ def photo_page(db, topic, section='', offset=0, limit=80, picks=False):
     require_topic(db, topic)
     if section and not db.execute('SELECT 1 FROM topic_sections WHERE id=? AND topic_id=?', (section, topic)).fetchone():
         raise ValueError('Section does not belong to this topic')
-    where = "ea.event_id=? AND a.media_type='IMAGE' AND al.missing_since IS NULL"
+    where = "ea.event_id=? AND a.media_type='IMAGE' AND al.missing_since IS NULL AND " + visible_asset_sql()
     args = [topic]
     if section:
         where += ' AND EXISTS(SELECT 1 FROM topic_section_assets sa WHERE sa.asset_id=a.id AND sa.section_id=?)'
@@ -70,6 +75,28 @@ def set_decision(db, topic, asset, decision):
     db.commit()
 
 
+def _raw_embedded_jpeg(path: Path) -> bytes | None:
+    """Extract the camera's full embedded JPEG without modifying the RAW file."""
+    if path.suffix.lower() not in _RAW_SUFFIXES:
+        return None
+    exiftool = shutil.which("exiftool")
+    if not exiftool:
+        return None
+    for tag in ("JpgFromRaw", "PreviewImage"):
+        try:
+            result = subprocess.run(
+                [exiftool, "-q", "-q", "-b", f"-{tag}", str(path)],
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if result.returncode == 0 and result.stdout:
+            return result.stdout
+    return None
+
+
 def preview(db, asset):
     """Decode only an explicitly inspected image; return a bounded EXIF-oriented JPEG."""
     from PIL import Image, ImageOps
@@ -84,7 +111,9 @@ def preview(db, asset):
         if root not in target.parents or not target.is_file():
             continue
         try:
-            with Image.open(target) as original:
+            embedded = _raw_embedded_jpeg(target)
+            source = Image.open(io.BytesIO(embedded)) if embedded else Image.open(target)
+            with source as original:
                 original.draft('RGB', (1800, 1800))
                 image = ImageOps.exif_transpose(original)
                 image.thumbnail((1800, 1800))

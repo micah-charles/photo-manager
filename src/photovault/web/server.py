@@ -402,6 +402,9 @@ def _row_payload(row) -> dict[str, object]:
         "volume": row["volume_name"], "volume_status": row["volume_status"],
         "thumbnail": f"/api/thumb/{row['asset_id']}" if row["thumbnail_path"] else None,
         "thumbnail_path": str(row["thumbnail_path"]) if row["thumbnail_path"] else None,
+        "contains_raw": bool(row["paired_raw_asset_id"]),
+        "paired_raw_asset_id": row["paired_raw_asset_id"],
+        "paired_raw_filename": row["paired_raw_filename"],
         "absolute_path": absolute_path,
         "original_url": f"/api/original/{row['asset_id']}",
         "camera": " ".join(filter(None, (row["camera_make"], row["camera_model"]))) or None,
@@ -1429,7 +1432,15 @@ Include this package_id in your response and do not include original photo files
         connection = connect(self.catalog_path)
         try:
             row = connection.execute(
-                "SELECT th.path FROM thumbnails th WHERE th.asset_id=? AND th.version='v1-320' LIMIT 1", (asset_id,)
+                """SELECT th.path, al.filename, al.relative_path,
+                          v.current_mount_path, v.status
+                   FROM thumbnails th
+                   JOIN asset_locations al ON al.asset_id=th.asset_id AND al.missing_since IS NULL
+                   JOIN volumes v ON v.id=al.volume_id
+                   WHERE th.asset_id=? AND th.version='v1-320'
+                   ORDER BY CASE WHEN v.status='CONNECTED' THEN 0 ELSE 1 END
+                   LIMIT 1""",
+                (asset_id,),
             ).fetchone()
             if not row or not row[0]:
                 self._send(b"Not found", "text/plain", 404)
@@ -1438,6 +1449,29 @@ Include this package_id in your response and do not include original photo files
             if not path.is_file():
                 self._send(b"Not found", "text/plain", 404)
                 return
+            # Some catalogues contain a tiny 160x120 RAW IFD thumbnail. For a
+            # RAW-only asset, prefer the camera's embedded full JPEG so the
+            # grid remains useful; paired RAW assets never reach this endpoint
+            # because the shared library predicate exposes their JPEG instead.
+            if str(row[1]).lower().endswith((".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf", ".orf", ".rw2", ".pef", ".srw", ".3fr", ".iiq")) and row[3] and row[4] == "CONNECTED":
+                root = Path(str(row[3])).resolve()
+                target = (root / str(row[2])).resolve()
+                if root in target.parents and target.is_file():
+                    from photovault.web.culling import _raw_embedded_jpeg
+                    embedded = _raw_embedded_jpeg(target)
+                    if embedded:
+                        try:
+                            import io
+                            from PIL import Image, ImageOps
+                            with Image.open(io.BytesIO(embedded)) as raw_image:
+                                image = ImageOps.exif_transpose(raw_image)
+                                image.thumbnail((320, 320))
+                                output = io.BytesIO()
+                                image.convert("RGB").save(output, format="JPEG", quality=84, optimize=True)
+                            self._send(output.getvalue(), "image/jpeg")
+                            return
+                        except (OSError, ValueError):
+                            pass
             self.send_response(200)
             self.send_header("Content-Type", mimetypes.guess_type(path.name)[0] or "image/jpeg")
             self.send_header("Content-Length", str(path.stat().st_size))
