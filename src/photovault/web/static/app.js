@@ -102,3 +102,56 @@ const originalShowTopicsPage=showTopicsPage;
 showTopicsPage=function(){originalShowTopicsPage();document.querySelectorAll(".topic-directory-card[data-topic-id]").forEach(card=>{if(card.querySelector("[data-delete-topic]"))return;const button=document.createElement("button");button.className="text-button danger-button";button.dataset.deleteTopic=card.dataset.topicId;button.textContent="Delete Topic";card.querySelector("div:last-child")?.appendChild(button)})};
 const collageNav=document.createElement("button");collageNav.className="nav";collageNav.textContent="✦ Experimental Collage";collageNav.onclick=()=>{window.location.href="/experimental/collage"};document.querySelector(".sidebar")?.append(collageNav);
 document.addEventListener("click",event=>{const card=event.target.closest?.(".topic-card[data-id],.topic-directory-card[data-topic-id]");if(card&&!event.target.closest("button")){event.preventDefault();event.stopImmediatePropagation();window.location.href=`/topic-workspace?topic=${encodeURIComponent(card.dataset.id||card.dataset.topicId)}`}},true);
+
+let sourceRefreshPollTimer=null;
+let sourceRefreshLastJobId="";
+function sourceRefreshActive(job){return Boolean(job&&["queued","running"].includes(job.status))}
+function sourceRefreshSummary(job){
+  if(!job)return "Choose a registered folder to scan for new photos. The scan is incremental and does not change originals.";
+  if(job.status==="queued")return "Refresh queued…";
+  if(job.status==="running")return job.stage==="scanning"?"Scanning for new or changed media…":"Building missing thumbnails…";
+  if(job.status==="failed")return `Refresh failed: ${job.error||"unknown error"}`;
+  return `Last refresh: ${Number(job.files_catalogued||0).toLocaleString()} files checked, ${Number(job.errors||0)} errors.`;
+}
+function renderSourcesPage(volumes,job,thumbs){
+  const active=sourceRefreshActive(job);
+  const thumbJob=thumbs?.job;
+  const thumbText=thumbJob&&thumbJob.status==="running"?`Building previews: ${Number(thumbJob.processed||0).toLocaleString()} checked · ${Number(thumbJob.generated||0).toLocaleString()} generated`:`Preview cache: ${Number(thumbs?.ready||0).toLocaleString()} ready · ${Number(thumbs?.pending||0).toLocaleString()} pending`;
+  const cards=volumes.map(volume=>{
+    const ready=volume.status==="CONNECTED"&&volume.path_exists;
+    const current=active&&job.volume_id===volume.id;
+    const progress=current?`<p class="source-progress">${esc(sourceRefreshSummary(job))}${job.stage==="scanning"&&job.files_seen?` · ${Number(job.files_seen).toLocaleString()} files seen`:""}</p>`:"";
+    return `<article class="source-volume-card"><div class="source-volume-copy"><div class="source-volume-title"><h3>${esc(volume.display_name)}</h3><span class="source-state ${ready?"connected":"offline"}">${ready?"Connected":"Unavailable"}</span></div><p>${Number(volume.item_count||0).toLocaleString()} catalogued items</p><code title="${esc(volume.mount_path||"")}">${esc(volume.mount_path||"No folder path registered")}</code>${progress}</div><button class="outline source-refresh-button" data-refresh-volume="${esc(volume.id)}" ${ready&&!active?"":"disabled"}>${current?"Refreshing…":"Refresh source"}</button></article>`;
+  }).join("");
+  $("page-title").textContent="Sources";
+  $("summary").textContent=`${volumes.length} registered folder${volumes.length===1?"":"s"} · ${thumbText}`;
+  $("timeline").innerHTML=`<section class="sources-panel"><div class="source-refresh-header"><div><h2>Refresh source data</h2><p>Scan a connected folder for new photos, then generate missing thumbnails automatically.</p><p class="source-refresh-note">Existing catalog records, source IDs and original files remain unchanged.</p></div><span class="source-refresh-status ${active?"is-active":""}">${esc(sourceRefreshSummary(job))}</span></div><div class="source-volume-list">${cards||"<div class=\"empty-inspector\">No registered source folders.</div>"}</div></section>`;
+  document.querySelectorAll("[data-refresh-volume]").forEach(button=>button.onclick=async()=>{
+    button.disabled=true;button.textContent="Starting…";
+    try{await api(`/api/volumes/${encodeURIComponent(button.dataset.refreshVolume)}/refresh`,{method:"POST",body:"{}"});sourceRefreshLastJobId="pending";showToast("Source refresh started; new thumbnails will be generated automatically.");pollSourceRefresh()}catch(error){button.disabled=false;button.textContent="Refresh source";showToast(error.message,true)}
+  });
+}
+async function pollSourceRefresh(){
+  if(sourceRefreshPollTimer){clearTimeout(sourceRefreshPollTimer);sourceRefreshPollTimer=null}
+  if(state.page!=="directory"||state.pageTitle!=="Sources")return;
+  try{
+    const [sourceData,thumbs]=await Promise.all([api("/api/volumes"),api("/api/thumbnails/status")]);
+    const job=sourceData.refresh_job;
+    renderSourcesPage(sourceData.volumes||[],job,thumbs);
+    const thumbnailActive=thumbs?.job?.status==="running";
+    if(sourceRefreshActive(job)||thumbnailActive){if(job?.job_id)sourceRefreshLastJobId=job.job_id;sourceRefreshPollTimer=setTimeout(pollSourceRefresh,1000);return}
+    if(sourceRefreshLastJobId&&job&&job.job_id===sourceRefreshLastJobId){
+      sourceRefreshLastJobId="";
+      state.navigation=await api("/api/navigation");
+      if(job.status==="complete")showToast(`Source refreshed: ${Number(job.files_catalogued||0).toLocaleString()} files checked.`);
+      else if(job.status==="failed")showToast(`Source refresh failed: ${job.error||"unknown error"}`,true);
+      renderSourcesPage(sourceData.volumes||[],job,thumbs);
+    }
+  }catch(error){$("timeline").innerHTML=`<div class="empty-inspector">${esc(error.message)}</div>`}
+}
+async function showSourcesPage(){
+  state.page="directory";state.pageTitle="Sources";setActiveNav(10);$("page-title").textContent="Sources";$("summary").textContent="Loading registered source folders…";$("timeline").innerHTML=`<div class="empty-inspector">Loading source folders…</div>`;
+  try{const [sourceData,thumbs]=await Promise.all([api("/api/volumes"),api("/api/thumbnails/status")]);renderSourcesPage(sourceData.volumes||[],sourceData.refresh_job,thumbs);if(sourceRefreshActive(sourceData.refresh_job)||thumbs?.job?.status==="running")pollSourceRefresh()}catch(error){$("timeline").innerHTML=`<div class="empty-inspector">${esc(error.message)}</div>`}
+}
+const legacyShowDirectory=showDirectory;
+showDirectory=function(title,entries,key){if(title==="Sources"){showSourcesPage();return}legacyShowDirectory(title,entries,key)};

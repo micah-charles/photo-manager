@@ -42,7 +42,11 @@ def build_missing_thumbnails(connection, *, cache_root: Path, limit: int = 0, ca
     """Process missing previews in 200-row batches; one bad file never stops the job."""
     result: dict[str, int | bool] = {"processed": 0, "generated": 0, "failed": 0, "cancelled": False}
     cache_root = cache_root.expanduser().resolve()
-    failed_filter = "" if retry_failed else "AND f.asset_id IS NULL"
+    # A retry may include failures that existed before this invocation, but
+    # must not select a failure recorded by this same invocation again.  The
+    # latter would make the batch loop retry the same broken asset forever.
+    retry_started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    failed_filter = "AND (f.asset_id IS NULL OR f.failed_at < ?)" if retry_failed else "AND f.asset_id IS NULL"
     while True:
         if cancel and cancel.is_set():
             result["cancelled"] = True
@@ -50,16 +54,16 @@ def build_missing_thumbnails(connection, *, cache_root: Path, limit: int = 0, ca
         batch_size = min(200, limit - int(result["processed"])) if limit else 200
         if batch_size <= 0:
             break
-        rows = connection.execute(
-            f"""SELECT a.id, a.media_type, al.relative_path, v.current_mount_path
+        query = f"""SELECT DISTINCT a.id, a.media_type, al.relative_path, v.current_mount_path
                 FROM assets a JOIN asset_locations al ON al.asset_id=a.id
                 JOIN volumes v ON v.id=al.volume_id
                 LEFT JOIN thumbnails t ON t.asset_id=a.id AND t.version='v1-320'
                 LEFT JOIN thumbnail_failures f ON f.asset_id=a.id
                 WHERE al.missing_since IS NULL AND t.asset_id IS NULL {failed_filter}
                 ORDER BY COALESCE(al.capture_date, datetime(al.modified_ns / 1000000000, 'unixepoch')) DESC, al.asset_id
-                LIMIT ?""", (batch_size,),
-        ).fetchall()
+                LIMIT ?"""
+        query_params = (retry_started_at, batch_size) if retry_failed else (batch_size,)
+        rows = connection.execute(query, query_params).fetchall()
         if not rows:
             break
         for row in rows:

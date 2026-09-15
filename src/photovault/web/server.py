@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlparse
 
 from photovault.catalog.library import LibraryQuery, count_library_items, library_asset_ids, library_day_counts, library_facets, list_library_items
 from photovault.catalog.organization import add_assets_to_event, add_assets_to_topic_section, create_event, create_topic_section, delete_event, list_events, list_places, list_sources, list_tags, list_topic_sections, remove_assets_from_event, remove_assets_from_topic_section, update_event
+from photovault.catalog.scanner import scan_volume
 from photovault.catalog.people import list_people
 from photovault.catalog.collections import list_collections
 from photovault.catalog.thumbnail_jobs import build_missing_thumbnails, thumbnail_status
@@ -483,6 +484,120 @@ def navigation_payload(connection) -> dict[str, object]:
     }
 
 
+def registered_volumes_payload(connection) -> list[dict[str, object]]:
+    """Return registered local folders that the web UI can refresh safely."""
+    rows = connection.execute(
+        """SELECT v.id, v.display_name, v.status, v.current_mount_path,
+                  COUNT(DISTINCT al.asset_id) AS item_count
+           FROM volumes v LEFT JOIN asset_locations al
+             ON al.volume_id=v.id AND al.missing_since IS NULL
+           GROUP BY v.id ORDER BY v.display_name"""
+    ).fetchall()
+    return [
+        {
+            "id": str(row[0]),
+            "source_id": f"folder:{row[0]}",
+            "display_name": str(row[1]),
+            "status": str(row[2] or "UNKNOWN"),
+            "mount_path": str(row[3]) if row[3] else None,
+            "path_exists": bool(row[3]) and Path(str(row[3])).expanduser().is_dir(),
+            "item_count": int(row[4] or 0),
+        }
+        for row in rows
+    ]
+
+
+def _start_thumbnail_job(server: ThreadingHTTPServer, catalog_path: Path) -> bool:
+    """Start the shared resumable preview builder, returning False if busy."""
+    lock = getattr(server, "thumbnail_job_lock", None)
+    if lock is None:
+        lock = threading.Lock()
+        server.thumbnail_job_lock = lock  # type: ignore[attr-defined]
+    with lock:
+        current = getattr(server, "thumbnail_job", None)
+        if current and current.get("status") == "running":
+            return False
+        job_id = "thumb_" + uuid.uuid4().hex
+        server.thumbnail_job = {"job_id": job_id, "status": "running", "processed": 0, "generated": 0, "failed": 0}  # type: ignore[attr-defined]
+
+    def run_job() -> None:
+        connection = connect(catalog_path)
+        try:
+            result = build_missing_thumbnails(
+                connection,
+                cache_root=catalog_path.parent / ".photovault-thumbnails",
+                retry_failed=True,
+                progress=lambda value: setattr(server, "thumbnail_job", {"job_id": job_id, "status": "running", **value}),
+            )
+            server.thumbnail_job = {"job_id": job_id, "status": "cancelled" if result["cancelled"] else "complete", **result}  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001
+            server.thumbnail_job = {"job_id": job_id, "status": "failed", "error": str(exc)}  # type: ignore[attr-defined]
+        finally:
+            connection.close()
+
+    threading.Thread(target=run_job, daemon=True, name=f"thumbnail-job-{job_id[:8]}").start()
+    return True
+
+
+def _start_volume_refresh(server: ThreadingHTTPServer, catalog_path: Path, volume_id: str) -> dict[str, object]:
+    """Queue an incremental folder scan and then build any missing thumbnails."""
+    if not re.fullmatch(r"vol_[0-9a-f]{24}", volume_id):
+        raise ValueError("invalid volume id")
+    lock = getattr(server, "volume_refresh_lock", None)
+    if lock is None:
+        lock = threading.Lock()
+        server.volume_refresh_lock = lock  # type: ignore[attr-defined]
+    with lock:
+        current = getattr(server, "volume_refresh_job", None)
+        if current and current.get("status") in {"queued", "running"}:
+            raise ValueError("a source refresh is already running")
+        connection = connect(catalog_path)
+        try:
+            row = connection.execute(
+                "SELECT id, display_name, current_mount_path FROM volumes WHERE id=?",
+                (volume_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            raise ValueError("volume is not registered")
+        root = Path(str(row[2] or "")).expanduser().resolve()
+        if not root.is_dir():
+            raise ValueError(f"source folder is unavailable: {root}")
+        job_id = "refresh_" + uuid.uuid4().hex
+        job = {
+            "job_id": job_id,
+            "volume_id": volume_id,
+            "display_name": str(row[1]),
+            "root": str(root),
+            "status": "queued",
+            "stage": "queued",
+            "files_seen": 0,
+            "files_catalogued": 0,
+            "errors": 0,
+            "thumbnail_job_started": False,
+        }
+        server.volume_refresh_job = job  # type: ignore[attr-defined]
+
+    def run_refresh() -> None:
+        running = dict(job, status="running", stage="scanning")
+        server.volume_refresh_job = running  # type: ignore[attr-defined]
+        connection = connect(catalog_path)
+        try:
+            result = scan_volume(connection, volume_id, root)
+        except Exception as exc:  # noqa: BLE001
+            server.volume_refresh_job = dict(running, status="failed", stage="failed", error=str(exc))  # type: ignore[attr-defined]
+            return
+        finally:
+            connection.close()
+        started = _start_thumbnail_job(server, catalog_path)
+        completed = dict(running, status="complete", stage="complete", **result, thumbnail_job_started=started)
+        server.volume_refresh_job = completed  # type: ignore[attr-defined]
+
+    threading.Thread(target=run_refresh, daemon=True, name=f"volume-refresh-{job_id[:8]}").start()
+    return dict(job)
+
+
 class PhotoVaultHandler(BaseHTTPRequestHandler):
     server_version = "PhotoVaultLocal/0.1"
 
@@ -725,6 +840,16 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
             connection = connect(self.catalog_path)
             try:
                 self._json(thumbnail_status(connection) | {"job": getattr(self.server, "thumbnail_job", None)})
+            finally:
+                connection.close()
+            return
+        if parsed.path == "/api/volumes":
+            connection = connect(self.catalog_path)
+            try:
+                self._json({
+                    "volumes": registered_volumes_payload(connection),
+                    "refresh_job": getattr(self.server, "volume_refresh_job", None),
+                })
             finally:
                 connection.close()
             return
@@ -1115,31 +1240,16 @@ Include this package_id in your response and do not include original photo files
             connection = connect(self.catalog_path)
             try:
                 if parsed.path == "/api/thumbnails/build":
-                    current = getattr(self.server, "thumbnail_job", None)
-                    if current and current.get("status") == "running":
+                    if not _start_thumbnail_job(self.server, self.catalog_path):
                         self._json({"error": "thumbnail generation is already running"}, 409)
                         return
-                    self.server.thumbnail_job = {"status": "running", "processed": 0, "generated": 0, "failed": 0}  # type: ignore[attr-defined]
-                    catalog_path = self.catalog_path
-                    job_server = self.server
-
-                    def run_job() -> None:
-                        connection = connect(catalog_path)
-                        try:
-                            result = build_missing_thumbnails(
-                                connection,
-                                cache_root=catalog_path.parent / ".photovault-thumbnails",
-                                retry_failed=True,
-                                progress=lambda value: setattr(job_server, "thumbnail_job", {"status": "running", **value}),
-                            )
-                            job_server.thumbnail_job = {"status": "cancelled" if result["cancelled"] else "complete", **result}  # type: ignore[attr-defined]
-                        except Exception as exc:  # noqa: BLE001
-                            job_server.thumbnail_job = {"status": "failed", "error": str(exc)}  # type: ignore[attr-defined]
-                        finally:
-                            connection.close()
-
-                    threading.Thread(target=run_job, daemon=True).start()
                     self._json({"ok": True, "status": "running"}, 202)
+                    return
+                volume_refresh_prefix = "/api/volumes/"
+                if parsed.path.startswith(volume_refresh_prefix) and parsed.path.endswith("/refresh"):
+                    volume_id = parsed.path.removeprefix(volume_refresh_prefix).removesuffix("/refresh").strip("/")
+                    job = _start_volume_refresh(self.server, self.catalog_path, volume_id)
+                    self._json(job, 202)
                     return
                 if parsed.path == "/api/topics":
                     event_id = create_event(
@@ -1405,6 +1515,9 @@ def serve(catalog: Path, host: str = "127.0.0.1", port: int = 8765) -> None:
     httpd.android_connection_states = {}  # type: ignore[attr-defined]
     httpd.collage_runs = {}  # type: ignore[attr-defined]
     httpd.collage_jobs = {}  # type: ignore[attr-defined]
+    httpd.thumbnail_job_lock = threading.Lock()  # type: ignore[attr-defined]
+    httpd.volume_refresh_lock = threading.Lock()  # type: ignore[attr-defined]
+    httpd.volume_refresh_job = None  # type: ignore[attr-defined]
     httpd.collage_analysis_cache_path = httpd.catalog_path.parent / "collage-analysis-cache.json"  # type: ignore[attr-defined]
     httpd.collage_analysis_cache, httpd.collage_analysis_fingerprints = load_collage_analysis_cache(httpd.collage_analysis_cache_path)  # type: ignore[attr-defined]
     # Runs are file-backed so a server restart does not erase the candidate

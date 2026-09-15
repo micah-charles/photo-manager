@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from photovault.catalog.library import LibraryQuery, library_asset_ids, library_day_counts
 from photovault.catalog.scanner import register_volume, scan_volume
@@ -10,7 +13,7 @@ from photovault.database.connection import connect
 from photovault.catalog.organization import add_assets_to_event, create_event
 from photovault.catalog.thumbnail_jobs import build_missing_thumbnails, thumbnail_status
 from photovault.platform.base import VolumeIdentity
-from photovault.web.server import STATIC_ROOT, _decode_cursor, library_payload, navigation_payload, topics_payload
+from photovault.web.server import STATIC_ROOT, _decode_cursor, _start_volume_refresh, library_payload, navigation_payload, registered_volumes_payload, topics_payload
 
 
 class WebLibraryTests(unittest.TestCase):
@@ -147,6 +150,66 @@ class WebLibraryTests(unittest.TestCase):
             self.assertEqual(result["failed"], 1)
             self.assertEqual(status["pending"], 0)
             self.assertEqual(status["failed"], 1)
+            db.close()
+
+    def test_thumbnail_retry_does_not_loop_on_new_failures(self) -> None:
+        class Provider:
+            def identify(self, path: Path) -> VolumeIdentity:
+                return VolumeIdentity("web", "web-volume", "Web test volume")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "media"
+            root.mkdir()
+            (root / "broken.jpg").write_bytes(b"not a real jpeg")
+            db = connect(Path(directory) / "catalog.db")
+            volume_id = register_volume(db, root, Provider())
+            scan_volume(db, volume_id, root)
+            build_missing_thumbnails(db, cache_root=Path(directory) / "thumbs")
+            db.execute("UPDATE thumbnail_failures SET failed_at='2000-01-01T00:00:00+00:00'")
+            db.commit()
+            result = build_missing_thumbnails(db, cache_root=Path(directory) / "thumbs", retry_failed=True)
+            self.assertEqual(result["processed"], 1)
+            self.assertEqual(result["failed"], 1)
+            self.assertEqual(thumbnail_status(db)["pending"], 0)
+            db.close()
+
+    def test_source_refresh_scans_registered_root_and_builds_thumbnails(self) -> None:
+        class Provider:
+            def identify(self, path: Path) -> VolumeIdentity:
+                return VolumeIdentity("web", "web-volume", "Web test volume")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "media"
+            root.mkdir()
+            first = root / "first.jpg"
+            from PIL import Image
+            Image.new("RGB", (32, 24), "red").save(first)
+            catalog = Path(directory) / "catalog.db"
+            db = connect(catalog)
+            volume_id = register_volume(db, root, Provider())
+            scan_volume(db, volume_id, root)
+            Image.new("RGB", (32, 24), "blue").save(root / "second.jpg")
+            db.close()
+
+            server = SimpleNamespace(
+                thumbnail_job=None,
+                thumbnail_job_lock=threading.Lock(),
+                volume_refresh_job=None,
+                volume_refresh_lock=threading.Lock(),
+            )
+            job = _start_volume_refresh(server, catalog, volume_id)
+            self.assertEqual(job["status"], "queued")
+            for _ in range(100):
+                refresh = server.volume_refresh_job
+                thumbs = server.thumbnail_job
+                if refresh and refresh.get("status") == "complete" and thumbs and thumbs.get("status") == "complete":
+                    break
+                time.sleep(0.05)
+            self.assertEqual(server.volume_refresh_job["status"], "complete")
+            self.assertEqual(server.volume_refresh_job["files_catalogued"], 2)
+            db = connect(catalog)
+            self.assertEqual(registered_volumes_payload(db)[0]["item_count"], 2)
+            self.assertEqual(thumbnail_status(db)["ready"], 2)
             db.close()
 
     def test_library_cursor_advances_without_repeating_asset(self) -> None:
