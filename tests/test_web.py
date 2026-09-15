@@ -90,6 +90,9 @@ class WebLibraryTests(unittest.TestCase):
         self.assertTrue((STATIC_ROOT / "index.html").is_file())
         self.assertTrue((STATIC_ROOT / "style.css").is_file())
         self.assertTrue((STATIC_ROOT / "app.js").is_file())
+        library = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+        for marker in ('id="filter-day"', 'id="filter-from"', 'id="filter-to"', 'id="sort-select"', 'id="clear-filter"'):
+            self.assertIn(marker, library)
 
     def test_creator_mode_has_first_class_creation_methods(self) -> None:
         collage = (STATIC_ROOT / "collage_v2.html").read_text(encoding="utf-8")
@@ -230,6 +233,35 @@ class WebLibraryTests(unittest.TestCase):
             second = library_payload(db, LibraryQuery(limit=1, sort="captured_desc_id", after_captured=captured, after_asset_id=asset_id))
             self.assertEqual(len(second["items"]), 1)
             self.assertNotEqual(first["items"][0]["asset_id"], second["items"][0]["asset_id"])
+            db.close()
+
+    def test_library_payload_supports_date_range_sort_and_offset_paging(self) -> None:
+        class Provider:
+            def identify(self, path: Path) -> VolumeIdentity:
+                return VolumeIdentity("web", "web-volume", "Web test volume")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "media"
+            root.mkdir()
+            for name in ("c.jpg", "a.jpg", "b.jpg"):
+                (root / name).write_bytes(name.encode())
+            db = connect(Path(directory) / "catalog.db")
+            volume_id = register_volume(db, root, Provider())
+            scan_volume(db, volume_id, root)
+            rows = db.execute("SELECT asset_id, filename FROM asset_locations ORDER BY filename").fetchall()
+            for row, captured in zip(rows, ("2026-04-04T09:00:00", "2026-04-07T09:00:00", "2026-04-10T09:00:00")):
+                db.execute("UPDATE media_metadata SET capture_datetime=? WHERE asset_id=?", (captured, row[0]))
+            db.commit()
+
+            query = LibraryQuery(captured_from="2026-04-04 00:00:00", captured_to="2026-04-10 23:59:59", sort="name_asc", limit=2)
+            first = library_payload(db, query)
+            second = library_payload(db, LibraryQuery(**{**query.__dict__, "offset": 2}))
+            self.assertEqual(first["total"], 3)
+            self.assertEqual([item["filename"] for item in first["items"]], ["a.jpg", "b.jpg"])
+            self.assertEqual([item["filename"] for item in second["items"]], ["c.jpg"])
+            self.assertEqual(first["next_offset"], 2)
+            self.assertIsNone(second["next_offset"])
+            self.assertEqual(first["day_counts"], {"2026-04-10": 1, "2026-04-07": 1, "2026-04-04": 1})
             db.close()
 
     def test_navigation_payload_contains_browse_facets(self) -> None:

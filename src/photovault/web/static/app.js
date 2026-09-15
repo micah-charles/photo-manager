@@ -155,3 +155,93 @@ async function showSourcesPage(){
 }
 const legacyShowDirectory=showDirectory;
 showDirectory=function(title,entries,key){if(title==="Sources"){showSourcesPage();return}legacyShowDirectory(title,entries,key)};
+
+// Library date filters and sorting are deliberately kept outside the catalog
+// identity state. They only change the current view and never mutate assets.
+state.dateFilter={day:"",from:"",to:""};
+state.sort="captured_desc_id";
+state.offset=0;
+
+function activeDateFilter(){return state.dateFilter||{day:"",from:"",to:""}}
+function dateFilterText(){const filter=activeDateFilter();if(filter.day)return ` · ${filter.day}`;if(filter.from||filter.to)return ` · ${filter.from||"Any date"} – ${filter.to||"Any date"}`;return ""}
+function syncDateFilterControls(){const filter=activeDateFilter();if($("filter-day"))$("filter-day").value=filter.day||"";if($("filter-from"))$("filter-from").value=filter.from||"";if($("filter-to"))$("filter-to").value=filter.to||"";if($("sort-select"))$("sort-select").value=state.sort||"captured_desc_id"}
+
+libraryQuery=function({day="",includeCursor=true}={}){
+  const q=new URLSearchParams(),filter=activeDateFilter(),explicitDay=Boolean(day),hasDate=Boolean(filter.day||filter.from||filter.to);
+  if(explicitDay)q.set("day",day);
+  else if(filter.day)q.set("day",filter.day);
+  else if(filter.from||filter.to){if(filter.from)q.set("from",`${filter.from} 00:00:00`);if(filter.to)q.set("to",`${filter.to} 23:59:59`)}
+  else if(state.month)q.set("month",state.month);
+  if(!explicitDay&&!hasDate&&state.year){q.set("from",`${state.year}-01-01`);q.set("to",`${state.year}-12-31`)}
+  if(state.topicId)q.set("event",state.topicId);
+  Object.entries(state.filters).forEach(([key,value])=>{if(value)q.set(key,value)});
+  if(includeCursor&&state.offset)q.set("offset",String(state.offset));
+  if($("search").value)q.set("search",$("search").value);
+  q.set("type",$("media").value);q.set("sort",state.sort||"captured_desc_id");
+  return q;
+};
+
+load=async function(reset=true){
+  if(state.loading)return null;
+  if(reset){state.cursor="";state.offset=0;if(state.month||state.year||state.topicId)state.dateFilter={day:"",from:"",to:""}}
+  state.loading=true;
+  const requestOffset=state.offset||0,q=libraryQuery({includeCursor:!reset});
+  q.set("limit","150");
+  try{
+    const page=await api(`/api/library?${q}`);
+    if(reset||!state.data)state.data=page;
+    else{state.data.items.push(...(page.items||[]));state.data.days=state.data.days||{};Object.entries(page.days||{}).forEach(([day,items])=>{state.data.days[day]=[...(state.data.days[day]||[]),...items]});state.data.day_counts={...(state.data.day_counts||{}),...(page.day_counts||{})}}
+    state.cursor=page.next_cursor||"";state.offset=Number(page.next_offset??(requestOffset+(page.items||[]).length));state.hasMore=Boolean(page.has_more);render();return page;
+  }catch(error){$("timeline").innerHTML=`<div class="empty-inspector">${esc(error.message)}</div>`;return null}
+  finally{state.loading=false}
+};
+
+loadMore=async function(){if(state.hasMore&&!state.loading)await load(false)};
+async function loadToEnd(){
+  if(state.loading)return;
+  let guard=0;
+  while(state.hasMore&&guard<10000){const before=state.offset;const page=await load(false);guard++;if(!page||state.offset<=before)break}
+}
+
+const libraryRender=render;
+render=function(){
+  libraryRender();
+  const summary=$("summary"),filterText=dateFilterText();
+  if(summary&&filterText)summary.textContent+=filterText;
+  const host=$("load-more");
+  if(!host||!state.hasMore)return;
+  host.classList.remove("hidden");
+  if(!host.querySelector("[data-load-all]")){
+    const button=document.createElement("button");button.type="button";button.className="outline";button.dataset.loadAll="1";button.textContent="Load all to end";button.onclick=loadToEnd;host.appendChild(button);
+  }
+};
+
+function applyLibraryView(){
+  const day=$("filter-day").value,from=$("filter-from").value,to=$("filter-to").value;
+  if(day&&(from||to)){showToast("Use Single day or From / To, not both.",true);return}
+  if(from&&to&&from>to){showToast("The From date must not be after the To date.",true);return}
+  state.dateFilter={day,from,to};state.sort=$("sort-select").value||"captured_desc_id";state.month="";state.year="";state.topicId="";state.pageTitle="";state.selected.clear();state.anchorId="";state.cursor="";state.offset=0;load(true)
+}
+function clearLibraryView(){
+  $("search").value="";$("media").value="ALL";state.dateFilter={day:"",from:"",to:""};state.sort="captured_desc_id";state.month="";state.year="";state.topicId="";state.pageTitle="";state.selected.clear();state.anchorId="";state.cursor="";state.offset=0;syncDateFilterControls();load(true)
+}
+$("filter-button").onclick=()=>{$("filter-panel").classList.toggle("hidden");syncDateFilterControls()};
+$("sort-button").onclick=()=>{$("filter-panel").classList.remove("hidden");syncDateFilterControls();$("sort-select")?.focus()};
+$("apply-filter").onclick=applyLibraryView;
+$("clear-filter").onclick=clearLibraryView;
+syncDateFilterControls();
+
+function bindDateOnlyHeader(section){
+  section.querySelector(".day-toggle")?.addEventListener("click",()=>{const day=section.dataset.day;state.collapsedDays.has(day)?state.collapsedDays.delete(day):state.collapsedDays.add(day);render()});
+  section.querySelector(".day-select")?.addEventListener("click",async()=>{const day=section.dataset.day,button=section.querySelector(".day-select");button.disabled=true;button.textContent="Selecting…";try{const result=await api(`/api/library/ids?${libraryQuery({day,includeCursor:false})}`);result.asset_ids.forEach(id=>state.selected.add(id));updateSelectionUI();showToast(`${result.count.toLocaleString()} photos selected for ${formatDay(day)}`)}catch(error){showToast(error.message,true)}finally{button.disabled=false;button.textContent="Select day"}});
+}
+function addMissingDateHeaders(){
+  const filter=activeDateFilter(),data=state.data,timeline=$("timeline"),loadMore=$("load-more");
+  if(!filter.day&&!filter.from&&!filter.to||!data?.day_counts||!timeline||!loadMore)return;
+  Object.keys(data.day_counts).forEach(day=>{
+    if(timeline.querySelector(`[data-day="${CSS.escape(day)}"]`))return;
+    const section=document.createElement("section");section.className="day-group";section.dataset.day=day;const total=Number(data.day_counts[day]||0);section.innerHTML=`<div class="day-header"><div>${formatDay(day)}</div><div class="day-tools"><button class="day-select" type="button">Select day</button><small>${total.toLocaleString()} items · not loaded</small><button class="day-toggle" type="button" aria-expanded="true">−</button></div></div><div class="photo-grid"></div>`;timeline.insertBefore(section,loadMore);bindDateOnlyHeader(section);
+  });
+}
+const dateHeaderRender=render;
+render=function(){dateHeaderRender();addMissingDateHeaders()};

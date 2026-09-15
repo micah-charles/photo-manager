@@ -432,7 +432,8 @@ def library_payload(connection, query: LibraryQuery) -> dict[str, object]:
     for month in months:
         year = str(month["key"])[:4]
         years[year] = years.get(year, 0) + int(month["item_count"])
-    return {"total": count_library_items(connection, query), "items": items, "months": months, "years": [{"key": year, "label": year, "item_count": count} for year, count in years.items()], "days": days, "day_counts": library_day_counts(connection, query), "next_cursor": next_cursor, "has_more": has_more}
+    next_offset = query.offset + len(rows) if has_more else None
+    return {"total": count_library_items(connection, query), "items": items, "months": months, "years": [{"key": year, "label": year, "item_count": count} for year, count in years.items()], "days": days, "day_counts": library_day_counts(connection, query), "next_cursor": next_cursor, "next_offset": next_offset, "has_more": has_more}
 
 
 def folder_asset_ids(connection, folder: str) -> list[str]:
@@ -1393,8 +1394,12 @@ Include this package_id in your response and do not include original photo files
     def _library(self, raw_query: str) -> None:
         params = parse_qs(raw_query)
         month = params.get("month", [""])[0]
+        day = params.get("day", [""])[0]
         captured_from = params.get("from", [""])[0]
         captured_to = params.get("to", [""])[0]
+        if day:
+            captured_from = f"{day} 00:00:00"
+            captured_to = f"{day} 23:59:59"
         search = params.get("search", [""])[0]
         media_type = params.get("type", ["ALL"])[0].upper()
         event_id = params.get("event", [""])[0]
@@ -1408,11 +1413,13 @@ Include this package_id in your response and do not include original photo files
         source_id = params.get("source", [""])[0]
         folder = params.get("folder", [""])[0]
         include_rejected = params.get("include_rejected", ["0"])[0] == "1"
+        sort = params.get("sort", ["captured_desc_id"])[0]
         limit = min(max(int(params.get("limit", [150])[0]), 1), 200)
+        offset = max(int(params.get("offset", [0])[0]), 0)
         cursor = _decode_cursor(params.get("cursor", [""])[0])
         connection = connect(self.catalog_path)
         try:
-            self._json(library_payload(connection, LibraryQuery(search=search, media_type=media_type, captured_month=month, captured_from=captured_from, captured_to=captured_to, folder_prefix=folder, event_id=event_id, recently_added=recently_added, review_status=review_status, favourite_only=favourite_only, tag_id=tag_id, place_id=place_id, person_id=person_id, category=category, source_id=source_id, include_rejected=include_rejected, sort="captured_desc_id", limit=limit, after_captured=cursor[0], after_asset_id=cursor[1])))
+            self._json(library_payload(connection, LibraryQuery(search=search, media_type=media_type, captured_month=month, captured_from=captured_from, captured_to=captured_to, folder_prefix=folder, event_id=event_id, recently_added=recently_added, review_status=review_status, favourite_only=favourite_only, tag_id=tag_id, place_id=place_id, person_id=person_id, category=category, source_id=source_id, include_rejected=include_rejected, sort=sort, limit=limit, offset=offset, after_captured=cursor[0], after_asset_id=cursor[1])))
         except (ValueError, TypeError) as exc:
             self._json({"error": str(exc)}, 400)
         finally:
