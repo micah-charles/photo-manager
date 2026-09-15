@@ -4,6 +4,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 EDITOR_JS = ROOT / "src/photovault/web/static/fabric_spike_v3.js"
+RENDER_VALIDATION_JS = ROOT / "src/photovault/web/static/collage_render_validation.js"
 PROMPT = ROOT / "docs/CHATGPT_AI_COLLAGE_DESIGN_PROMPT.md"
 
 
@@ -40,3 +41,41 @@ class CollageEditorContractTests(unittest.TestCase):
             "print size",
         ):
             self.assertIn(phrase, source)
+
+    def test_shared_render_space_validation_is_called_after_fabric_render(self):
+        source = EDITOR_JS.read_text(encoding="utf-8")
+        helper = RENDER_VALIDATION_JS.read_text(encoding="utf-8")
+        self.assertIn("targetCanvas.renderAll();", source)
+        self.assertIn("validateRenderedComposition", source)
+        self.assertIn("renderedObjectsByElement(targetCanvas)", source)
+        self.assertIn('object.setCoords?.();', source)
+        for code in (
+            "FABRIC_TEXT_DECLARED_BOX_OVERFLOW",
+            "FABRIC_TEXT_PHOTO_COLLISION",
+            "FABRIC_TEXT_COVERED_BY_PHOTO",
+            "FABRIC_TEXT_PHOTO_CLEARANCE",
+            "FABRIC_TEXT_TEXT_COLLISION",
+        ):
+            self.assertIn(code, helper)
+
+    def test_intentional_overlap_contract_is_explicit_and_backwards_compatible(self):
+        source = RENDER_VALIDATION_JS.read_text(encoding="utf-8")
+        schema = (ROOT / "src/photovault/collage/schemas/design-spec-v2.json").read_text(encoding="utf-8")
+        self.assertIn("allow_photo_overlap", source)
+        self.assertIn("allow_text_overlap", source)
+        self.assertIn("allow_photo_overlap", schema)
+        self.assertIn("allow_text_overlap", schema)
+
+    def test_photo_panel_exposes_package_photos_not_used_by_current_alternative(self):
+        source = EDITOR_JS.read_text(encoding="utf-8")
+        html = (ROOT / "src/photovault/web/static/fabric_spike_v2.html").read_text(encoding="utf-8")
+        for phrase in (
+            "function selectedPhotoIds()",
+            "selection_asset_ids",
+            "function updatePhotoUsageIndicators()",
+            "Selected · not used",
+            "photo-usage-summary",
+        ):
+            self.assertIn(phrase, source + html)
+        self.assertIn("state.aiSpec?.assets", source)
+        self.assertIn("data-id=\"${esc(id)}\"", source)

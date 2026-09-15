@@ -30,8 +30,24 @@ def photo_page(db, topic, section='', offset=0, limit=80, picks=False):
         where += ' AND EXISTS(SELECT 1 FROM topic_section_assets sa WHERE sa.asset_id=a.id AND sa.section_id=?)'
         args.append(section)
     if picks:
-        where += " AND EXISTS(SELECT 1 FROM topic_culling tc WHERE tc.topic_id=? AND tc.asset_id=a.id AND tc.decision='pick')"
-        args.append(topic)
+        if section:
+            # Section decisions override topic-wide decisions.  The fallback
+            # keeps existing picks visible in newly-created sections, while a
+            # persisted `clear` row prevents that fallback after an unpick.
+            where += """ AND (
+                EXISTS(SELECT 1 FROM topic_section_culling tsc
+                    WHERE tsc.section_id=? AND tsc.asset_id=a.id AND tsc.decision='pick')
+                OR (
+                    NOT EXISTS(SELECT 1 FROM topic_section_culling tsc
+                        WHERE tsc.section_id=? AND tsc.asset_id=a.id)
+                    AND EXISTS(SELECT 1 FROM topic_culling tc
+                        WHERE tc.topic_id=? AND tc.asset_id=a.id AND tc.decision='pick')
+                )
+            )"""
+            args.extend((section, section, topic))
+        else:
+            where += " AND EXISTS(SELECT 1 FROM topic_culling tc WHERE tc.topic_id=? AND tc.asset_id=a.id AND tc.decision='pick')"
+            args.append(topic)
     base = f'''FROM event_assets ea JOIN assets a ON a.id=ea.asset_id
         JOIN asset_locations al ON al.asset_id=a.id
         LEFT JOIN media_metadata mm ON mm.asset_id=a.id WHERE {where}'''
@@ -56,17 +72,50 @@ def photo_page(db, topic, section='', offset=0, limit=80, picks=False):
     return {'items': items, 'total': total, 'next_offset': offset+len(ids) if offset+len(ids)<total else None}
 
 
-def decisions(db, topic):
+def decisions(db, topic, section=''):
     require_topic(db, topic)
+    if section and not db.execute(
+        'SELECT 1 FROM topic_sections WHERE id=? AND topic_id=?', (section, topic)
+    ).fetchone():
+        raise ValueError('Section does not belong to this topic')
+    if section:
+        return {r[0]: r[1] for r in db.execute('''
+            SELECT sa.asset_id, COALESCE(tsc.decision,tc.decision)
+              FROM topic_section_assets sa
+              JOIN topic_sections s ON s.id=sa.section_id AND s.topic_id=?
+              LEFT JOIN topic_section_culling tsc
+                ON tsc.section_id=sa.section_id AND tsc.asset_id=sa.asset_id
+              LEFT JOIN topic_culling tc
+                ON tc.topic_id=s.topic_id AND tc.asset_id=sa.asset_id
+             WHERE sa.section_id=?
+               AND COALESCE(tsc.decision,tc.decision) IS NOT NULL
+        ''', (topic, section))}
     return {r[0]:r[1] for r in db.execute('''SELECT tc.asset_id,tc.decision FROM topic_culling tc
         JOIN event_assets ea ON ea.asset_id=tc.asset_id AND ea.event_id=tc.topic_id WHERE tc.topic_id=?''', (topic,))}
 
 
-def set_decision(db, topic, asset, decision):
+def set_decision(db, topic, asset, decision, section=''):
     if decision not in ('pick','reject','clear'):
         raise ValueError('Invalid decision')
     if not db.execute('SELECT 1 FROM event_assets WHERE event_id=? AND asset_id=?', (topic, asset)).fetchone():
         raise ValueError('Photo is not in this topic')
+    if section:
+        if not db.execute(
+            'SELECT 1 FROM topic_sections WHERE id=? AND topic_id=?', (section, topic)
+        ).fetchone():
+            raise ValueError('Section does not belong to this topic')
+        if not db.execute(
+            'SELECT 1 FROM topic_section_assets WHERE section_id=? AND asset_id=?',
+            (section, asset),
+        ).fetchone():
+            raise ValueError('Photo is not in this section')
+        db.execute('''INSERT INTO topic_section_culling(section_id,asset_id,decision,updated_at)
+            VALUES(?,?,?,datetime('now'))
+            ON CONFLICT(section_id,asset_id) DO UPDATE
+            SET decision=excluded.decision,updated_at=excluded.updated_at''',
+            (section, asset, decision))
+        db.commit()
+        return
     if decision == 'clear':
         db.execute('DELETE FROM topic_culling WHERE topic_id=? AND asset_id=?', (topic, asset))
     else:
@@ -141,10 +190,12 @@ def handle(handler, parsed, method):
             result = photo_page(db, topic, q.get('section',[''])[0], max(0,int(q.get('offset',[0])[0])), min(100,max(1,int(q.get('limit',[80])[0]))), q.get('picks',['0'])[0]=='1')
             handler._json(result)
         elif method == 'GET' and action == 'decisions':
-            handler._json({'decisions':decisions(db,topic), 'catalog_key':hashlib.sha256(str(handler.catalog_path).encode()).hexdigest()[:16]})
+            section = parse_qs(parsed.query).get('section',[''])[0]
+            handler._json({'decisions':decisions(db,topic,section), 'catalog_key':hashlib.sha256(str(handler.catalog_path).encode()).hexdigest()[:16]})
         elif method == 'POST' and action == 'decisions':
             p = handler._read_json()
-            set_decision(db,topic,str(p.get('asset_id','')),str(p.get('decision','')))
+            section = parse_qs(parsed.query).get('section',[''])[0] or str(p.get('section',''))
+            set_decision(db,topic,str(p.get('asset_id','')),str(p.get('decision','')),section)
             handler._json({'ok':True})
         else:
             handler._json({'error':'Not found'},404)

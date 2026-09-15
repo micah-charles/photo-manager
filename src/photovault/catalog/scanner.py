@@ -40,6 +40,11 @@ def iter_media(root: Path) -> Iterable[tuple[Path, str]]:
     for path in root.rglob("*"):
         if path.is_symlink() or not path.is_file():
             continue
+        # Do not catalogue PhotoVault's generated preview cache when it lives
+        # below a registered source root. It contains derived files, not user
+        # photos, and scanning it creates duplicate selectable media.
+        if any(part == ".photovault-thumbnails" for part in path.relative_to(root).parts[:-1]):
+            continue
         media_type = MEDIA_EXTENSIONS.get(path.suffix.lower())
         if media_type:
             yield path, media_type

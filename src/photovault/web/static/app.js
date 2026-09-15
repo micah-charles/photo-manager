@@ -62,7 +62,7 @@ showBackupPage=function(){legacyShowBackupPage();const panel=document.querySelec
 
 function sourceClass(value){let hash=0;for(const char of String(value||""))hash=(hash*31+char.charCodeAt(0))%5;return `source-${hash}`}
 function card(x){const source=esc(x.source||"Unknown source");const sourceKey=esc((x.source_id||"").slice(-6));return `<article class="photo-card ${state.selected.has(x.asset_id)?"selected":""} ${sourceClass(x.source_id||x.source)}" data-id="${esc(x.asset_id)}" data-source-id="${esc(x.source_id||"")}" title="Drag this photo onto a Topic">${x.thumbnail?`<img loading="lazy" src="${x.thumbnail}" alt="${esc(x.filename)}">`:`<div class="placeholder">${esc(x.media_type)}</div>`}<span class="source-badge" title="${source} (${sourceKey})"><span class="source-dot"></span>${source} · ${sourceKey}</span><div class="photo-meta">${esc((x.captured||"").slice(11,16)||"—")} <span class="type-pill">${x.media_type==="VIDEO"?"◉":""}</span></div></article>`}
-function ensureSourceFilter(){const panel=$("filter-panel");if(!panel||$("source-filter"))return;const label=document.createElement("label");label.innerHTML=`Source <select id="source-filter"><option value="">All sources</option></select>`;panel.insertBefore(label,panel.querySelector("button"));$("source-filter").onchange=e=>{state.filters.source=e.target.value;state.cursor="";load()}}
+function ensureSourceFilter(){const panel=$("filter-panel"),fields=panel?.querySelector(".filter-fields");if(!fields||$("source-filter"))return;const label=document.createElement("label");label.innerHTML=`Source <select id="source-filter"><option value="">All sources</option></select>`;fields.appendChild(label);$("source-filter").onchange=e=>{state.filters.source=e.target.value;state.cursor="";load()}}
 function syncSourceFilter(){ensureSourceFilter();const select=$("source-filter");if(!select)return;const current=select.value;const sources=(state.navigation?.sources||[]).filter(source=>Number(source.item_count||0)>0);select.innerHTML=`<option value="">All sources</option>${sources.map(source=>`<option value="${esc(source.id)}">${esc(source.name)} · ${esc(String(source.id).slice(-6))} (${source.item_count})</option>`).join("")}`;select.value=current;}
 setInterval(syncSourceFilter,500);
 const originalShowInspector=showInspector;
@@ -161,6 +161,7 @@ showDirectory=function(title,entries,key){if(title==="Sources"){showSourcesPage(
 state.dateFilter={day:"",from:"",to:""};
 state.sort="captured_desc_id";
 state.offset=0;
+state.loadingAll=false;
 
 function activeDateFilter(){return state.dateFilter||{day:"",from:"",to:""}}
 function dateFilterText(){const filter=activeDateFilter();if(filter.day)return ` · ${filter.day}`;if(filter.from||filter.to)return ` · ${filter.from||"Any date"} – ${filter.to||"Any date"}`;return ""}
@@ -190,8 +191,14 @@ load=async function(reset=true){
   try{
     const page=await api(`/api/library?${q}`);
     if(reset||!state.data)state.data=page;
-    else{state.data.items.push(...(page.items||[]));state.data.days=state.data.days||{};Object.entries(page.days||{}).forEach(([day,items])=>{state.data.days[day]=[...(state.data.days[day]||[]),...items]});state.data.day_counts={...(state.data.day_counts||{}),...(page.day_counts||{})}}
-    state.cursor=page.next_cursor||"";state.offset=Number(page.next_offset??(requestOffset+(page.items||[]).length));state.hasMore=Boolean(page.has_more);render();return page;
+    else{
+      const uniqueByAssetId=(items)=>{const seen=new Set();return (items||[]).filter(item=>{const id=item?.asset_id;if(!id||seen.has(id))return false;seen.add(id);return true})};
+      state.data.items=uniqueByAssetId([...(state.data.items||[]),...(page.items||[])]);
+      state.data.days=state.data.days||{};
+      Object.entries(page.days||{}).forEach(([day,items])=>{state.data.days[day]=uniqueByAssetId([...(state.data.days[day]||[]),...items])});
+      state.data.day_counts={...(state.data.day_counts||{}),...(page.day_counts||{})}
+    }
+    state.cursor=page.next_cursor||"";state.offset=Number(page.next_offset??(requestOffset+(page.items||[]).length));state.hasMore=Boolean(page.has_more);if(!state.loadingAll)render();return page;
   }catch(error){$("timeline").innerHTML=`<div class="empty-inspector">${esc(error.message)}</div>`;return null}
   finally{state.loading=false}
 };
@@ -199,8 +206,12 @@ load=async function(reset=true){
 loadMore=async function(){if(state.hasMore&&!state.loading)await load(false)};
 async function loadToEnd(){
   if(state.loading)return;
+  state.loadingAll=true;
+  const button=document.querySelector("[data-load-all]");
+  if(button){button.disabled=true;button.textContent="Loading all…"}
   let guard=0;
-  while(state.hasMore&&guard<10000){const before=state.offset;const page=await load(false);guard++;if(!page||state.offset<=before)break}
+  try{while(state.hasMore&&guard<10000){const before=state.offset;const page=await load(false);guard++;if(!page||state.offset<=before)break}}
+  finally{state.loadingAll=false;render()}
 }
 
 const libraryRender=render;
@@ -214,6 +225,8 @@ render=function(){
   if(!host.querySelector("[data-load-all]")){
     const button=document.createElement("button");button.type="button";button.className="outline";button.dataset.loadAll="1";button.textContent="Load all to end";button.onclick=loadToEnd;host.appendChild(button);
   }
+  const loadAllButton=host.querySelector("[data-load-all]");
+  if(loadAllButton){loadAllButton.disabled=state.loadingAll;loadAllButton.textContent=state.loadingAll?"Loading all…":"Load all to end"}
 };
 
 function applyLibraryView(){

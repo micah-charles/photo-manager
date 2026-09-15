@@ -69,6 +69,8 @@
         "package_asset_id": {"type": "string", "maxLength": 80},
         "asset_ref": {"type": "string", "maxLength": 300},
         "allow_bleed": {"type": "boolean"},
+        "allow_photo_overlap": {"type": "boolean", "default": false, "description": "Explicitly allow this text element to overlap photo frames."},
+        "allow_text_overlap": {"type": "boolean", "default": false, "description": "Explicitly allow this text element to overlap another text element."},
         "content": {"type": "string", "maxLength": 2000},
         "text_style": {"$ref": "#/$defs/textStyle"},
         "image": {"$ref": "#/$defs/imageTransform"},

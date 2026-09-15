@@ -30,6 +30,7 @@ from photovault.catalog.scanner import scan_volume
 from photovault.catalog.people import list_people
 from photovault.catalog.collections import list_collections
 from photovault.catalog.thumbnail_jobs import build_missing_thumbnails, thumbnail_status
+from photovault.catalog.topic_copy import build_topic_copy_plan, execute_topic_copy
 from photovault.backup.jobs import BackupJobManager
 from photovault.database.connection import connect
 from photovault.pairing.discovery import AndroidDiscoveryService
@@ -798,6 +799,24 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
             finally:
                 connection.close()
             return
+        if parsed.path.startswith("/api/topics/") and parsed.path.endswith("/copy-plan"):
+            topic_id = parsed.path.removeprefix("/api/topics/").removesuffix("/copy-plan").strip("/")
+            params = parse_qs(parsed.query)
+            connection = connect(self.catalog_path)
+            try:
+                plan = build_topic_copy_plan(
+                    connection,
+                    topic_id,
+                    destination_root=params.get("destination_root", [""])[0],
+                    folder_name=params.get("folder_name", [""])[0],
+                    include_raw=params.get("include_raw", ["1"])[0] == "1",
+                )
+                self._json(plan.payload())
+            except (ValueError, TypeError) as exc:
+                self._json({"error": str(exc)}, 400)
+            finally:
+                connection.close()
+            return
         if parsed.path.startswith("/api/topics/") and parsed.path.endswith("/sections"):
             topic_id = parsed.path.removeprefix("/api/topics/").removesuffix("/sections").strip("/")
             connection = connect(self.catalog_path)
@@ -906,7 +925,7 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
             body = target.read_bytes()
             if target.name == "collage_v2.html":
                 body = body.replace(b"</body>", b'<script src="/collage_sources.js?v=20260903-3"></script><script src="/collage_runs.js?v=20260903-3"></script><script src="/collage_crop_debug.js?v=20260903-3"></script><script src="/collage_topic.js?v=20260903-3"></script><script src="/collage_topic_refresh.js?v=20260903-3"></script><script src="/collage_topic_guard.js?v=20260903-3"></script></body>')
-                body = body.replace(b"</body>", b'<script src="/collage_topic_section.js?v=20260904-1"></script></body>')
+                body = body.replace(b"</body>", b'<script src="/collage_topic_section.js?v=20260915-section-handoff-1"></script></body>')
             self._send(body, mimetypes.guess_type(target.name)[0] or "text/plain")
         except FileNotFoundError:
             self._send(b"Not found", "text/plain", 404)
@@ -1327,6 +1346,18 @@ Include this package_id in your response and do not include original photo files
                         default_place_id=_optional_value(payload.get("default_place_id")),
                     )
                     self._json({"ok": True, "id": event_id}, 201)
+                    return
+                if parsed.path.startswith("/api/topics/") and parsed.path.endswith("/copy"):
+                    topic_id = parsed.path.removeprefix("/api/topics/").removesuffix("/copy").strip("/")
+                    plan = build_topic_copy_plan(
+                        connection,
+                        topic_id,
+                        destination_root=str(payload.get("destination_root", "")),
+                        folder_name=str(payload.get("folder_name", "")),
+                        include_raw=bool(payload.get("include_raw", True)),
+                    )
+                    result = execute_topic_copy(plan)
+                    self._json(result, 201 if result["status"] == "COMPLETED" else 207)
                     return
                 if parsed.path.startswith("/api/topics/") and parsed.path.endswith("/sections"):
                     topic_id = parsed.path.removeprefix("/api/topics/").removesuffix("/sections").strip("/")

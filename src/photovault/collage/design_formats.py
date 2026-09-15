@@ -38,6 +38,14 @@ def _colour(value: Any, name: str) -> str:
     return value
 
 
+def _boolean(value: Any, name: str, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ValueError(f"{name} must be a boolean")
+    return value
+
+
 def validate_page_spec(page: Any) -> dict[str, Any]:
     if not isinstance(page, dict):
         raise ValueError("page_spec must be an object")
@@ -148,6 +156,11 @@ def validate_design_spec(payload: Any, asset_ids: set[str], design_asset_ids: se
                 if "color" in text_style:
                     text_style["color"] = _colour(text_style["color"], "text_style.color")
                 element["text_style"] = text_style
+                # Overlapping text and photos can be intentional art direction,
+                # but the intent must be explicit. This is separate from
+                # allow_bleed, which only controls page-boundary behaviour.
+                element["allow_photo_overlap"] = _boolean(element.get("allow_photo_overlap"), "allow_photo_overlap")
+                element["allow_text_overlap"] = _boolean(element.get("allow_text_overlap"), "allow_text_overlap")
             elif kind == "design_asset":
                 package_asset_id = str(element.get("package_asset_id") or element.get("asset_id") or "")
                 if package_asset_id not in design_asset_ids:
@@ -328,6 +341,8 @@ def to_collage_document(spec: dict[str, Any], alternative_index: int = 0, asset_
             item["stroke_width"] = mm_to_px(item["stroke_width"])
         elements.append(item)
     now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    selection_asset_ids = [str(item["asset_id"]) for item in checked.get("assets", [])
+                           if isinstance(item, dict) and item.get("asset_id") in photo_asset_ids]
     return {"document_type": "CollageDocument", "schema_version": 2, "document_id": "doc_" + uuid.uuid4().hex, "created_at": now, "modified_at": now,
             "page_spec": page, "canvas": {"width": mm_to_px(width), "height": mm_to_px(float(page["height_mm"])), "gutter": mm_to_px(float(page.get("gutter_mm", 4)))},
             "background": page.get("background", "#f5f2ed"), "elements": elements, "frames": [x for x in elements if x["type"] == "photo"], "cells": [x for x in elements if x["type"] == "photo"],
@@ -337,6 +352,7 @@ def to_collage_document(spec: dict[str, Any], alternative_index: int = 0, asset_
                 "design_reason": alternative.get("reason", ""),
                 "source": f"CollageDesignSpec v{checked.get('schema_version', 1)}",
                 "style_intent": spec.get("style_intent") or alternative.get("style") or spec.get("style") or "",
+                "selection_asset_ids": selection_asset_ids,
             }, "edited": True}
 
 
@@ -375,5 +391,8 @@ def validate_collage_document(payload: Any, asset_ids: set[str], design_asset_id
                 raise ValueError(f"document references an unknown design asset: {package_asset_id}")
         if kind == "text" and (not isinstance(item.get("content"), str) or len(item["content"]) > 2000):
             raise ValueError("text content is required and must be short")
+        if kind == "text":
+            item["allow_photo_overlap"] = _boolean(item.get("allow_photo_overlap"), "allow_photo_overlap")
+            item["allow_text_overlap"] = _boolean(item.get("allow_text_overlap"), "allow_text_overlap")
         checked.append(item)
     return {**payload, "page_spec": page, "elements": checked}

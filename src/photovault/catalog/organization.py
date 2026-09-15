@@ -70,11 +70,12 @@ def set_asset_source(connection: sqlite3.Connection, asset_id: str, source_id: s
 
 def list_sources(connection: sqlite3.Connection) -> list[sqlite3.Row]:
     return list(connection.execute(
-        """SELECT sp.source_id, sp.display_name, sp.source_type, sp.manufacturer,
+        f"""SELECT sp.source_id, sp.display_name, sp.source_type, sp.manufacturer,
                   sp.model, sp.time_offset_seconds, sp.last_seen,
                   COUNT(DISTINCT al.asset_id) AS item_count
            FROM source_profiles sp LEFT JOIN asset_locations al
              ON al.source_id=sp.source_id AND al.missing_since IS NULL
+                AND {visible_asset_sql('al')}
            GROUP BY sp.source_id ORDER BY sp.display_name"""
     ))
 

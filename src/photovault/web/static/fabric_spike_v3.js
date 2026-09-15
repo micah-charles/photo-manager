@@ -33,6 +33,58 @@ const activeElement = () => elements().find((element) => elementId(element) === 
 const canvasSize = (doc = state.doc) => ({ width: Number(doc?.canvas?.width || 1200), height: Number(doc?.canvas?.height || 800) });
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const status = (message) => { if ($("status")) $("status").textContent = message; };
+function pagePixelDimensions(doc, requestedDpi) {
+  const page = doc?.page_spec || {};
+  const rawWidthMm = Number(page.width_mm);
+  const rawHeightMm = Number(page.height_mm);
+  const widthMm = (Number.isFinite(rawWidthMm) && rawWidthMm > 0 ? rawWidthMm : 300) * (page.type === "spread" ? 2 : 1);
+  const heightMm = Number.isFinite(rawHeightMm) && rawHeightMm > 0 ? rawHeightMm : 200;
+  const numericDpi = Number(requestedDpi);
+  const dpi = Math.round(clamp(Number.isFinite(numericDpi) ? numericDpi : 300, 72, 1200));
+  return {
+    dpi,
+    widthMm,
+    heightMm,
+    width: Math.max(1, Math.round(widthMm / 25.4 * dpi)),
+    height: Math.max(1, Math.round(heightMm / 25.4 * dpi)),
+  };
+}
+function exportDpiValue(id, fallback) {
+  const input = $(id);
+  const numericDpi = Number(input?.value);
+  return Math.round(clamp(Number.isFinite(numericDpi) ? numericDpi : fallback, 72, 1200));
+}
+function readExportDpi(id, fallback) {
+  const input = $(id);
+  const dpi = exportDpiValue(id, fallback);
+  if (input) input.value = String(dpi);
+  return dpi;
+}
+function updateExportDpiSummary() {
+  const summary = $("export-dpi-summary");
+  if (!summary || !state.doc) return;
+  const pageDpi = pagePixelDimensions(state.doc, state.doc.page_spec?.dpi || 300).dpi;
+  const previewDpi = exportDpiValue("preview-dpi", 150);
+  const highResDpi = exportDpiValue("hires-dpi", pageDpi);
+  const preview = pagePixelDimensions(state.doc, previewDpi);
+  const highRes = pagePixelDimensions(state.doc, highResDpi);
+  summary.textContent = `Page ${pageDpi} DPI · Preview ${preview.dpi} DPI (${preview.width} × ${preview.height}px) · High-res ${highRes.dpi} DPI (${highRes.width} × ${highRes.height}px)`;
+  const previewButton = $("export-png");
+  if (previewButton) previewButton.textContent = `Export preview PNG (${preview.dpi} DPI)`;
+  const highResButton = $("export-hires");
+  if (highResButton) highResButton.textContent = `Export high-res PNG (${highRes.dpi} DPI)`;
+}
+function syncExportDpiControls() {
+  if (!state.doc) return;
+  const documentKey = String(state.doc.document_id || state.savedDocumentUrl || "document");
+  if (state.exportDpiDocumentKey !== documentKey) {
+    const pageDpi = pagePixelDimensions(state.doc, state.doc.page_spec?.dpi || 300).dpi;
+    if ($("preview-dpi")) $("preview-dpi").value = "150";
+    if ($("hires-dpi")) $("hires-dpi").value = String(pageDpi);
+    state.exportDpiDocumentKey = documentKey;
+  }
+  updateExportDpiSummary();
+}
 function updateDocumentChrome() {
   const creatorDocument = ["ai-design", "blank"].includes(String(state.doc?.provider || ""));
   ["photo-source-control", "render-mode-help", "run-control", "candidate-control", "open"].forEach((id) => {
@@ -60,6 +112,7 @@ function updateDocumentChrome() {
     reportNode.hidden = !warnings.length && !repairs.length;
     reportNode.textContent = reportNode.hidden ? "" : `Validation: ${statuses.join(" + ")} · ${warnings.length} warning(s) · ${repairs.length} repair(s)`;
   }
+  syncExportDpiControls();
 }
 const photoControls = ["border-width", "border-color", "mask", "zoom", "rotate", "reset"];
 function setInspectorState(element) {
@@ -69,7 +122,7 @@ function setInspectorState(element) {
   photoControls.forEach((control) => { if ($(control)) $(control).disabled = !hasPhoto; });
   if ($("opacity")) $("opacity").disabled = !hasSelection;
   if ($("frame-rotation")) $("frame-rotation").disabled = !hasSelection;
-  ["text-content", "font-role", "text-fit"].forEach((control) => { if ($(control)) $(control).disabled = !isText; });
+  ["text-content", "font-role", "font-size", "text-fit"].forEach((control) => { if ($(control)) $(control).disabled = !isText; });
   ["toggle-lock", "toggle-hide", "raise", "lower", "delete"].forEach((control) => { if ($(control)) $(control).disabled = !hasSelection; });
   if ($("toggle-lock")) $("toggle-lock").textContent = element?.locked ? "Unlock layer" : "Lock layer";
   if ($("toggle-hide")) $("toggle-hide").textContent = element?.hidden ? "Show layer" : "Hide layer";
@@ -274,15 +327,28 @@ function fitTextObject(object, element, context = null) {
   }
 }
 
-function fabricBounds(object) {
+function fabricBounds(object, options = {}) {
   try {
-    const bounds = object.getBoundingRect({ absolute: true, includeStroke: false, includeShadow: false });
+    object.setCoords?.();
+    const bounds = object.getBoundingRect({ absolute: true, includeStroke: Boolean(options.includeStroke), includeShadow: Boolean(options.includeShadow) });
     return { left: Number(bounds.left || 0), top: Number(bounds.top || 0), right: Number(bounds.left || 0) + Number(bounds.width || 0), bottom: Number(bounds.top || 0) + Number(bounds.height || 0) };
   } catch (_) {
     const width = Number(object.width || 0) * Number(object.scaleX || 1);
     const height = Number(object.height || 0) * Number(object.scaleY || 1);
     return { left: Number(object.left || 0), top: Number(object.top || 0), right: Number(object.left || 0) + width, bottom: Number(object.top || 0) + height };
   }
+}
+
+function renderedObjectsByElement(canvas) {
+  const objects = new Map();
+  canvas?.getObjects?.().forEach((object) => {
+    const id = object?._elementId;
+    if (!id) return;
+    const bucket = objects.get(id) || [];
+    bucket.push(object);
+    objects.set(id, bucket);
+  });
+  return objects;
 }
 
 function keepTextInsideSafeArea(object, element, context = null) {
@@ -671,9 +737,11 @@ function inspect(object) {
   if ($("frame-rotation")) $("frame-rotation").value = clamp(Number(element.rotation_deg || 0), -180, 180);
   if ($("text-content")) $("text-content").value = element.type === "text" ? String(element.content || "") : "";
   if ($("font-role")) $("font-role").value = element.type === "text" ? String(element.text_style?.font_id || "serif") : "serif";
+  if ($("font-size")) $("font-size").value = element.type === "text" ? clamp(Number(element.text_style?.font_size_pt || 12), 4, 300) : 12;
   if ($("text-fit")) $("text-fit").value = element.type === "text" ? String(element.text_style?.text_fit || "shrink_to_fit") : "shrink_to_fit";
   $("text-content-wrap")?.toggleAttribute("hidden", element.type !== "text");
   $("font-role-wrap")?.toggleAttribute("hidden", element.type !== "text");
+  $("font-size-wrap")?.toggleAttribute("hidden", element.type !== "text");
   $("text-fit-wrap")?.toggleAttribute("hidden", element.type !== "text");
   state.canvas.getObjects().forEach((item) => {
     if (item._kind !== "photo-frame") return;
@@ -793,9 +861,24 @@ async function renderDocument(targetCanvas, doc, options = {}) {
     else result = addDecoration(element, context);
     if (result?.rendered) context.report.rendered_element_ids.push(elementId(element));
   }
+  // All asset loads and bounded text repairs are complete at this point. The
+  // post-render pass deliberately measures the real Fabric objects, so browser
+  // font metrics, wrapping, rotation, scale and frame geometry are authoritative
+  // for the final composition report. It never moves objects or changes the
+  // document; safe-area/font fitting remain the only bounded render repairs.
+  targetCanvas.renderAll();
+  if (window.collageRenderValidation) {
+    window.collageRenderValidation.validateRenderedComposition({
+      elements: visible,
+      objectsByElement: renderedObjectsByElement(targetCanvas),
+      getBounds: (object, boundsOptions) => fabricBounds(object, boundsOptions),
+      report: context.report,
+      pxPerMm: PX_PER_MM,
+      textPhotoClearanceMm: 2,
+    });
+  }
   context.report.failed_element_ids = [...new Set(context.report.failed_element_ids)];
   context.report.validation_status = context.report.failed_element_ids.length ? "failed" : (context.report.warnings.length ? "warnings" : (context.report.repairs.length ? "repaired" : "valid"));
-  targetCanvas.renderAll();
   if (context.strictAssets && context.report.failed_element_ids.length) {
     throw new Error(`Required asset layer(s) failed to render: ${context.report.failed_element_ids.join(", ")}`);
   }
@@ -818,7 +901,7 @@ async function renderNow() {
   // the newly-created Fabric objects.
   state.activeId = activeBeforeClear;
   state.renderFallbacks = renderReport.fallbacks;
-  applyInteractivity(); fitPage(); state.canvas.renderAll(); refreshLayers();
+  applyInteractivity(); fitPage(); state.canvas.renderAll(); refreshLayers(); updatePhotoUsageIndicators();
   state.doc.metadata ||= {};
   state.doc.metadata.render_validation = clone(renderReport);
   updateDocumentChrome();
@@ -851,16 +934,75 @@ async function setRenderMode(nextMode) {
   }
 }
 
-async function loadPhotos() {
-  const ids = [...new Set(elements().map(photoId).filter(Boolean))];
-  if (!ids.length) { state.photos = []; state.assetMap = new Map(); $("photos").innerHTML = `<span class="muted">No photo assets in this document.</span>`; return; }
-  const data = await api(`/api/collage/photos?${ids.map((id) => `asset_id=${encodeURIComponent(id)}`).join("&")}`);
-  state.photos = data.items || []; state.assetMap = new Map(state.photos.map((item) => [String(item.asset_id), item]));
-  $("photos").innerHTML = state.photos.map((item) => `<div class="photo" draggable="true" data-id="${esc(item.asset_id)}" title="Drag onto a frame in Crop mode"><img loading="lazy" src="${item.thumbnail || photoUrl(item.asset_id)}" alt="${esc(item.filename)}"><small>${esc(item.filename)}</small></div>`).join("");
-  $("photos").querySelectorAll(".photo").forEach((node) => {
+function documentPhotoIds() {
+  return elements().map(photoId).filter(Boolean).map((id) => String(id));
+}
+
+// AI packages can contain more selected photos than the chosen alternative
+// uses. Keep that manifest visible in the replacement tray so the user can
+// see exactly what was omitted and still use an omitted photo later.
+function selectedPhotoIds() {
+  const ids = [];
+  const seen = new Set();
+  const add = (value) => {
+    const id = String(value || "");
+    if (id && !seen.has(id)) { seen.add(id); ids.push(id); }
+  };
+  documentPhotoIds().forEach(add);
+  (state.doc?.metadata?.selection_asset_ids || []).forEach(add);
+  (state.aiSpec?.assets || []).forEach((asset) => add(asset?.asset_id));
+  return ids;
+}
+
+function updatePhotoUsageIndicators() {
+  const container = $("photos");
+  if (!container) return;
+  const usedIds = new Set(documentPhotoIds());
+  let usedCount = 0;
+  let unusedCount = 0;
+  container.querySelectorAll(".photo[data-id]").forEach((node) => {
+    const used = usedIds.has(String(node.dataset.id));
+    node.classList.toggle("used", used);
+    node.classList.toggle("unused", !used);
+    const badge = node.querySelector(".photo-usage");
+    if (badge) badge.textContent = used ? "✓ Used in collage" : "○ Selected · not used";
+    node.title = used ? "Used in the current collage" : "Selected in the package but not used in the current collage; drag or double-click to replace a frame";
+    node.setAttribute("aria-label", used ? "Used in collage" : "Selected but not used in current collage");
+    if (used) usedCount += 1; else unusedCount += 1;
+  });
+  const summary = $("photo-usage-summary");
+  if (summary) summary.textContent = selectedPhotoIds().length ? ` · ${usedCount} used · ${unusedCount} not used` : "";
+}
+
+function renderPhotosPanel() {
+  const container = $("photos");
+  if (!container) return;
+  if (!state.photos.length) {
+    container.innerHTML = `<span class="muted">No photo assets in this document.</span>`;
+    updatePhotoUsageIndicators();
+    return;
+  }
+  const usedIds = new Set(documentPhotoIds());
+  container.innerHTML = state.photos.map((item) => {
+    const id = String(item.asset_id);
+    const used = usedIds.has(id);
+    return `<div class="photo ${used ? "used" : "unused"}" draggable="true" data-id="${esc(id)}" title="${used ? "Used in the current collage" : "Selected in the package but not used in the current collage; drag or double-click to replace a frame"}" aria-label="${used ? "Used in collage" : "Selected but not used in current collage"}"><img loading="lazy" src="${item.thumbnail || photoUrl(id)}" alt="${esc(item.filename)}"><small>${esc(item.filename)}</small><span class="photo-usage">${used ? "✓ Used in collage" : "○ Selected · not used"}</span></div>`;
+  }).join("");
+  container.querySelectorAll(".photo").forEach((node) => {
     node.ondragstart = (event) => event.dataTransfer.setData("text/plain", node.dataset.id);
     node.ondblclick = () => replacePhoto(node.dataset.id);
   });
+  updatePhotoUsageIndicators();
+}
+
+async function loadPhotos() {
+  const ids = selectedPhotoIds();
+  if (!ids.length) { state.photos = []; state.assetMap = new Map(); renderPhotosPanel(); return; }
+  const data = await api(`/api/collage/photos?${ids.map((id) => `asset_id=${encodeURIComponent(id)}`).join("&")}`);
+  const order = new Map(ids.map((id, index) => [id, index]));
+  state.photos = (data.items || []).sort((a, b) => (order.get(String(a.asset_id)) ?? Number.MAX_SAFE_INTEGER) - (order.get(String(b.asset_id)) ?? Number.MAX_SAFE_INTEGER));
+  state.assetMap = new Map(state.photos.map((item) => [String(item.asset_id), item]));
+  renderPhotosPanel();
 }
 
 async function loadCandidates() {
@@ -891,6 +1033,117 @@ function downloadBlob(name, blob) {
   const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
+// Browser copies are intentionally local-only drafts. They store the editable
+// document and stable asset IDs, never image bytes, so the feature is useful
+// for quick iteration without silently publishing or uploading anything.
+const BROWSER_SAVES_KEY = "photovault.collage.browser-saves.v1";
+const MAX_BROWSER_SAVES = 30;
+const MAX_BROWSER_DOCUMENT_BYTES = 2_000_000;
+
+function browserSaveId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `browser-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function readBrowserSaves() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(BROWSER_SAVES_KEY) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry) => entry && typeof entry.id === "string" && typeof entry.name === "string" && entry.document && typeof entry.document === "object");
+  } catch (_) {
+    return [];
+  }
+}
+
+function writeBrowserSaves(saves) {
+  try {
+    localStorage.setItem(BROWSER_SAVES_KEY, JSON.stringify(saves.slice(0, MAX_BROWSER_SAVES)));
+    return true;
+  } catch (_) {
+    status("Browser memory is unavailable or full. Use Export file (JSON) instead.");
+    return false;
+  }
+}
+
+function formatBrowserSaveDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "saved date unavailable" : date.toLocaleString();
+}
+
+function renderBrowserSaveList() {
+  const saves = readBrowserSaves();
+  const select = $("browser-save-select");
+  if (select) {
+    select.replaceChildren();
+    saves.forEach((entry) => {
+      const option = document.createElement("option");
+      option.value = entry.id;
+      option.textContent = `${entry.name} · ${formatBrowserSaveDate(entry.saved_at)}`;
+      select.appendChild(option);
+    });
+    select.disabled = !saves.length;
+  }
+  const memoryStatus = $("browser-memory-status");
+  if (memoryStatus) memoryStatus.textContent = saves.length ? `${saves.length} browser ${saves.length === 1 ? "copy" : "copies"}` : "No browser copies";
+  const loadButton = $("confirm-browser-load");
+  if (loadButton) loadButton.disabled = !saves.length;
+  return saves;
+}
+
+function openBrowserSaveDialog() {
+  if (!state.doc) { status("Open a document first."); return; }
+  const dialog = $("save-browser-dialog");
+  const field = $("browser-save-name");
+  if (!dialog || !field) { status("Browser save controls are unavailable."); return; }
+  const defaultName = state.doc.metadata?.design_name || state.doc.document_id || "Untitled collage";
+  field.value = defaultName;
+  dialog.showModal();
+  field.focus(); field.select();
+}
+
+function saveBrowserCopy() {
+  if (!state.doc) { status("Open a document first."); return; }
+  const name = String($("browser-save-name")?.value || "").trim();
+  if (!name) { status("Give this browser copy a name first."); $("browser-save-name")?.focus(); return; }
+  if (name.length > 80) { status("Browser copy names must be 80 characters or fewer."); return; }
+  const documentValue = snapshot();
+  const documentBytes = JSON.stringify(documentValue).length;
+  if (documentBytes > MAX_BROWSER_DOCUMENT_BYTES) { status("This document is too large for browser memory. Use Export file (JSON) instead."); return; }
+  const saves = readBrowserSaves();
+  const existing = saves.find((entry) => entry.name === name);
+  const entry = { id: existing?.id || browserSaveId(), name, saved_at: new Date().toISOString(), document: documentValue };
+  const next = existing ? saves.map((item) => item.id === existing.id ? entry : item) : [entry, ...saves];
+  if (!writeBrowserSaves(next)) return;
+  renderBrowserSaveList();
+  $("save-browser-dialog")?.close();
+  status(`${existing ? "Updated" : "Saved"} browser copy “${name}”. Use Load browser copy to restore it later.`);
+}
+
+async function loadBrowserCopy() {
+  const selectedId = $("browser-save-select")?.value;
+  const entry = readBrowserSaves().find((item) => item.id === selectedId);
+  if (!entry) { status("Choose a browser copy first."); return; }
+  try {
+    state.doc = normalizeDocument(clone(entry.document));
+    // A browser copy must never make Reload saved overwrite it with the old
+    // server revision. Save variant is an explicit publish action.
+    state.savedDocumentUrl = null;
+    state.history = []; state.future = []; state.controlBefore = null;
+    state.activeId = elements()[0] ? elementId(elements()[0]) : null;
+    await loadPhotos(); await queueRender(); updateDocumentChrome();
+    $("load-browser-dialog")?.close();
+    status(`Loaded browser copy “${entry.name}”. Use Save variant to publish this draft.`);
+  } catch (error) {
+    status(`Browser copy failed to load: ${error.message}`);
+  }
+}
+
+function openBrowserLoadDialog() {
+  const saves = renderBrowserSaveList();
+  if (!saves.length) { status("No browser copies yet. Save a named copy first."); return; }
+  $("load-browser-dialog")?.showModal();
+}
+
 function exportLayout() {
   if (!state.doc) { status("Open a document first."); return; }
   const assets = [...new Set(elements().map(photoId).filter(Boolean))].map((id) => {
@@ -898,7 +1151,7 @@ function exportLayout() {
   });
   const designAssets = elements().filter((element) => element.type === "design_asset").map((element) => ({ element_id: elementId(element), asset_id: element.asset_id || element.package_asset_id || null, asset_url: designAssetUrl(element) }));
   downloadBlob(`photomanager-collage-${state.doc.document_id || "layout"}.json`, new Blob([JSON.stringify({ format: "PhotoManager Collage Layout", schema_version: 2, exported_at: new Date().toISOString(), document: state.doc, assets, design_assets: designAssets }, null, 2)], { type: "application/json" }));
-  status(`Exported ${assets.length} assets and ${elements().length} elements.`);
+  status(`Exported layout file with ${assets.length} assets and ${elements().length} elements.`);
 }
 
 function createExportCanvas() {
@@ -912,7 +1165,78 @@ function createExportCanvas() {
   return new CanvasClass(node, { enableRetinaScaling: false, renderOnAddRemove: false, selection: false, preserveObjectStacking: true });
 }
 
-async function exportRenderedPng({ renderMode, multiplier, filename, label }) {
+function pngCrc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function writeUint32(bytes, offset, value) {
+  bytes[offset] = (value >>> 24) & 0xff;
+  bytes[offset + 1] = (value >>> 16) & 0xff;
+  bytes[offset + 2] = (value >>> 8) & 0xff;
+  bytes[offset + 3] = value & 0xff;
+}
+
+function pngResolutionChunk(dpi) {
+  const pixelsPerMeter = Math.max(1, Math.round(Number(dpi) / 0.0254));
+  const type = new Uint8Array([112, 72, 89, 115]); // pHYs
+  const data = new Uint8Array(9);
+  writeUint32(data, 0, pixelsPerMeter); writeUint32(data, 4, pixelsPerMeter); data[8] = 1;
+  const crcInput = new Uint8Array(type.length + data.length);
+  crcInput.set(type); crcInput.set(data, type.length);
+  const chunk = new Uint8Array(4 + crcInput.length + 4);
+  writeUint32(chunk, 0, data.length); chunk.set(crcInput, 4); writeUint32(chunk, 4 + crcInput.length, pngCrc32(crcInput));
+  return chunk;
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
+  return btoa(binary);
+}
+
+function withPngDpiMetadata(dataUrl, dpi) {
+  if (!String(dataUrl).startsWith("data:image/png;base64,")) return dataUrl;
+  try {
+    const encoded = String(dataUrl).slice("data:image/png;base64,".length);
+    const binary = atob(encoded);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    if (bytes.length < 33 || bytes[0] !== 137 || bytes[1] !== 80 || bytes[2] !== 78 || bytes[3] !== 71) return dataUrl;
+
+    const resolution = pngResolutionChunk(dpi);
+    let cursor = 8;
+    let ihdrEnd = 0;
+    let existingStart = -1;
+    let existingEnd = -1;
+    while (cursor + 12 <= bytes.length) {
+      const length = ((bytes[cursor] << 24) >>> 0) | (bytes[cursor + 1] << 16) | (bytes[cursor + 2] << 8) | bytes[cursor + 3];
+      const end = cursor + 12 + length;
+      if (end > bytes.length) return dataUrl;
+      const type = String.fromCharCode(bytes[cursor + 4], bytes[cursor + 5], bytes[cursor + 6], bytes[cursor + 7]);
+      if (type === "IHDR") ihdrEnd = end;
+      if (type === "pHYs" && existingStart < 0) { existingStart = cursor; existingEnd = end; }
+      cursor = end;
+      if (type === "IEND") break;
+    }
+    if (!ihdrEnd) return dataUrl;
+    const before = bytes.subarray(0, existingStart >= 0 ? existingStart : ihdrEnd);
+    const after = bytes.subarray(existingStart >= 0 ? existingEnd : ihdrEnd);
+    const output = new Uint8Array(before.length + resolution.length + after.length);
+    output.set(before); output.set(resolution, before.length); output.set(after, before.length + resolution.length);
+    return `data:image/png;base64,${bytesToBase64(output)}`;
+  } catch (_) {
+    // Keep the export usable in browsers that do not expose atob/btoa.
+    return dataUrl;
+  }
+}
+
+async function exportRenderedPng({ renderMode, multiplier, filename, label, dpi }) {
   const exportDoc = normalizeDocument(clone(state.doc));
   const report = { validation_status: "valid", warnings: [], repairs: [], rendered_element_ids: [], failed_element_ids: [], fallbacks: [] };
   const exportCanvas = createExportCanvas();
@@ -922,12 +1246,14 @@ async function exportRenderedPng({ renderMode, multiplier, filename, label }) {
       assetMap: state.assetMap, renderMode, mode: "layout", activeId: null,
       interactive: false, strictAssets: true, report,
     });
+    report.output_dpi = dpi || null;
     state.lastExportReport = clone(report);
     if (renderMode === "view" && report.fallbacks.length) {
       throw new Error(`${report.fallbacks.length} original photo(s) are offline; high-resolution export was not created.`);
     }
     const dataUrl = exportCanvas.toDataURL({ format: "png", multiplier, enableRetinaScaling: false });
-    const link = document.createElement("a"); link.href = dataUrl; link.download = filename; link.click();
+    const outputDataUrl = dpi ? withPngDpiMetadata(dataUrl, dpi) : dataUrl;
+    const link = document.createElement("a"); link.href = outputDataUrl; link.download = filename; link.click();
     return report;
   } finally {
     await exportCanvas.dispose?.();
@@ -939,31 +1265,30 @@ async function exportRenderedPng({ renderMode, multiplier, filename, label }) {
 async function exportPng() {
   if (!state.doc) { status("Open a document first."); return; }
   try {
+    const dpi = readExportDpi("preview-dpi", 150);
+    const pixels = pagePixelDimensions(state.doc, dpi);
+    const logical = canvasSize(state.doc);
     const report = await exportRenderedPng({
-      renderMode: state.renderMode, multiplier: 2,
-      filename: `photomanager-collage-preview-${state.doc.document_id || "layout"}.png`,
-      label: "Rendering preview PNG…",
+      renderMode: state.renderMode, multiplier: pixels.width / Math.max(logical.width, 1),
+      filename: `photomanager-collage-preview-${state.doc.document_id || "layout"}-${pixels.width}x${pixels.height}px-${pixels.dpi}dpi.png`,
+      label: `Rendering ${pixels.dpi} DPI preview PNG…`, dpi: pixels.dpi,
     });
-    status(`Exported 2× preview PNG · ${report.rendered_element_ids.length} elements rendered.`);
+    status(`Exported ${pixels.dpi} DPI preview PNG · ${pixels.width} × ${pixels.height}px · ${report.rendered_element_ids.length} elements rendered.`);
   } catch (error) { status(`PNG export failed: ${error.message}`); }
 }
 
 async function exportHighResPng() {
   if (!state.doc) { status("Open a document first."); return; }
   try {
-    const page = state.doc.page_spec || {};
-    const widthMm = Number(page.width_mm || 300) * (page.type === "spread" ? 2 : 1);
-    const heightMm = Number(page.height_mm || 200);
-    const dpi = clamp(Number(page.dpi || 300), 72, 1200);
-    const targetWidth = Math.max(1, Math.round(widthMm / 25.4 * dpi));
-    const targetHeight = Math.max(1, Math.round(heightMm / 25.4 * dpi));
+    const pageDpi = state.doc.page_spec?.dpi || 300;
+    const pixels = pagePixelDimensions(state.doc, readExportDpi("hires-dpi", pageDpi));
     const logical = canvasSize(state.doc);
     const report = await exportRenderedPng({
-      renderMode: "view", multiplier: targetWidth / Math.max(logical.width, 1),
-      filename: `photomanager-collage-${state.doc.document_id || "layout"}-${targetWidth}x${targetHeight}px.png`,
-      label: "Loading original photos for high-resolution export…",
+      renderMode: "view", multiplier: pixels.width / Math.max(logical.width, 1),
+      filename: `photomanager-collage-${state.doc.document_id || "layout"}-${pixels.width}x${pixels.height}px-${pixels.dpi}dpi.png`,
+      label: `Loading original photos for ${pixels.dpi} DPI high-resolution export…`, dpi: pixels.dpi,
     });
-    status(`Exported high-resolution PNG ${targetWidth} × ${targetHeight}px from original photos · ${report.rendered_element_ids.length} elements rendered.`);
+    status(`Exported ${pixels.dpi} DPI high-resolution PNG ${pixels.width} × ${pixels.height}px from original photos · ${report.rendered_element_ids.length} elements rendered.`);
   } catch (error) { status(`High-resolution export failed: ${error.message}`); }
 }
 
@@ -1071,7 +1396,7 @@ function updatePhotoControl(mutator) {
 function endControl() { if (state.controlBefore) { record(state.controlBefore); state.controlBefore = null; } }
 
 function setupControls() {
-  ["opacity", "frame-rotation", "border-width", "border-color", "zoom"].forEach((id) => {
+  ["opacity", "frame-rotation", "border-width", "border-color", "zoom", "font-size"].forEach((id) => {
     $(id)?.addEventListener("pointerdown", beginControl);
     $(id)?.addEventListener("change", endControl);
     $(id)?.addEventListener("blur", endControl);
@@ -1089,6 +1414,7 @@ function setupControls() {
   $("text-content")?.addEventListener("input", (event) => updateSelectedControl((element) => { if (element.type === "text") element.content = event.target.value; }));
   $("text-content")?.addEventListener("change", endControl);
   $("font-role")?.addEventListener("change", (event) => { if (updateSelectedControl((element) => { if (element.type === "text") { element.text_style ||= {}; element.text_style.font_id = event.target.value; } })) endControl(); });
+  $("font-size")?.addEventListener("change", (event) => { if (updateSelectedControl((element) => { if (element.type === "text") { element.text_style ||= {}; element.text_style.font_size_pt = clamp(Number(event.target.value) || 12, 4, 300); } })) endControl(); });
   $("text-fit")?.addEventListener("change", (event) => { if (updateSelectedControl((element) => { if (element.type === "text") { element.text_style ||= {}; element.text_style.text_fit = event.target.value; } })) endControl(); });
   $("toggle-lock")?.addEventListener("click", () => { if (updateSelectedControl((element) => { element.locked = !Boolean(element.locked); })) endControl(); });
   $("toggle-hide")?.addEventListener("click", () => { if (updateSelectedControl((element) => { element.hidden = !Boolean(element.hidden); })) endControl(); });
@@ -1120,7 +1446,18 @@ function wire() {
   $("render-mode")?.addEventListener("change", (event) => setRenderMode(event.target.value).catch((error) => status(`Photo source change failed: ${error.message}`)));
   $("reload")?.addEventListener("click", () => openDocument().catch((error) => status(error.message)));
   $("fit")?.addEventListener("click", () => { fitPage(); state.canvas.requestRenderAll(); status("Page fitted to the available window."); });
-  $("save")?.addEventListener("click", saveVariant); $("export")?.addEventListener("click", exportLayout); $("export-png")?.addEventListener("click", exportPng); $("export-hires")?.addEventListener("click", exportHighResPng);
+  $("save")?.addEventListener("click", saveVariant); $("save-browser")?.addEventListener("click", openBrowserSaveDialog); $("load-browser")?.addEventListener("click", openBrowserLoadDialog);
+  $("confirm-browser-save")?.addEventListener("click", saveBrowserCopy); $("cancel-browser-save")?.addEventListener("click", () => $("save-browser-dialog")?.close());
+  $("confirm-browser-load")?.addEventListener("click", () => loadBrowserCopy().catch((error) => status(`Browser copy failed: ${error.message}`))); $("cancel-browser-load")?.addEventListener("click", () => $("load-browser-dialog")?.close());
+  $("browser-save-name")?.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); saveBrowserCopy(); } });
+  $("export")?.addEventListener("click", exportLayout); $("export-png")?.addEventListener("click", exportPng); $("export-hires")?.addEventListener("click", exportHighResPng);
+  ["preview-dpi", "hires-dpi"].forEach((id) => {
+    $(id)?.addEventListener("input", updateExportDpiSummary);
+    $(id)?.addEventListener("change", () => {
+      readExportDpi(id, id === "preview-dpi" ? 150 : pagePixelDimensions(state.doc, state.doc?.page_spec?.dpi || 300).dpi);
+      updateExportDpiSummary();
+    });
+  });
   $("show-guides")?.addEventListener("change", (event) => { const guides = $("guide-overlay"); if (guides) guides.style.display = event.target.checked ? "block" : "none"; fitPage(); state.canvas?.requestRenderAll(); });
   $("import-ai")?.addEventListener("click", () => $("import-ai-file")?.click()); $("import-debug")?.addEventListener("click", () => $("import-debug-file")?.click());
   $("import-ai-package")?.addEventListener("click", () => $("import-ai-package-file")?.click());
@@ -1132,7 +1469,7 @@ function wire() {
   $("apply-ai")?.addEventListener("click", applyAiDesign); $("load-sample")?.addEventListener("click", loadSample);
   $("undo")?.addEventListener("click", async () => { if (!state.history.length) return; state.future.push(snapshot()); state.doc = normalizeDocument(state.history.pop()); state.activeId = elements()[0] ? elementId(elements()[0]) : null; await loadPhotos(); await queueRender(); status("Undid the last operation."); });
   $("redo")?.addEventListener("click", async () => { if (!state.future.length) return; state.history.push(snapshot()); state.doc = normalizeDocument(state.future.pop()); state.activeId = elements()[0] ? elementId(elements()[0]) : null; await loadPhotos(); await queueRender(); status("Redid the last operation."); });
-  setupControls(); setupCanvas();
+  renderBrowserSaveList(); setupControls(); setupCanvas();
 }
 
 async function populate() {

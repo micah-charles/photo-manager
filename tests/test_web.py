@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from photovault.catalog.library import LibraryQuery, library_asset_ids, library_day_counts
-from photovault.catalog.scanner import register_volume, scan_volume
+from photovault.catalog.scanner import iter_media, register_volume, scan_volume
 from photovault.database.connection import connect
 from photovault.catalog.organization import add_assets_to_event, create_event
 from photovault.catalog.thumbnail_jobs import build_missing_thumbnails, thumbnail_status
@@ -17,6 +17,25 @@ from photovault.web.server import STATIC_ROOT, _decode_cursor, _start_volume_ref
 
 
 class WebLibraryTests(unittest.TestCase):
+    def test_raw_pairing_lookup_has_catalog_index(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            db = connect(Path(directory) / "catalog.db")
+            index = db.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+                ("idx_asset_locations_photo_key",),
+            ).fetchone()
+            self.assertIsNotNone(index)
+            db.close()
+
+    def test_scanner_ignores_generated_thumbnail_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "photos"
+            cache = root / ".photovault-thumbnails"
+            cache.mkdir(parents=True)
+            (root / "photo.jpg").write_bytes(b"photo")
+            (cache / "derived.jpg").write_bytes(b"derived")
+            self.assertEqual([path.name for path, _ in iter_media(root)], ["photo.jpg"])
+
     def test_day_counts_and_selection_ids_are_not_page_limited(self) -> None:
         class Provider:
             def identify(self, path: Path) -> VolumeIdentity:
@@ -110,9 +129,25 @@ class WebLibraryTests(unittest.TestCase):
             self.assertIn(marker, collage)
         self.assertIn("Nothing is sent to an AI service automatically", collage)
 
+        handoff = (STATIC_ROOT / "collage_topic_section.js").read_text(encoding="utf-8")
+        self.assertIn("loadPickedScope(topicId,sectionId", handoff)
+        self.assertIn('query.set("section",sectionId)', handoff)
+        self.assertIn('params.get("section")', handoff)
+
         editor = (STATIC_ROOT / "fabric_spike_v2.html").read_text(encoding="utf-8")
         self.assertIn('id="ai-document-summary"', editor)
         self.assertIn('id="run-control"', editor)
+        self.assertIn('id="font-size"', editor)
+        self.assertIn('Font size (pt)', editor)
+        for marker in ('id="save-browser"', 'id="load-browser"', 'id="save-browser-dialog"', 'id="browser-save-select"', 'id="preview-dpi"', 'id="hires-dpi"', 'id="export-dpi-summary"', 'Export file (JSON)', 'Import layout JSON'):
+            self.assertIn(marker, editor)
+        editor_js = (STATIC_ROOT / "fabric_spike_v3.js").read_text(encoding="utf-8")
+        self.assertIn('"font-size"', editor_js)
+        self.assertIn('text_style.font_size_pt', editor_js)
+        for marker in ("BROWSER_SAVES_KEY", "localStorage", "saveBrowserCopy", "loadBrowserCopy", "MAX_BROWSER_SAVES"):
+            self.assertIn(marker, editor_js)
+        for marker in ("pagePixelDimensions", "exportDpiValue", "readExportDpi", "updateExportDpiSummary", "pngCrc32", "withPngDpiMetadata", "output_dpi", "Exported ${pixels.dpi} DPI preview PNG", "Exported ${pixels.dpi} DPI high-resolution PNG"):
+            self.assertIn(marker, editor_js)
 
     def test_topics_payload_exposes_editable_event_and_count(self) -> None:
         class Provider:

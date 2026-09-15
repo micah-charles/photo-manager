@@ -22,6 +22,15 @@ class CollageDesignFormatTests(unittest.TestCase):
         self.assertEqual(document["elements"][0]["photo_id"], "a1")
         self.assertEqual(document["metadata"]["design_id"], "alt-1")
         self.assertEqual(document["metadata"]["design_name"], "Test alternative")
+        self.assertEqual(document["metadata"]["selection_asset_ids"], ["a1"])
+
+    def test_preserves_unused_package_assets_in_document_selection_metadata(self):
+        spec = self.spec([{"id": "photo-01", "type": "photo", "asset_id": "a1", "x_mm": 10, "y_mm": 8,
+                           "width_mm": 94, "height_mm": 94}])
+        spec["assets"].append({"asset_id": "a2", "filename": "two.jpg"})
+        document = to_collage_document(spec, asset_map={"a1": spec["assets"][0], "a2": spec["assets"][1]})
+        self.assertEqual(document["metadata"]["selection_asset_ids"], ["a1", "a2"])
+        self.assertEqual([item["photo_id"] for item in document["elements"]], ["a1"])
 
     def test_rejects_unknown_asset_and_unsafe_numbers(self):
         with self.assertRaisesRegex(ValueError, "outside the package"):
@@ -60,6 +69,17 @@ class CollageDesignFormatTests(unittest.TestCase):
         checked, report = validate_and_repair_design_spec(spec, {"a1"})
         self.assertEqual(checked["alternatives"][0]["elements"][0]["mask"], {"type": "circle"})
         self.assertTrue(report["repairs"])
+
+    def test_intentional_overlap_flags_are_optional_boolean_contracts(self):
+        spec = self.spec([{"id": "title", "type": "text", "content": "Title", "x_mm": 10, "y_mm": 10,
+                           "width_mm": 80, "height_mm": 20, "allow_photo_overlap": True}])
+        checked = validate_design_spec(spec, {"a1"})
+        text = checked["alternatives"][0]["elements"][0]
+        self.assertTrue(text["allow_photo_overlap"])
+        self.assertFalse(text["allow_text_overlap"])
+        spec["alternatives"][0]["elements"][0]["allow_photo_overlap"] = "yes"
+        with self.assertRaisesRegex(ValueError, "allow_photo_overlap must be a boolean"):
+            validate_design_spec(spec, {"a1"})
 
 
 if __name__ == "__main__":

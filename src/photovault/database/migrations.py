@@ -698,6 +698,52 @@ CREATE TABLE topic_culling (
 """))
 
 
+# Library browsing pairs a JPEG with a same-folder RAW companion using the
+# normalized folder-and-stem expression in catalog.library.  Keep that
+# expression indexed so the visibility and companion lookups remain bounded
+# by the indexed key instead of scanning every location for every row.
+MIGRATIONS.append((27, """
+CREATE INDEX IF NOT EXISTS idx_asset_locations_photo_key
+ON asset_locations (
+    volume_id,
+    substr(lower(relative_path), 1, length(relative_path)-length(filename)) ||
+    CASE
+        WHEN lower(filename) LIKE '%.jpg' THEN substr(lower(filename), 1, length(filename)-4)
+        WHEN lower(filename) LIKE '%.jpeg' THEN substr(lower(filename), 1, length(filename)-5)
+        WHEN lower(filename) LIKE '%.cr2' THEN substr(lower(filename), 1, length(filename)-4)
+        WHEN lower(filename) LIKE '%.cr3' THEN substr(lower(filename), 1, length(filename)-4)
+        WHEN lower(filename) LIKE '%.nef' THEN substr(lower(filename), 1, length(filename)-4)
+        WHEN lower(filename) LIKE '%.arw' THEN substr(lower(filename), 1, length(filename)-4)
+        WHEN lower(filename) LIKE '%.dng' THEN substr(lower(filename), 1, length(filename)-4)
+        WHEN lower(filename) LIKE '%.raf' THEN substr(lower(filename), 1, length(filename)-4)
+        WHEN lower(filename) LIKE '%.orf' THEN substr(lower(filename), 1, length(filename)-4)
+        WHEN lower(filename) LIKE '%.rw2' THEN substr(lower(filename), 1, length(filename)-4)
+        WHEN lower(filename) LIKE '%.pef' THEN substr(lower(filename), 1, length(filename)-4)
+        WHEN lower(filename) LIKE '%.srw' THEN substr(lower(filename), 1, length(filename)-4)
+        WHEN lower(filename) LIKE '%.3fr' THEN substr(lower(filename), 1, length(filename)-4)
+        WHEN lower(filename) LIKE '%.iiq' THEN substr(lower(filename), 1, length(filename)-4)
+        ELSE lower(filename)
+    END
+);
+"""))
+
+
+# Section picks are an override layer on top of the historical topic-wide
+# culling table.  A `clear` row is intentional: it records that a photo was
+# unpicked in this section, even when the topic-wide row still says `pick`.
+MIGRATIONS.append((28, """
+CREATE TABLE topic_section_culling (
+    section_id TEXT NOT NULL REFERENCES topic_sections(id) ON DELETE CASCADE,
+    asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    decision TEXT NOT NULL CHECK(decision IN ('pick','reject','clear')),
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(section_id, asset_id)
+);
+CREATE INDEX idx_topic_section_culling_asset
+    ON topic_section_culling(asset_id);
+"""))
+
+
 def apply_migrations(connection: sqlite3.Connection) -> None:
     connection.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"

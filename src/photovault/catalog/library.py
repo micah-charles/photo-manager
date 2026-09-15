@@ -67,16 +67,22 @@ def _suffixes_sql(alias: str, suffixes: tuple[str, ...]) -> str:
 
 
 def visible_asset_sql(alias: str = "al") -> str:
-    """Hide a RAW location when its matching JPEG location is present.
+    """Return the user-visible location predicate shared by catalog views.
 
-    This predicate is shared by list, count, facets, day counts and culling so
-    pagination and selection totals cannot disagree with the visible grid.
+    Hidden thumbnail-cache files are never user photos. RAW locations are also
+    hidden when their matching JPEG location is present. This predicate is
+    shared by list, count, facets, day counts and culling so pagination and
+    selection totals cannot disagree with the visible grid.
     """
+    hidden_cache = (
+        f"NOT ({alias}.relative_path LIKE '.photovault-thumbnails/%' "
+        f"OR {alias}.relative_path LIKE '%/.photovault-thumbnails/%')"
+    )
     raw = _suffixes_sql(alias, _RAW_SUFFIXES)
     jpeg = _suffixes_sql("paired", _JPEG_SUFFIXES)
     key = _same_photo_key_sql(alias)
     paired_key = _same_photo_key_sql("paired")
-    return f"NOT ({raw} AND EXISTS (SELECT 1 FROM asset_locations paired WHERE paired.volume_id={alias}.volume_id AND paired.missing_since IS NULL AND {jpeg} AND {paired_key}={key}))"
+    return f"{hidden_cache} AND NOT ({raw} AND EXISTS (SELECT 1 FROM asset_locations paired WHERE paired.volume_id={alias}.volume_id AND paired.missing_since IS NULL AND {jpeg} AND {paired_key}={key}))"
 
 
 def _paired_raw_column_sql(column: str) -> str:
