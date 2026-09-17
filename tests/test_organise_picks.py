@@ -105,8 +105,9 @@ class OrganisePicksTests(unittest.TestCase):
         js = (STATIC_ROOT / "organise_picks.js").read_text(encoding="utf-8")
         for marker in ("Organise Picks", 'id="suggest-sections"', 'id="new-section"', 'id="board-view"', 'id="timeline-view"', 'id="move-selected"'):
             self.assertIn(marker, html)
-        for marker in ("unassignedIds", "organise-picks/move", "apply-suggestions", "split", "merge", "draggable", "Pick decisions are unchanged"):
+        for marker in ("unassignedIds", "organise-picks/move", "apply-suggestions", "split", "merge", "draggable", "Pick decisions are unchanged", 'data-photo-action="zoom"', "original_url", "viewer-previous"):
             self.assertIn(marker, js)
+        self.assertIn('id="photo-viewer"', html)
 
 
 if __name__ == "__main__":

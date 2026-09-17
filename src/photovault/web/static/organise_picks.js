@@ -14,6 +14,7 @@ const state = {
   view: "board",
   suggestions: null,
   busy: false,
+  viewer: { assetId: null, index: -1, zoom: 1 },
 };
 
 async function api(url, options = {}) {
@@ -33,6 +34,59 @@ function status(message, kind = "") {
 
 function photoById(id) {
   return state.photos.find((photo) => photo.asset_id === id);
+}
+
+function renderViewerPhoto(id) {
+  const photo = photoById(id);
+  if (!photo) return;
+  const index = state.photos.findIndex((item) => item.asset_id === id);
+  state.viewer = { assetId: id, index, zoom: 1 };
+  const image = $("viewer-image");
+  const statusText = $("viewer-status");
+  const originalUrl = photo.original_url || "";
+  const thumbnailUrl = photo.thumbnail || "";
+  let fellBackToThumbnail = false;
+
+  $("photo-viewer-title").textContent = photo.filename || "Photo preview";
+  $("photo-viewer-meta").textContent = `${timeLabel(photo)} · ${index + 1} of ${state.photos.length}`;
+  $("viewer-previous").disabled = state.photos.length < 2;
+  $("viewer-next").disabled = state.photos.length < 2;
+  statusText.textContent = originalUrl ? "Loading original…" : "Preview only";
+  image.alt = photo.filename || "Photo preview";
+  image.style.transform = "scale(1)";
+  image.onload = () => {
+    statusText.textContent = fellBackToThumbnail ? "Original unavailable · showing thumbnail" : "Original loaded";
+  };
+  image.onerror = () => {
+    if (!fellBackToThumbnail && originalUrl && thumbnailUrl) {
+      fellBackToThumbnail = true;
+      statusText.textContent = "Original unavailable · loading thumbnail…";
+      image.src = thumbnailUrl;
+      return;
+    }
+    statusText.textContent = "This photo could not be loaded";
+  };
+  image.src = originalUrl || thumbnailUrl;
+  $("viewer-zoom-label").textContent = "100%";
+}
+
+function openPhotoViewer(id) {
+  if (!photoById(id)) return;
+  renderViewerPhoto(id);
+  const dialog = $("photo-viewer");
+  if (!dialog.open) dialog.showModal();
+}
+
+function navigateViewer(direction) {
+  if (!state.photos.length || state.viewer.index < 0) return;
+  const nextIndex = (state.viewer.index + direction + state.photos.length) % state.photos.length;
+  renderViewerPhoto(state.photos[nextIndex].asset_id);
+}
+
+function setViewerZoom(value) {
+  state.viewer.zoom = Math.min(3, Math.max(0.5, value));
+  $("viewer-image").style.transform = `scale(${state.viewer.zoom})`;
+  $("viewer-zoom-label").textContent = `${Math.round(state.viewer.zoom * 100)}%`;
 }
 
 function assignmentsFor(id) {
@@ -61,6 +115,9 @@ function photoCard(id) {
   const src = photo.thumbnail || "";
   return `<article class="pick-card${selected ? " selected" : ""}" data-asset-id="${esc(id)}" draggable="true" tabindex="0" role="button" aria-pressed="${selected}" aria-label="${esc(photo.filename)}">
     ${src ? `<img src="${esc(src)}" loading="lazy" decoding="async" alt="${esc(photo.filename)}">` : `<div class="photo-placeholder">No preview</div>`}
+    <button class="photo-zoom-button" type="button" data-photo-action="zoom" data-asset-id="${esc(id)}" aria-label="Open larger preview of ${esc(photo.filename)}" title="Open larger preview">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 5 5"></path><path d="M10.5 7.5v6M7.5 10.5h6"></path></svg>
+    </button>
     <span class="photo-time">${esc(shortTime(photo))}</span>
     ${selected ? '<span class="selection-mark" aria-hidden="true">✓</span>' : ""}
     <span class="photo-label" title="${esc(photo.filename)}">${esc(photo.filename)}</span>
@@ -324,6 +381,13 @@ $("merge-form").onsubmit = (event) => submitMerge(event).catch((error) => status
 ["cancel-section", "cancel-rename", "cancel-split", "cancel-merge"].forEach((id) => $(id).onclick = () => $(id.replace("cancel-", "") === "section" ? "section-dialog" : `${id.replace("cancel-", "")}-dialog`).close());
 
 $("board").addEventListener("click", (event) => {
+  const photoAction = event.target.closest("[data-photo-action]");
+  if (photoAction?.dataset.photoAction === "zoom") {
+    event.preventDefault();
+    event.stopPropagation();
+    openPhotoViewer(photoAction.dataset.assetId);
+    return;
+  }
   const actionButton = event.target.closest("[data-action]");
   if (actionButton) {
     const action = actionButton.dataset.action;
@@ -381,6 +445,19 @@ $("suggestion-panel").addEventListener("click", (event) => {
   const action = event.target.closest("[data-suggestion-action]")?.dataset.suggestionAction;
   if (action === "cancel") { state.suggestions = null; render(); status("Suggestion draft cancelled."); }
   if (action === "apply") applySuggestions();
+});
+
+$("viewer-close").onclick = () => $("photo-viewer").close();
+$("viewer-previous").onclick = () => navigateViewer(-1);
+$("viewer-next").onclick = () => navigateViewer(1);
+$("viewer-zoom-out").onclick = () => setViewerZoom(state.viewer.zoom - 0.25);
+$("viewer-zoom-in").onclick = () => setViewerZoom(state.viewer.zoom + 0.25);
+$("viewer-fit").onclick = () => setViewerZoom(1);
+$("photo-viewer").addEventListener("keydown", (event) => {
+  if (event.key === "ArrowLeft") { event.preventDefault(); navigateViewer(-1); }
+  if (event.key === "ArrowRight") { event.preventDefault(); navigateViewer(1); }
+  if (event.key === "+" || event.key === "=") { event.preventDefault(); setViewerZoom(state.viewer.zoom + 0.25); }
+  if (event.key === "-") { event.preventDefault(); setViewerZoom(state.viewer.zoom - 0.25); }
 });
 
 load().then(() => status("Select Picks, then drag them into a Section. Unassigned Picks are valid." )).catch((error) => status(error.message, "error"));

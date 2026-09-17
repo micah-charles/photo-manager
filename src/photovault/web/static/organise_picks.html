@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Photo Manager · Organise Picks</title>
-  <link rel="stylesheet" href="/organise_picks.css">
+  <link rel="stylesheet" href="/organise_picks.css?v=20260917-section-actions-1">
 </head>
 <body>
   <header class="page-head">
@@ -35,6 +35,29 @@
     <section id="board" class="board" aria-label="Section board"></section>
     <section id="timeline" class="timeline" aria-label="Picked photo timeline" hidden></section>
   </main>
+
+  <dialog id="photo-viewer" class="photo-viewer" aria-labelledby="photo-viewer-title">
+    <div class="photo-viewer-header">
+      <div>
+        <h2 id="photo-viewer-title">Photo preview</h2>
+        <p id="photo-viewer-meta" class="photo-viewer-meta"></p>
+      </div>
+      <button id="viewer-close" type="button" aria-label="Close photo preview">Close</button>
+    </div>
+    <div class="photo-viewer-stage">
+      <img id="viewer-image" alt="" decoding="async">
+      <p id="viewer-status" class="photo-viewer-status" role="status" aria-live="polite">Loading original…</p>
+    </div>
+    <div class="photo-viewer-controls" role="toolbar" aria-label="Photo preview controls">
+      <button id="viewer-previous" type="button">← Previous</button>
+      <button id="viewer-next" type="button">Next →</button>
+      <span class="photo-viewer-spacer"></span>
+      <button id="viewer-zoom-out" type="button" aria-label="Zoom out">−</button>
+      <span id="viewer-zoom-label">100%</span>
+      <button id="viewer-zoom-in" type="button" aria-label="Zoom in">+</button>
+      <button id="viewer-fit" type="button">Fit</button>
+    </div>
+  </dialog>
 
   <dialog id="section-dialog">
     <form id="section-form" method="dialog">
@@ -73,6 +96,6 @@
     </form>
   </dialog>
 
-  <script src="/organise_picks.js"></script>
+  <script src="/organise_picks.js?v=20260917-section-actions-1"></script>
 </body>
 </html>
