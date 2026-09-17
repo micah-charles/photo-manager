@@ -1,0 +1,54 @@
+{
+  "format": "CollageDesignSpec",
+  "schema_version": 2,
+  "package_id": "pkg_00000000000000000000000000000000",
+  "catalog_id": "replace-with-exported-catalog-id",
+  "page_spec": {
+    "type": "single",
+    "width_mm": 210,
+    "height_mm": 297,
+    "bleed_mm": 3,
+    "safe_margin_mm": 8,
+    "gutter_mm": 4,
+    "dpi": 300,
+    "background": "#f5f2ed"
+  },
+  "assets": [
+    {"label": "A01", "asset_id": "replace-with-catalog-asset-id", "filename": "hero.jpg"}
+  ],
+  "alternatives": [
+    {
+      "id": "painswick-reference",
+      "name": "Painswick / St Mary's Church reference",
+      "reason": "A real-photo page with a single dominant hero and supporting frames.",
+      "elements": [
+        {
+          "id": "photo-a01",
+          "type": "photo",
+          "asset_id": "A01",
+          "slot_id": "A01",
+          "role": "hero",
+          "x_mm": 24,
+          "y_mm": 42,
+          "width_mm": 130,
+          "height_mm": 95,
+          "z_index": 10,
+          "image": {"rotation_deg": 0, "focus_x": 0.5, "focus_y": 0.5, "zoom": 1},
+          "mask": {"type": "rectangle"},
+          "border": {"width_mm": 1.2, "color": "#ffffff", "opacity": 1}
+        },
+        {
+          "id": "title",
+          "type": "text",
+          "content": "Painswick · St Mary's Church",
+          "x_mm": 24,
+          "y_mm": 18,
+          "width_mm": 160,
+          "height_mm": 12,
+          "z_index": 20,
+          "text_style": {"font_id": "serif", "font_size_pt": 22, "text_fit": "shrink_to_fit"}
+        }
+      ]
+    }
+  ]
+}

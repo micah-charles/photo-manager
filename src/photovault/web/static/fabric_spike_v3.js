@@ -11,6 +11,7 @@ const state = {
   photos: [], assetMap: new Map(), activeId: null, mode: "layout", renderMode: "funnel", renderFallbacks: [],
   history: [], future: [], canvas: null, gestureBefore: null,
   controlBefore: null, aiSpec: null, aiPackageId: null, renderPromise: Promise.resolve(),
+  layeredDebug: { guides: false, masks: false, hideForeground: false },
   layerGroups: { Text: true, Photos: true, Supporting: false, Details: false, Decorations: true, Background: false },
   layerFilter: "all", layerSearch: "",
   lastExportReport: null,
@@ -87,6 +88,9 @@ function syncExportDpiControls() {
 }
 function updateDocumentChrome() {
   const creatorDocument = ["ai-design", "blank"].includes(String(state.doc?.provider || ""));
+  const layered = Boolean(state.doc?.metadata?.layered_template || elements().some((element) => element.template_layer || element.template_mask_url || element.template_mask_asset_id));
+  const layeredTools = $("layered-tools");
+  if (layeredTools) layeredTools.hidden = !layered;
   ["photo-source-control", "render-mode-help", "run-control", "candidate-control", "open"].forEach((id) => {
     const node = $(id);
     if (node) node.hidden = creatorDocument;
@@ -241,6 +245,7 @@ function createRenderContext(canvas, options = {}) {
     mode: options.mode || state.mode,
     activeId: options.activeId ?? state.activeId,
     interactive: Boolean(options.interactive),
+    layeredDebug: options.layeredDebug || { guides: false, masks: false, hideForeground: false },
     strictAssets: Boolean(options.strictAssets),
     report: options.report || { validation_status: "valid", warnings: [], repairs: [], rendered_element_ids: [], failed_element_ids: [], fallbacks: [] },
   };
@@ -459,6 +464,19 @@ async function loadPhotoImage(element, context = null) {
   return { image, usedOriginal, sourceRotation: sourceRotation(element, context, usedOriginal), error: image ? null : lastError || new Error(`Photo asset ${photoId(element)} could not be loaded.`) };
 }
 
+async function loadTemplateMask(element, context = null) {
+  const url = element?.template_mask_url || (element?.template_mask_asset_id ? `/api/collage/design-assets/${encodeURIComponent(element.template_mask_asset_id)}` : "");
+  if (!url) return null;
+  try {
+    const image = await fabric.Image.fromURL(url, { crossOrigin: "anonymous" });
+    if (!image || !Number(image.width) || !Number(image.height)) throw new Error("Template mask is empty.");
+    return image;
+  } catch (error) {
+    context?.report?.warnings?.push({ element_id: elementId(element), code: "TEMPLATE_MASK_LOAD_FAILED", message: error.message || "Template mask could not be loaded." });
+    return null;
+  }
+}
+
 async function addPhoto(element, loaded = null, context = null) {
   const ctx = context || createRenderContext(state.canvas);
   const id = elementId(element);
@@ -467,7 +485,7 @@ async function addPhoto(element, loaded = null, context = null) {
   const transform = imageTransform(element);
   const sourceInfo = ctx.assetMap.get(String(photoId(element))) || {};
   const source = { width: Number(sourceInfo.width || 1), height: Number(sourceInfo.height || 1) };
-  const loadedResult = loaded || await loadPhotoImage(element, ctx);
+  const loadedResult = loaded?.photo || loaded || await loadPhotoImage(element, ctx);
   const { image, usedOriginal } = loadedResult;
   if (!image) {
     ctx.report.failed_element_ids.push(id);
@@ -502,7 +520,25 @@ async function addPhoto(element, loaded = null, context = null) {
     visible: !element.hidden, selectable: ctx.interactive && !element.locked && !element.hidden && ctx.mode === "crop",
     evented: ctx.interactive && !element.locked && !element.hidden && ctx.mode === "crop",
   });
-  image.clipPath = clipPath(element, imageScale, imageRotation);
+  const templateMask = loaded && Object.prototype.hasOwnProperty.call(loaded, "templateMask")
+    ? loaded.templateMask
+    : await loadTemplateMask(element, ctx);
+  if (templateMask) {
+    // Masks are normalised by the server to white RGB + alpha visibility. In
+    // Fabric an absolute-positioned image clip path therefore gives the same
+    // aperture in the interactive canvas and the off-screen export canvas.
+    templateMask.set({
+      left: centerX, top: centerY, originX: "center", originY: "center",
+      scaleX: frameWidth / Math.max(Number(templateMask.width || 1), 1),
+      scaleY: frameHeight / Math.max(Number(templateMask.height || 1), 1),
+      angle: Number(element.rotation_deg || 0), absolutePositioned: true,
+      objectCaching: false,
+    });
+    image.clipPath = templateMask;
+    image._templateMask = templateMask;
+  } else {
+    image.clipPath = clipPath(element, imageScale, imageRotation);
+  }
   image._elementId = id; image._kind = "photo-image"; image._baseScale = baseScale;
   image._visualWidth = visualWidth; image._visualHeight = visualHeight;
   ctx.canvas.remove(fallbackFrame);
@@ -838,6 +874,39 @@ function fitPage() {
   }
 }
 
+async function addLayeredDebugOverlay(targetCanvas, context) {
+  const debug = context.layeredDebug || {};
+  if (!context.interactive || (!debug.guides && !debug.masks)) return;
+  const photoElements = (context.doc?.elements || []).filter((element) => element.type === "photo" && element.template_slot_id);
+  for (const element of photoElements) {
+    const x = Number(element.x || 0), y = Number(element.y || 0);
+    const width = Number(element.width || 0), height = Number(element.height || 0);
+    if (debug.guides) {
+      const guide = new fabric.Rect({
+        left: x + width / 2, top: y + height / 2, originX: "center", originY: "center",
+        width, height, angle: Number(element.rotation_deg || 0), fill: "transparent",
+        stroke: "#d07c2c", strokeWidth: 1.5, strokeDashArray: [5, 4],
+        selectable: false, evented: false, objectCaching: false,
+      });
+      guide._debugLayer = true; guide.excludeFromExport = true;
+      targetCanvas.add(guide);
+      const label = new fabric.Text(String(element.template_slot_id), {
+        left: x + 5, top: y + 5, fontSize: 12, fill: "#9b4e13", backgroundColor: "rgba(255,248,230,.88)",
+        selectable: false, evented: false, objectCaching: false,
+      });
+      label._debugLayer = true; label.excludeFromExport = true;
+      targetCanvas.add(label);
+    }
+    if (debug.masks && (element.template_mask_url || element.template_mask_asset_id)) {
+      const mask = await loadTemplateMask(element, context);
+      if (!mask) continue;
+      mask.set({ left: x + width / 2, top: y + height / 2, originX: "center", originY: "center", scaleX: width / Math.max(Number(mask.width || 1), 1), scaleY: height / Math.max(Number(mask.height || 1), 1), angle: Number(element.rotation_deg || 0), opacity: .22, selectable: false, evented: false, objectCaching: false });
+      mask._debugLayer = true; mask.excludeFromExport = true;
+      targetCanvas.add(mask);
+    }
+  }
+}
+
 async function renderDocument(targetCanvas, doc, options = {}) {
   const context = createRenderContext(targetCanvas, { ...options, doc });
   const page = canvasSize(doc);
@@ -847,9 +916,14 @@ async function renderDocument(targetCanvas, doc, options = {}) {
   targetCanvas.backgroundColor = doc.background || doc.page_spec?.background || "#f5f2ed";
   if (document.fonts?.ready) await document.fonts.ready;
   const ordered = [...(doc.elements || [])].sort((a, b) => (Number(a.z_index || 0) - Number(b.z_index || 0)) || elementId(a).localeCompare(elementId(b)));
-  const visible = ordered.filter((element) => !element.hidden);
+  const visible = ordered.filter((element) => !element.hidden && !(context.layeredDebug?.hideForeground && element.template_layer === "foreground"));
   const [photoEntries, designEntries] = await Promise.all([
-    Promise.all(visible.filter((element) => element.type === "photo").map(async (element) => [elementId(element), await loadPhotoImage(element, context)])),
+    // Photo bytes and template masks are both fetched before the layer loop;
+    // the loop still adds objects strictly in z-order for deterministic output.
+    Promise.all(visible.filter((element) => element.type === "photo").map(async (element) => [elementId(element), {
+      photo: await loadPhotoImage(element, context),
+      templateMask: await loadTemplateMask(element, context),
+    }])),
     Promise.all(visible.filter((element) => element.type === "design_asset").map(async (element) => [elementId(element), await loadDesignAsset(element)])),
   ]);
   const photoLoads = new Map(photoEntries);
@@ -861,6 +935,7 @@ async function renderDocument(targetCanvas, doc, options = {}) {
     else result = addDecoration(element, context);
     if (result?.rendered) context.report.rendered_element_ids.push(elementId(element));
   }
+  await addLayeredDebugOverlay(targetCanvas, context);
   // All asset loads and bounded text repairs are complete at this point. The
   // post-render pass deliberately measures the real Fabric objects, so browser
   // font metrics, wrapping, rotation, scale and frame geometry are authoritative
@@ -892,7 +967,7 @@ async function renderNow() {
   state.renderValidation = { validation_status: "valid", warnings: [], repairs: [], rendered_element_ids: [], failed_element_ids: [], fallbacks: [] };
   const renderReport = await renderDocument(state.canvas, state.doc, {
     assetMap: state.assetMap, renderMode: state.renderMode, mode: state.mode,
-    activeId: activeBeforeClear, interactive: true, report: state.renderValidation,
+    activeId: activeBeforeClear, interactive: true, layeredDebug: state.layeredDebug, report: state.renderValidation,
   });
   // Fabric emits `selection:cleared` while the shared renderer rebuilds the
   // canvas.  That event is correct for a user clearing selection, but it must
@@ -1459,6 +1534,14 @@ function wire() {
     });
   });
   $("show-guides")?.addEventListener("change", (event) => { const guides = $("guide-overlay"); if (guides) guides.style.display = event.target.checked ? "block" : "none"; fitPage(); state.canvas?.requestRenderAll(); });
+  [
+    ["show-template-guides", "guides"],
+    ["show-template-masks", "masks"],
+    ["hide-template-foreground", "hideForeground"],
+  ].forEach(([id, key]) => $(id)?.addEventListener("change", (event) => {
+    state.layeredDebug[key] = Boolean(event.target.checked);
+    queueRender().catch((error) => status(`Template debug render failed: ${error.message}`));
+  }));
   $("import-ai")?.addEventListener("click", () => $("import-ai-file")?.click()); $("import-debug")?.addEventListener("click", () => $("import-debug-file")?.click());
   $("import-ai-package")?.addEventListener("click", () => $("import-ai-package-file")?.click());
   $("import-ai-file")?.addEventListener("change", (event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { try { validateAiSpec(JSON.parse(String(reader.result || ""))); } catch (error) { status(`AI JSON is invalid: ${error.message}`); } }; reader.readAsText(file); event.target.value = ""; });

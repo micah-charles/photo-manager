@@ -1,6 +1,6 @@
 # Photo Manager — Standard ChatGPT AI Collage Design Prompt
 
-Version: 1.1 · `CollageDesignSpec v2`
+Version: 1.2 · `CollageDesignSpec v2` + optional `layered-template`
 
 Use this prompt after attaching a Photo Manager AI Design Package ZIP, its
 contact sheet, and (when available) the package schemas. The ZIP is a design
@@ -51,38 +51,48 @@ Hard rules:
 12. Do not include original photo files, GPS data, private logs, secrets, or
     local absolute filesystem paths. Thumbnails remain the visual reference;
     asset IDs remain the authoritative references.
+13. If the package manifest declares `layered-template` and
+    `transparent-photo-slots`, preserve its `template` metadata. Use only the
+    declared slot IDs (A01, A02, ...) and add `slot_id` to every photo element.
+    Do not flatten, screenshot, repaint, convert, or replace
+    `template/foreground.png`; it must remain a transparent RGBA foreground.
+    Treat each supplied mask as authoritative: white/luminance means the real
+    photo is visible and black means it is clipped. Keep the same page ratio
+    and use mm coordinates. If foreground occlusion is intentional, declare
+    it explicitly with `allowedForegroundOcclusion`; never hide an opaque
+    placeholder problem by changing photo geometry.
 
 Professional art-direction rules:
 
-13. You are not a tile-layout algorithm. Act as a professional photo-book art
+14. You are not a tile-layout algorithm. Act as a professional photo-book art
     director and editorial designer. Establish hierarchy, rhythm, narrative,
     and visual balance; do not merely fit every photograph into a rectangle.
-14. Think in three passes before writing coordinates: (a) analyse the photo
+15. Think in three passes before writing coordinates: (a) analyse the photo
     story (hero, people/story, context, supporting images, details, duplicates,
     viewpoints, and orientation); (b) design the composition (anchor, reading
     direction, negative space, text/decorative zones, alignment, and overlap);
     (c) style it (rotation, borders, masks, shadows, decoration, typography).
     Do not begin with arbitrary x/y values.
-15. Create a visible hierarchy: normally one dominant hero, two to four medium
+16. Create a visible hierarchy: normally one dominant hero, two to four medium
     supporting images, then a restrained detail sequence. One focal point must
     remain obvious at thumbnail size. If all photos are required on one page,
     group details into a coherent strip, grid, or contact cluster rather than
     scattering equal-sized tiles.
-16. Use hidden grid discipline even for scrapbook styles: shared edges,
+17. Use hidden grid discipline even for scrapbook styles: shared edges,
     repeated spacing, intentional baselines, and consistent borders. Most
     photos should be at 0 degrees; use about ±0.5–2 degrees for selected
     accents and keep exceptional accents near ±4 degrees. Do not rotate every
     image or alternate random angles.
-17. Use no more than three intentional overlaps by default. Never overlap
+18. Use no more than three intentional overlaps by default. Never overlap
     solely to save space, and never cover faces, important subjects, or text.
     Preserve roughly 10–25% visually quiet space around titles, heroes, and
     narrative transitions when the page format permits it.
-18. Use a maximum of four decorative assets by default. Every decoration must
+19. Use a maximum of four decorative assets by default. Every decoration must
     have a recognisable semantic role (for example botanical branch, paper,
     tape, stamp, or greenhouse line art) and improve the composition. Omit
     ambiguous or unnecessary decoration; real photographs should remain the
     visual subject.
-19. Use a clear typography hierarchy: title, optional Traditional Chinese
+20. Use a clear typography hierarchy: title, optional Traditional Chinese
     subtitle/translation, date or location, and at most a short caption. Keep
     requested English proper names and make Traditional Chinese readable at
     final physical size. Choose a style deliberately: editorial elegant,
@@ -97,7 +107,7 @@ Professional art-direction rules:
     with place/date annotations. Family memory book puts people first and
     keeps faces clear. Botanical uses a natural palette and restrained line art
     that never competes with real flowers.
-20. Before returning JSON, self-check the page at thumbnail, normal view, and
+21. Before returning JSON, self-check the page at thumbnail, normal view, and
     print size. Ask what the eye sees first and second, whether the page is too
     busy, whether the hierarchy and negative space are clear, whether the
     rotations are purposeful, and whether every decoration is recognisable.
@@ -177,6 +187,12 @@ Before returning, check:
 - no generic `decoration` element exists;
 - no face or important subject is accidentally hidden by a higher z_index;
 - the output contains no original photo bytes, private paths, GPS, or secrets.
+
+If the package is layered, the completed ZIP must also preserve
+`template/foreground.png`, the optional `template/background.png`, every
+declared `template/masks/Axx.png`, and the manifest capabilities. Do not save
+debug overlays into those files. The foreground must be RGBA with transparent
+photo apertures; a white JPEG-like placeholder is invalid.
 
 If the user asks for a completed ZIP instead of JSON, put this exact JSON in
 design.json and preserve the package manifest, thumbnails, schemas, and safe

@@ -51,6 +51,7 @@
       <button id="export">Export file (JSON)</button><span class="inline-control" title="Preview PNG target resolution. This is independent from the page DPI.">Preview DPI <input id="preview-dpi" type="number" min="72" max="1200" step="1" value="150" style="width:70px"></span><button id="export-png">Export preview PNG (150 DPI)</button><span class="inline-control" title="High-resolution PNG target resolution. Original photos are used for this export.">High-res DPI <input id="hires-dpi" type="number" min="72" max="1200" step="1" value="300" style="width:70px"></span><button id="export-hires" class="primary">Export high-res PNG (300 DPI)</button><button id="export-package">Export ChatGPT package</button><span id="export-dpi-summary" class="muted" aria-live="polite"></span>
       <button id="load-sample">Load Kew Gardens AI sample (v2)</button><button id="import-ai">Import AI design JSON</button><button id="import-ai-package">Import AI Design Package ZIP</button><button id="import-debug">Import layout JSON</button>
       <label class="inline-control"><input id="show-guides" type="checkbox"> Show page guides</label>
+      <span id="layered-tools" class="inline-control" hidden title="Debug controls for transparent-slot templates"><b>Template</b><label class="inline-control"><input id="show-template-guides" type="checkbox"> Slots</label><label class="inline-control"><input id="show-template-masks" type="checkbox"> Masks</label><label class="inline-control"><input id="hide-template-foreground" type="checkbox"> Hide foreground</label></span>
       <input id="import-ai-file" type="file" accept="application/json,.json" hidden><input id="import-ai-package-file" type="file" accept="application/zip,.zip" hidden><input id="import-debug-file" type="file" accept="application/json,.json" hidden>
       <span id="alternative-picker" class="inline-control" hidden>Alternative <select id="alternative"></select><button id="apply-ai" disabled>Open selected</button></span>
       <span id="status" class="muted status"></span>
@@ -74,7 +75,7 @@
     </section>
   </main>
   <script src="/vendor/fabric/index.min.js"></script>
-  <script src="/collage_geometry.js?v=20260914-8"></script><script src="/collage_render_validation.js?v=20260915-render-validation-1"></script><script src="/fabric_spike_v3.js?v=20260915-dpi-export-1"></script>
+  <script src="/collage_geometry.js?v=20260914-8"></script><script src="/collage_render_validation.js?v=20260915-render-validation-1"></script><script src="/fabric_spike_v3.js?v=20260917-layered-template-1"></script>
   <script src="/collage_editor_package.js?v=20260914-2"></script>
 </body>
 </html>

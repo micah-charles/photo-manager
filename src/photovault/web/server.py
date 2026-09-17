@@ -48,6 +48,7 @@ from photovault.collage.design_formats import (
     validate_and_repair_design_spec, validate_collage_document,
     validate_design_spec, to_collage_document, validate_page_spec,
 )
+from photovault.collage.layered_templates import validate_layered_template
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 STATIC_ROOT = Path(__file__).with_name("static")
@@ -130,6 +131,7 @@ def _ingest_design_package(catalog_path: Path, raw: bytes) -> tuple[dict[str, ob
             raise ValueError("unsupported design package manifest")
         if not isinstance(design, dict) or design.get("format") not in {"CollageDesignSpec", "PhotoManager Collage Design"} or int(design.get("schema_version", 0)) != 2:
             raise ValueError("design.json must be CollageDesignSpec v2")
+        layered = validate_layered_template(manifest, design, archive, names)
         catalog_id = str(manifest.get("catalog_id") or design.get("catalog_id") or "")
         if catalog_id and catalog_id != catalog_path.stem:
             raise ValueError("design package belongs to a different catalog")
@@ -141,6 +143,7 @@ def _ingest_design_package(catalog_path: Path, raw: bytes) -> tuple[dict[str, ob
             raise ValueError("manifest.assets must be an array of at most 40 assets")
         package_id = "pkg_" + uuid.uuid4().hex
         decorative: list[dict[str, object]] = []
+        template_assets: list[dict[str, object]] = []
         pending: list[tuple[Path, bytes]] = []
         seen_ids: set[str] = set()
         total = 0
@@ -182,6 +185,22 @@ def _ingest_design_package(catalog_path: Path, raw: bytes) -> tuple[dict[str, ob
             pending.append((target, asset_bytes))
             decorative.append({"id": asset_id, "path": path, "media_type": expected_media, "sha256": sha256_bytes(asset_bytes), "package_asset_id": managed_id, "asset_url": f"/api/collage/design-assets/{managed_id}"})
 
+        template_records: dict[str, dict[str, object]] = {}
+        if layered:
+            for path, asset_bytes in layered["files"].items():
+                managed_id = "pa_" + uuid.uuid4().hex
+                target = (catalog_path.parent / "collage-design-assets" / f"{managed_id}.png").resolve()
+                root = (catalog_path.parent / "collage-design-assets").resolve()
+                if root not in target.parents:
+                    raise ValueError("managed template asset path is invalid")
+                pending.append((target, asset_bytes))
+                record = {"id": f"template-{len(template_records) + 1:03d}", "path": path,
+                          "media_type": "image/png", "sha256": sha256_bytes(asset_bytes),
+                          "package_asset_id": managed_id, "asset_url": f"/api/collage/design-assets/{managed_id}",
+                          "template_asset": True}
+                template_records[path] = record
+                template_assets.append(record)
+
         spec = json.loads(json.dumps(design))
         spec["package_id"] = package_id
         spec["catalog_id"] = catalog_path.stem
@@ -200,6 +219,39 @@ def _ingest_design_package(catalog_path: Path, raw: bytes) -> tuple[dict[str, ob
                         raise ValueError(f"design asset reference is not listed in manifest: {ref}")
                     element["package_asset_id"] = managed["package_asset_id"]
                     element["asset_url"] = managed["asset_url"]
+        if layered:
+            template_meta = json.loads(json.dumps(layered["template"]))
+            template_meta["foreground_asset_id"] = template_records[template_meta["foreground_path"]]["package_asset_id"]
+            template_meta["foreground_url"] = template_records[template_meta["foreground_path"]]["asset_url"]
+            if template_meta.get("background_path"):
+                background_record = template_records[template_meta["background_path"]]
+                template_meta["background_asset_id"] = background_record["package_asset_id"]
+                template_meta["background_url"] = background_record["asset_url"]
+            template_meta["mask_asset_ids"] = {
+                slot_id: template_records[path]["package_asset_id"]
+                for slot_id, path in template_meta["masks"].items()
+            }
+            template_meta["mask_urls"] = {
+                slot_id: template_records[path]["asset_url"]
+                for slot_id, path in template_meta["masks"].items()
+            }
+            spec["layered_template"] = template_meta
+            slots = template_meta["slots"]
+            for alternative in spec.get("alternatives", []) if isinstance(spec.get("alternatives"), list) else []:
+                for element in alternative.get("elements", []) if isinstance(alternative, dict) and isinstance(alternative.get("elements"), list) else []:
+                    if not isinstance(element, dict) or element.get("type") != "photo":
+                        continue
+                    reference = str(element.get("asset_id") or "")
+                    slot_id = str(element.get("slot_id") or element.get("aperture_id") or "")
+                    if not slot_id and reference in slots:
+                        slot_id = reference
+                    if not slot_id or slot_id not in slots:
+                        raise ValueError(f"layered photo element must reference a declared template slot: {reference or element.get('id', '')}")
+                    element["slot_id"] = slot_id
+                    slot = slots[slot_id]
+                    element.setdefault("role", slot.get("role", "supporting"))
+                    element["template_mask_asset_id"] = template_meta["mask_asset_ids"][slot_id]
+                    element["template_mask_url"] = template_meta["mask_urls"][slot_id]
         connection = connect(catalog_path)
         try:
             available_photo_ids = {str(row[0]) for row in connection.execute("SELECT DISTINCT asset_id FROM asset_locations WHERE missing_since IS NULL")}
@@ -209,9 +261,10 @@ def _ingest_design_package(catalog_path: Path, raw: bytes) -> tuple[dict[str, ob
         missing_photo_ids = sorted(photo_ids - available_photo_ids)
         if missing_photo_ids:
             raise ValueError(f"unknown or unavailable photo asset ids: {', '.join(missing_photo_ids[:5])}")
-        checked, report = validate_and_repair_design_spec(spec, available_photo_ids, {str(item["package_asset_id"]) for item in decorative})
+        design_assets = {str(item["package_asset_id"]) for item in decorative + template_assets}
+        checked, report = validate_and_repair_design_spec(spec, available_photo_ids, design_assets)
         spec = checked
-        package = {"format": "PhotoManager AI Design Package", "schema_version": 2, "package_id": package_id, "catalog_id": catalog_path.stem, "assets": photo_assets, "photo_assets": photo_assets, "decorative_assets": decorative, "page_spec": spec.get("page_spec"), "spec": spec, "validation": report}
+        package = {"format": "PhotoManager AI Design Package", "schema_version": 2, "package_id": package_id, "catalog_id": catalog_path.stem, "capabilities": manifest.get("capabilities", []), "assets": photo_assets, "photo_assets": photo_assets, "decorative_assets": decorative + template_assets, "template_assets": template_assets, "layered_template": spec.get("layered_template"), "page_spec": spec.get("page_spec"), "spec": spec, "validation": report}
         package_root = catalog_path.parent / "collage-design-packages"
         package_root.mkdir(parents=True, exist_ok=True)
         written: list[Path] = []
@@ -228,7 +281,7 @@ def _ingest_design_package(catalog_path: Path, raw: bytes) -> tuple[dict[str, ob
                     pass
             raise
     asset_map = {str(item["asset_id"]): item for item in photo_assets if isinstance(item, dict) and item.get("asset_id")}
-    asset_map.update({str(item["package_asset_id"]): item for item in decorative})
+    asset_map.update({str(item["package_asset_id"]): item for item in decorative + template_assets})
     return package, spec, asset_map
 
 
@@ -245,6 +298,8 @@ def _resolve_design_import(catalog_path: Path, payload: dict[str, object]) -> tu
         assets = package.get("photo_assets") or package.get("assets")
         decorative = package.get("decorative_assets") if isinstance(package.get("decorative_assets"), list) else []
         spec["page_spec"] = spec.get("page_spec") or package.get("page_spec") or {}
+        if package.get("layered_template") and not spec.get("layered_template"):
+            spec["layered_template"] = package["layered_template"]
     else:
         # Fixtures and older local exports may carry their manifest inline. A
         # normal AI import with a package_id always takes the package branch.
@@ -990,7 +1045,7 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                            "photos": sum(isinstance(element, dict) and element.get("type") == "photo" for element in item.get("elements", [])),
                            "design_assets": sum(isinstance(element, dict) and element.get("type") == "design_asset" for element in item.get("elements", []))}
                           for index, item in enumerate(alternatives) if isinstance(item, dict)]
-                self._json({"valid": True, "package_id": package["package_id"], "spec": spec, "alternatives": counts, "validation": package.get("validation", {}), "decorative_assets": package.get("decorative_assets", [])}, 201)
+                self._json({"valid": True, "package_id": package["package_id"], "spec": spec, "alternatives": counts, "validation": package.get("validation", {}), "decorative_assets": package.get("decorative_assets", []), "template_assets": package.get("template_assets", []), "layered_template": package.get("layered_template")}, 201)
                 return
             if parsed.path == "/api/collage/design-packages":
                 asset_ids = list(dict.fromkeys(str(value) for value in payload.get("asset_ids", []) if str(value)))
@@ -1041,17 +1096,20 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                               "selection": legacy_package["selection"], "style_intent": style_intent}
                 decorative_package_assets = []
                 decorative_files = {}
+                layered_template_files: dict[str, bytes] = {}
+                layered_template_manifest: dict[str, object] | None = None
                 if isinstance(payload.get("current_document"), dict):
-                    legacy_package["current_document"] = payload["current_document"]
-                    design_spec["current_document"] = payload["current_document"]
+                    current_document = payload["current_document"]
+                    legacy_package["current_document"] = current_document
+                    design_spec["current_document"] = current_document
                     # Preserve already-imported decorative artwork as safe,
                     # managed package assets. Never follow a path from the
                     # browser payload; resolve only pa_* files under our own
                     # managed directory.
                     managed_root = (self.catalog_path.parent / "collage-design-assets").resolve()
                     seen_managed = set()
-                    for element in payload["current_document"].get("elements", []):
-                        if not isinstance(element, dict) or element.get("type") != "design_asset":
+                    for element in current_document.get("elements", []):
+                        if not isinstance(element, dict) or element.get("type") != "design_asset" or element.get("template_layer"):
                             continue
                         managed_id = str(element.get("asset_id") or element.get("package_asset_id") or "")
                         if not re.fullmatch(r"pa_[0-9a-f]{32}", managed_id) or managed_id in seen_managed:
@@ -1070,6 +1128,41 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                                                           "media_type": ALLOWED_MEDIA[source.suffix.lower()],
                                                           "sha256": sha256_bytes(raw_asset)})
                         seen_managed.add(managed_id)
+                    layered_source = (current_document.get("metadata") or {}).get("layered_template")
+                    if isinstance(layered_source, dict) and layered_source.get("foreground_asset_id"):
+                        def copy_template_asset(managed_id: object, destination: str) -> None:
+                            template_id = str(managed_id or "")
+                            if not re.fullmatch(r"pa_[0-9a-f]{32}", template_id):
+                                raise ValueError(f"layered template asset id is invalid: {template_id}")
+                            matches = [path for path in managed_root.glob(f"{template_id}.png") if path.is_file()]
+                            if not matches:
+                                raise ValueError(f"layered template asset is unavailable: {template_id}")
+                            layered_template_files[destination] = matches[0].read_bytes()
+
+                        copy_template_asset(layered_source.get("foreground_asset_id"), "template/foreground.png")
+                        background_asset_id = layered_source.get("background_asset_id")
+                        if background_asset_id:
+                            copy_template_asset(background_asset_id, "template/background.png")
+                        mask_paths: dict[str, str] = {}
+                        mask_asset_ids = layered_source.get("mask_asset_ids") if isinstance(layered_source.get("mask_asset_ids"), dict) else {}
+                        for slot_id, mask_asset_id in mask_asset_ids.items():
+                            safe_slot = re.sub(r"[^A-Za-z0-9_-]", "_", str(slot_id))
+                            destination = f"template/masks/{safe_slot}.png"
+                            copy_template_asset(mask_asset_id, destination)
+                            mask_paths[str(slot_id)] = destination
+                        slots = layered_source.get("slots") if isinstance(layered_source.get("slots"), dict) else {}
+                        if not mask_paths or set(mask_paths) != set(slots):
+                            raise ValueError("layered template export needs a mask and slot definition for every slot")
+                        layered_template_manifest = {
+                            "foreground": "template/foreground.png",
+                            "background": "template/background.png" if background_asset_id else None,
+                            "masks": mask_paths,
+                            "slots": slots,
+                        }
+                        if layered_template_manifest.get("background") is None:
+                            layered_template_manifest.pop("background")
+                        manifest_v2["capabilities"] = ["layered-template", "transparent-photo-slots"]
+                        manifest_v2["template"] = layered_template_manifest
                 manifest_v2["assets"] = decorative_package_assets
                 contact = Image.new("RGB", (1000, max(120, ((len(asset_ids) + 5) // 6) * 180)), "#f5f2ed")
                 draw = ImageDraw.Draw(contact)
@@ -1115,6 +1208,12 @@ overlap. Decorative artwork may be supplied separately as safe SVG, PNG or WebP
 files under assets/; reference those files with a design_asset element and its
 asset_ref. Do not use scripts, HTML, remote URLs, or arbitrary SVG markup.
 
+If manifest.json declares layered-template, preserve the template/foreground.png
+RGBA overlay, optional template/background.png, every template/masks/Axx.png
+mask and each declared slot_id. White mask pixels mean the real photo is
+visible; black pixels are clipped. Never flatten the foreground into a
+screenshot or replace it with an opaque white image.
+
 Return JSON only as CollageDesignSpec v2. Geometry is in millimetres. Use the
 stable font roles serif, sans, script or display. Every element needs a unique
 id, z_index, x_mm, y_mm, width_mm and height_mm. Use text_fit shrink_to_fit
@@ -1134,6 +1233,8 @@ Include this package_id in your response and do not include original photo files
                     for name, raw in images.items():
                         if raw: archive.writestr(f"thumbnails/{name}", raw)
                     for name, raw in decorative_files.items():
+                        archive.writestr(name, raw)
+                    for name, raw in layered_template_files.items():
                         archive.writestr(name, raw)
                     archive.writestr("collage-design.schema.json", json.dumps(schema, indent=2))
                     archive.writestr("collage-design-v1.schema.json", json.dumps(schema_v1, indent=2))

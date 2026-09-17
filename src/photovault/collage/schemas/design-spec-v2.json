@@ -12,6 +12,7 @@
     "style": {"type": "string", "maxLength": 200},
     "style_intent": {"type": "string", "maxLength": 500},
     "mode": {"enum": ["from_scratch", "improve_existing"]},
+    "layered_template": {"$ref": "#/$defs/layeredTemplate"},
     "page_spec": {"$ref": "#/$defs/pageSpec"},
     "assets": {"type": "array", "minItems": 1, "maxItems": 200, "items": {"$ref": "#/$defs/photoAsset"}},
     "alternatives": {"type": "array", "minItems": 0, "maxItems": 5, "description": "Empty for an exported request package; an imported AI response must contain 1-5 alternatives.", "items": {"$ref": "#/$defs/alternative"}}
@@ -68,6 +69,9 @@
         "asset_id": {"type": "string", "maxLength": 200},
         "package_asset_id": {"type": "string", "maxLength": 80},
         "asset_ref": {"type": "string", "maxLength": 300},
+        "slot_id": {"type": "string", "maxLength": 32},
+        "aperture_id": {"type": "string", "maxLength": 32},
+        "template_mask_asset_id": {"type": "string", "maxLength": 80},
         "allow_bleed": {"type": "boolean"},
         "allow_photo_overlap": {"type": "boolean", "default": false, "description": "Explicitly allow this text element to overlap photo frames."},
         "allow_text_overlap": {"type": "boolean", "default": false, "description": "Explicitly allow this text element to overlap another text element."},
@@ -104,6 +108,17 @@
         "line_height": {"type": "number", "minimum": 0.5, "maximum": 3},
         "letter_spacing": {"type": "number", "minimum": -20, "maximum": 100},
         "text_fit": {"enum": ["none", "shrink_to_fit", "wrap_and_shrink"]}
+      },
+      "additionalProperties": true
+    },
+    "layeredTemplate": {
+      "type": "object",
+      "required": ["version", "foreground_asset_id", "mask_asset_ids", "slots"],
+      "properties": {
+        "version": {"const": 1}, "foreground_asset_id": {"type": "string"}, "background_asset_id": {"type": "string"},
+        "foreground_url": {"type": "string", "pattern": "^/api/collage/design-assets/pa_[a-f0-9]{32}$"},
+        "background_url": {"type": "string"}, "mask_asset_ids": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string"}},
+        "slots": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "object"}}
       },
       "additionalProperties": true
     }

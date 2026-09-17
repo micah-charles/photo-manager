@@ -66,6 +66,22 @@ class CollageEditorContractTests(unittest.TestCase):
         self.assertIn("allow_photo_overlap", schema)
         self.assertIn("allow_text_overlap", schema)
 
+    def test_layered_template_uses_shared_fabric_renderer_and_debug_controls(self):
+        source = EDITOR_JS.read_text(encoding="utf-8")
+        html = (ROOT / "src/photovault/web/static/fabric_spike_v2.html").read_text(encoding="utf-8")
+        for phrase in (
+            "loadTemplateMask(element, context)",
+            "absolutePositioned: true",
+            "template_mask_url",
+            "addLayeredDebugOverlay",
+            "excludeFromExport = true",
+            "layeredDebug: state.layeredDebug",
+        ):
+            self.assertIn(phrase, source)
+        for phrase in ("show-template-guides", "show-template-masks", "hide-template-foreground"):
+            self.assertIn(phrase, html)
+        self.assertIn("layered-template", (ROOT / "docs/ai-layered-collage-template.md").read_text(encoding="utf-8"))
+
     def test_photo_panel_exposes_package_photos_not_used_by_current_alternative(self):
         source = EDITOR_JS.read_text(encoding="utf-8")
         html = (ROOT / "src/photovault/web/static/fabric_spike_v2.html").read_text(encoding="utf-8")

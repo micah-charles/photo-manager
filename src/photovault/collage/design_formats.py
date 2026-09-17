@@ -330,6 +330,12 @@ def to_collage_document(spec: dict[str, Any], alternative_index: int = 0, asset_
             item["style"] = {"border": item.pop("border", {}), "shadow": item.pop("shadow", {})}
             item["clipping_shape"] = item.pop("mask", {}).get("type", "rectangle")
             item["transform"] = item.pop("image", {})
+            if item.get("template_mask_asset_id"):
+                mask_asset_id = str(item["template_mask_asset_id"])
+                item["template_mask_url"] = (asset_map or {}).get(mask_asset_id, {}).get("asset_url", item.get("template_mask_url"))
+                item["template_mask_asset_id"] = mask_asset_id
+            if item.get("slot_id"):
+                item["template_slot_id"] = str(item.pop("slot_id"))
         elif item["type"] == "design_asset":
             item["asset_id"] = item.pop("package_asset_id")
             item["asset_url"] = (asset_map or {}).get(item["asset_id"], {}).get("asset_url", item.get("asset_url"))
@@ -340,6 +346,41 @@ def to_collage_document(spec: dict[str, Any], alternative_index: int = 0, asset_
             # logical pixels used by every Fabric object, including strokes.
             item["stroke_width"] = mm_to_px(item["stroke_width"])
         elements.append(item)
+    layered = checked.get("layered_template")
+    if isinstance(layered, dict):
+        # Template artwork is part of the same ordered document as photos and
+        # text.  This keeps the editor, preview PNG and high-resolution export
+        # on one renderer while making foreground/background layers locked by
+        # default.  The original manifest remains in metadata for debug tools.
+        page_height = mm_to_px(float(page["height_mm"]))
+        background_id = layered.get("background_asset_id")
+        foreground_id = layered.get("foreground_asset_id")
+        template_layers = []
+        if background_id:
+            template_layers.append({
+                "element_id": "template-background",
+                "type": "design_asset",
+                "asset_id": str(background_id),
+                "asset_url": (asset_map or {}).get(str(background_id), {}).get("asset_url", layered.get("background_url")),
+                "x": 0, "y": 0, "width": mm_to_px(width), "height": page_height,
+                "rotation_deg": 0, "opacity": 1, "z_index": -100000,
+                "locked": True, "template_layer": "background", "role": "background",
+                "label": "Template background",
+            })
+        if foreground_id:
+            template_layers.append({
+                "element_id": "template-foreground",
+                "type": "design_asset",
+                "asset_id": str(foreground_id),
+                "asset_url": (asset_map or {}).get(str(foreground_id), {}).get("asset_url", layered.get("foreground_url")),
+                "x": 0, "y": 0, "width": mm_to_px(width), "height": page_height,
+                "rotation_deg": 0, "opacity": 1, "z_index": 100000,
+                "locked": True, "template_layer": "foreground", "role": "background",
+                "label": "Template foreground",
+            })
+        background_layers = [item for item in template_layers if item.get("template_layer") == "background"]
+        foreground_layers = [item for item in template_layers if item.get("template_layer") == "foreground"]
+        elements = background_layers + elements + foreground_layers
     now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     selection_asset_ids = [str(item["asset_id"]) for item in checked.get("assets", [])
                            if isinstance(item, dict) and item.get("asset_id") in photo_asset_ids]
@@ -353,6 +394,7 @@ def to_collage_document(spec: dict[str, Any], alternative_index: int = 0, asset_
                 "source": f"CollageDesignSpec v{checked.get('schema_version', 1)}",
                 "style_intent": spec.get("style_intent") or alternative.get("style") or spec.get("style") or "",
                 "selection_asset_ids": selection_asset_ids,
+                **({"layered_template": deepcopy(layered)} if isinstance(layered, dict) else {}),
             }, "edited": True}
 
 

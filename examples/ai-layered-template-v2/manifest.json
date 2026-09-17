@@ -1,0 +1,26 @@
+{
+  "format": "PhotoManager AI Design Package",
+  "schema_version": 2,
+  "package_id": "pkg_00000000000000000000000000000000",
+  "catalog_id": "replace-with-exported-catalog-id",
+  "design": "design.json",
+  "capabilities": ["layered-template", "transparent-photo-slots"],
+  "photo_assets": [
+    {"label": "A01", "asset_id": "replace-with-catalog-asset-id", "filename": "hero.jpg"}
+  ],
+  "assets": [],
+  "template": {
+    "foreground": "template/foreground.png",
+    "background": "template/background.png",
+    "masks": {"A01": "template/masks/A01.png"},
+    "slots": {
+      "A01": {
+        "role": "hero",
+        "x_mm": 24,
+        "y_mm": 42,
+        "width_mm": 130,
+        "height_mm": 95
+      }
+    }
+  }
+}
