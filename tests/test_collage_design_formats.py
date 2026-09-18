@@ -42,11 +42,12 @@ class CollageDesignFormatTests(unittest.TestCase):
 
     def test_supports_text_and_decoration_layers(self):
         spec = self.spec([
-            {"id": "bg", "type": "rectangle", "x_mm": 0, "y_mm": 0, "width_mm": 300, "height_mm": 300, "fill": "#f5f2ed", "z_index": 0},
+            {"id": "bg", "type": "rectangle", "role": "background", "x_mm": 0, "y_mm": 0, "width_mm": 300, "height_mm": 300, "fill": "#f5f2ed", "z_index": 0},
             {"id": "title", "type": "text", "content": "Kew Gardens", "x_mm": 10, "y_mm": 250, "width_mm": 180, "height_mm": 20, "z_index": 5},
         ])
         document = to_collage_document(spec, asset_map={"a1": spec["assets"][0]})
         self.assertEqual([x["element_id"] for x in document["elements"]], ["bg", "title"])
+        self.assertEqual(document["elements"][0]["role"], "background")
 
     def test_converts_polygon_points_and_strokes_from_mm_to_pixels(self):
         spec = self.spec([{

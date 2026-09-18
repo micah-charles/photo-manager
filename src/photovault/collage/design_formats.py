@@ -20,6 +20,15 @@ PHOTO_ROLES = {"hero", "supporting", "detail", "sequence", "context", "backgroun
 TEXT_ROLES = {"title", "subtitle", "caption", "quote", "metadata", "section_label"}
 DESIGN_ROLES = {"accent", "frame", "background", "foreground"}
 ROLES = PHOTO_ROLES | TEXT_ROLES | DESIGN_ROLES
+ROLE_SETS = {
+    "photo": PHOTO_ROLES,
+    "text": TEXT_ROLES,
+    "design_asset": DESIGN_ROLES,
+    "rectangle": DESIGN_ROLES,
+    "ellipse": DESIGN_ROLES,
+    "line": DESIGN_ROLES,
+    "polygon": DESIGN_ROLES,
+}
 FONT_ROLES = {"serif", "sans", "script", "display"}
 TEXT_FITS = {"none", "shrink_to_fit", "wrap_and_shrink"}
 MAX_ELEMENTS = 200
@@ -54,7 +63,7 @@ def _role(value: Any, kind: str, element_id: str) -> str | None:
         return None
     if not isinstance(value, str):
         raise ValueError(f"{element_id} role must be a string")
-    supported = {"photo": PHOTO_ROLES, "text": TEXT_ROLES, "design_asset": DESIGN_ROLES}.get(kind, set())
+    supported = ROLE_SETS.get(kind, set())
     if value not in supported:
         values = ", ".join(sorted(supported))
         raise ValueError(f"unsupported {kind} role '{value}' for {element_id}; supported roles: {values}")
