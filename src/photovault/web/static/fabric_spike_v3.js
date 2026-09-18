@@ -8,7 +8,7 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const PX_PER_MM = window.collageGeometry?.PX_PER_MM || 4;
 const state = {
   runs: [], candidates: [], doc: null, savedDocumentUrl: null,
-  photos: [], assetMap: new Map(), activeId: null, mode: "layout", renderMode: "funnel", renderFallbacks: [],
+  photos: [], assetMap: new Map(), activeId: null, mode: "layout", cropPanEnabled: false, renderMode: "funnel", renderFallbacks: [],
   history: [], future: [], canvas: null, gestureBefore: null,
   controlBefore: null, aiSpec: null, aiPackageId: null, renderPromise: Promise.resolve(),
   layeredDebug: { guides: false, masks: false, hideForeground: false },
@@ -1008,7 +1008,7 @@ function applyInteractivity() {
   state.canvas.getObjects().forEach((object) => {
     const element = elements().find((candidate) => elementId(candidate) === object._elementId);
     const enabled = Boolean(element && !element.locked && !element.hidden);
-    object.selectable = enabled && (object._kind === "photo-image" ? state.mode === "crop" : state.mode === "layout");
+    object.selectable = enabled && (object._kind === "photo-image" ? state.mode === "crop" && state.cropPanEnabled : state.mode === "layout");
     object.evented = object.selectable;
   });
 }
@@ -1166,8 +1166,13 @@ async function renderNow() {
 
 function setMode(nextMode) {
   state.mode = nextMode;
+  state.cropPanEnabled = nextMode === "crop";
   $("layout")?.classList.toggle("primary", nextMode === "layout"); $("crop")?.classList.toggle("primary", nextMode === "crop");
-  applyInteractivity(); state.canvas.discardActiveObject(); state.canvas.requestRenderAll(); status(`${nextMode === "crop" ? "Crop" : "Layout"} mode — select an element`); refreshLayers();
+  const panButton = $("pan-image");
+  panButton?.classList.toggle("primary", state.cropPanEnabled);
+  panButton?.setAttribute("aria-pressed", String(state.cropPanEnabled));
+  $("canvas-wrap")?.classList.toggle("pan-ready", state.cropPanEnabled);
+  applyInteractivity(); state.canvas.discardActiveObject(); state.canvas.requestRenderAll(); status(nextMode === "crop" ? "Crop mode — click a photo, then drag with ✋ Pan image." : "Layout mode — select an element"); refreshLayers();
 }
 
 async function setRenderMode(nextMode) {
@@ -1699,7 +1704,7 @@ function setupCanvas() {
 function wire() {
   $("open")?.addEventListener("click", () => openDocument().catch((error) => status(error.message)));
   $("run")?.addEventListener("change", () => loadCandidates().catch((error) => status(error.message)));
-  $("layout")?.addEventListener("click", () => setMode("layout")); $("crop")?.addEventListener("click", () => setMode("crop"));
+  $("layout")?.addEventListener("click", () => setMode("layout")); $("crop")?.addEventListener("click", () => setMode("crop")); $("pan-image")?.addEventListener("click", () => setMode("crop"));
   $("render-mode")?.addEventListener("change", (event) => setRenderMode(event.target.value).catch((error) => status(`Photo source change failed: ${error.message}`)));
   $("reload")?.addEventListener("click", () => openDocument().catch((error) => status(error.message)));
   $("fit")?.addEventListener("click", () => { fitPage(); state.canvas.requestRenderAll(); status("Page fitted to the available window."); });

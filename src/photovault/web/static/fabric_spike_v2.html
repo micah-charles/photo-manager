@@ -14,6 +14,9 @@
     .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     button,select,input{font:inherit;padding:8px 10px;border:1px solid #c9c0b5;border-radius:8px;background:#fff}
     button.primary{background:#302b26;color:#fff}button:disabled,input:disabled,select:disabled{opacity:.45;cursor:not-allowed}
+      button[aria-pressed="true"]{background:#286e67;border-color:#286e67;color:#fff}
+      .canvas-wrap.pan-ready .upper-canvas{cursor:grab}
+      .canvas-wrap.pan-ready .upper-canvas:active{cursor:grabbing}
     .workspace{display:grid;grid-template-columns:220px minmax(500px,1fr) 260px;gap:14px;align-items:start}
     .photos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:680px;overflow:auto}
     .photo{border:2px solid transparent;border-radius:8px;padding:3px;cursor:grab}.photo:hover{border-color:#b9d5d0}
@@ -47,7 +50,7 @@
       <button id="open" class="primary">Open candidate</button><span id="ai-document-summary" class="badge" hidden></span><span id="identity" class="badge">No document loaded</span>
     </section>
     <section class="bar">
-      <button id="undo">Undo</button><button id="redo">Redo</button><button id="layout" class="primary">Layout mode</button><button id="crop">Crop mode</button><button id="fit">Fit page</button><button id="save" class="primary">Save variant</button><button id="reload">Reload saved</button><button id="save-browser" title="Save this editable document in this browser">Save browser copy</button><button id="load-browser" title="Load an editable document saved in this browser">Load browser copy</button><span id="browser-memory-status" class="muted"></span>
+      <button id="undo">Undo</button><button id="redo">Redo</button><button id="layout" class="primary">Layout mode</button><button id="crop">Crop mode</button><button id="pan-image" title="Drag the selected photo inside its frame" aria-pressed="false">✋ Pan image</button><button id="fit">Fit page</button><button id="save" class="primary">Save variant</button><button id="reload">Reload saved</button><button id="save-browser" title="Save this editable document in this browser">Save browser copy</button><button id="load-browser" title="Load an editable document saved in this browser">Load browser copy</button><span id="browser-memory-status" class="muted"></span>
       <button id="export">Export file (JSON)</button><span class="inline-control" title="Preview PNG target resolution. This is independent from the page DPI.">Preview DPI <input id="preview-dpi" type="number" min="72" max="1200" step="1" value="150" style="width:70px"></span><button id="export-png">Export preview PNG (150 DPI)</button><span class="inline-control" title="High-resolution PNG target resolution. Original photos are used for this export.">High-res DPI <input id="hires-dpi" type="number" min="72" max="1200" step="1" value="300" style="width:70px"></span><button id="export-hires" class="primary">Export high-res PNG (300 DPI)</button><button id="export-package">Export ChatGPT package</button><span id="export-dpi-summary" class="muted" aria-live="polite"></span>
       <button id="load-sample">Load Kew Gardens AI sample (v2)</button><button id="import-ai">Import AI design JSON</button><button id="import-ai-package">Import AI Design Package ZIP</button><button id="import-debug">Import layout JSON</button>
       <label class="inline-control"><input id="show-guides" type="checkbox"> Show page guides</label>
@@ -75,7 +78,7 @@
     </section>
   </main>
   <script src="/vendor/fabric/index.min.js"></script>
-  <script src="/collage_geometry.js?v=20260914-8"></script><script src="/collage_render_validation.js?v=20260915-render-validation-1"></script><script src="/fabric_spike_v3.js?v=20260918-render-repair-2"></script>
+  <script src="/collage_geometry.js?v=20260914-8"></script><script src="/collage_render_validation.js?v=20260915-render-validation-1"></script><script src="/fabric_spike_v3.js?v=20260918-render-repair-2-pan-1"></script>
   <script src="/collage_editor_package.js?v=20260914-2"></script>
 </body>
 </html>

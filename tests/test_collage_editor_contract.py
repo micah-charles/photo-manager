@@ -102,3 +102,14 @@ class CollageEditorContractTests(unittest.TestCase):
             self.assertIn(phrase, source + html)
         self.assertIn("state.aiSpec?.assets", source)
         self.assertIn("data-id=\"${esc(id)}\"", source)
+
+    def test_crop_pan_mode_exposes_hand_control_and_persists_focus(self):
+        source = EDITOR_JS.read_text(encoding="utf-8")
+        html = (ROOT / "src/photovault/web/static/fabric_spike_v2.html").read_text(encoding="utf-8")
+        self.assertIn('id="pan-image"', html)
+        self.assertIn('aria-pressed="false"', html)
+        self.assertIn("cropPanEnabled", source)
+        self.assertIn("state.cropPanEnabled = nextMode === \"crop\"", source)
+        self.assertIn('state.mode === "crop" && state.cropPanEnabled', source)
+        self.assertIn("transform.focus_x", source)
+        self.assertIn("transform.focus_y", source)
