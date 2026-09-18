@@ -562,21 +562,28 @@ function frameObject(element, context = null) {
   return object;
 }
 
-function clipPath(element, imageScale, imageRotation = imageTransform(element).rotation) {
-  const width = Number(element.width || 0) / Math.max(imageScale, 0.0001);
-  const height = Number(element.height || 0) / Math.max(imageScale, 0.0001);
+function clipPath(element) {
+  // Keep the aperture in page coordinates.  A normal Fabric clipPath is
+  // attached to the image object, so moving the image would move the crop
+  // aperture with it and make the whole frame appear to drift.  An absolute
+  // clip path leaves the frame fixed while the image content pans behind it.
+  const width = Number(element.width || 0);
+  const height = Number(element.height || 0);
+  const left = Number(element.x || 0) + width / 2;
+  const top = Number(element.y || 0) + height / 2;
+  const angle = Number(element.rotation_deg || 0);
   const shape = shapeName(element);
   if (shape === "circle") {
-    return new fabric.Circle({ left: 0, top: 0, originX: "center", originY: "center", radius: Math.min(width, height) / 2, angle: -imageRotation });
+    return new fabric.Circle({ left, top, originX: "center", originY: "center", radius: Math.min(width, height) / 2, angle, absolutePositioned: true });
   }
   if (shape === "ellipse") {
-    return new fabric.Ellipse({ left: 0, top: 0, originX: "center", originY: "center", rx: width / 2, ry: height / 2, angle: -imageRotation });
+    return new fabric.Ellipse({ left, top, originX: "center", originY: "center", rx: width / 2, ry: height / 2, angle, absolutePositioned: true });
   }
   return new fabric.Rect({
-    left: 0, top: 0, originX: "center", originY: "center", width, height,
+    left, top, originX: "center", originY: "center", width, height,
     rx: shape === "rounded" ? Math.min(width, height) * 0.12 : 0,
     ry: shape === "rounded" ? Math.min(width, height) * 0.12 : 0,
-    angle: -imageRotation,
+    angle, absolutePositioned: true,
   });
 }
 
@@ -711,7 +718,7 @@ async function addPhoto(element, loaded = null, context = null) {
     image.clipPath = templateMask;
     image._templateMask = templateMask;
   } else {
-    image.clipPath = clipPath(element, imageScale, imageRotation);
+    image.clipPath = clipPath(element);
   }
   image._elementId = id; image._kind = "photo-image"; image._baseScale = baseScale;
   image._visualWidth = visualWidth; image._visualHeight = visualHeight;

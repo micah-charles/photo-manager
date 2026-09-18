@@ -113,3 +113,5 @@ class CollageEditorContractTests(unittest.TestCase):
         self.assertIn('state.mode === "crop" && state.cropPanEnabled', source)
         self.assertIn("transform.focus_x", source)
         self.assertIn("transform.focus_y", source)
+        self.assertIn("absolutePositioned: true", source)
+        self.assertIn("const left = Number(element.x || 0) + width / 2", source)
