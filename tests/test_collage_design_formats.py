@@ -1,4 +1,6 @@
 import unittest
+import json
+from pathlib import Path
 
 from photovault.collage.design_formats import to_collage_document, validate_and_repair_design_spec, validate_design_spec
 
@@ -80,6 +82,45 @@ class CollageDesignFormatTests(unittest.TestCase):
         spec["alternatives"][0]["elements"][0]["allow_photo_overlap"] = "yes"
         with self.assertRaisesRegex(ValueError, "allow_photo_overlap must be a boolean"):
             validate_design_spec(spec, {"a1"})
+
+    def test_semantic_roles_are_type_specific_and_unknown_roles_are_rejected(self):
+        photo = self.spec([{"id": "p", "type": "photo", "asset_id": "a1", "role": "sequence",
+                            "x_mm": 10, "y_mm": 10, "width_mm": 80, "height_mm": 80}])
+        checked = validate_design_spec(photo, {"a1"})
+        self.assertEqual(checked["alternatives"][0]["elements"][0]["role"], "sequence")
+        text = self.spec([{"id": "t", "type": "text", "role": "hero", "content": "Wrong role",
+                           "x_mm": 10, "y_mm": 10, "width_mm": 80, "height_mm": 20}])
+        with self.assertRaisesRegex(ValueError, "supported roles"):
+            validate_design_spec(text, {"a1"})
+
+    def test_text_photo_collision_is_conservatively_repaired(self):
+        spec = self.spec([
+            {"id": "hero", "type": "photo", "asset_id": "a1", "role": "hero",
+             "x_mm": 10, "y_mm": 40, "width_mm": 120, "height_mm": 100, "z_index": 10},
+            {"id": "caption", "type": "text", "role": "caption", "content": "A quiet family memory",
+             "x_mm": 20, "y_mm": 50, "width_mm": 80, "height_mm": 10, "z_index": 20,
+             "text_style": {"font_id": "sans", "font_size_pt": 10, "text_fit": "shrink_to_fit"}},
+        ])
+        checked, report = validate_and_repair_design_spec(spec, {"a1"})
+        caption = next(item for item in checked["alternatives"][0]["elements"] if item["id"] == "caption")
+        self.assertTrue(any(item["reason"] == "TEXT_COLLISION_MOVE" for item in report["repairs"]))
+        self.assertFalse(any(item["code"] == "TEXT_PHOTO_COLLISION" for item in report["errors"]))
+        self.assertGreaterEqual(caption["y_mm"], 8)
+
+    def test_documented_role_example_validates_against_runtime_contract(self):
+        path = Path(__file__).parents[1] / "examples" / "collage-design-spec-v2-role.json"
+        spec = json.loads(path.read_text(encoding="utf-8"))
+        checked = validate_design_spec(spec, {"fixture-photo-01"})
+        self.assertEqual(checked["alternatives"][0]["elements"][0]["role"], "hero")
+
+    def test_standard_prompt_json_example_is_schema_valid(self):
+        prompt = (Path(__file__).parents[1] / "docs" / "CHATGPT_AI_COLLAGE_DESIGN_PROMPT.md").read_text(encoding="utf-8")
+        start = prompt.index("Return this shape:") + len("Return this shape:")
+        example, _ = json.JSONDecoder().raw_decode(prompt[start:].lstrip())
+        # The importer resolves A labels to catalog ids before runtime
+        # validation; this contract test validates the post-resolution label.
+        checked = validate_design_spec(example, {"A01"})
+        self.assertEqual(checked["alternatives"][0]["elements"][0]["role"], "hero")
 
 
 if __name__ == "__main__":

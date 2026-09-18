@@ -1040,12 +1040,16 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                 self._json({"job_id": job_id, "status": "queued"}, 202); return
             if parsed.path == "/api/collage/design-import-packages":
                 package, spec, asset_map = _ingest_design_package(self.catalog_path, _decode_uploaded_package(payload.get("package_zip_base64")))
+                package_validation = package.get("validation", {}) if isinstance(package, dict) else {}
+                if package_validation.get("errors"):
+                    self._json({"valid": False, "package_id": package["package_id"], "errors": package_validation["errors"], "warnings": package_validation.get("warnings", []), "repairs": package_validation.get("repairs", [])}, 422)
+                    return
                 alternatives = spec.get("alternatives") if isinstance(spec.get("alternatives"), list) else []
                 counts = [{"alternative": index, "elements": len(item.get("elements", [])),
                            "photos": sum(isinstance(element, dict) and element.get("type") == "photo" for element in item.get("elements", [])),
                            "design_assets": sum(isinstance(element, dict) and element.get("type") == "design_asset" for element in item.get("elements", []))}
                           for index, item in enumerate(alternatives) if isinstance(item, dict)]
-                self._json({"valid": True, "package_id": package["package_id"], "spec": spec, "alternatives": counts, "validation": package.get("validation", {}), "decorative_assets": package.get("decorative_assets", []), "template_assets": package.get("template_assets", []), "layered_template": package.get("layered_template")}, 201)
+                self._json({"valid": True, "package_id": package["package_id"], "spec": spec, "alternatives": counts, "validation": package_validation, "decorative_assets": package.get("decorative_assets", []), "template_assets": package.get("template_assets", []), "layered_template": package.get("layered_template")}, 201)
                 return
             if parsed.path == "/api/collage/design-packages":
                 asset_ids = list(dict.fromkeys(str(value) for value in payload.get("asset_ids", []) if str(value)))
@@ -1220,6 +1224,9 @@ id, z_index, x_mm, y_mm, width_mm and height_mm. Use text_fit shrink_to_fit
 for headings and wrap_and_shrink for notes. You may return 3-5 alternatives.
 Include this package_id in your response and do not include original photo files.
 """
+                prompt_path = Path(__file__).resolve().parents[3] / "docs" / "CHATGPT_AI_COLLAGE_DESIGN_PROMPT.md"
+                if prompt_path.is_file():
+                    instructions = prompt_path.read_text(encoding="utf-8")
                 schema_path = Path(__file__).resolve().parent.parent / "collage" / "schemas" / "design-spec-v2.json"
                 schema = json.loads(schema_path.read_text(encoding="utf-8")) if schema_path.is_file() else {"format": "CollageDesignSpec", "schema_version": 2}
                 schema_v1_path = Path(__file__).resolve().parent.parent / "collage" / "schemas" / "design-spec-v1.json"
@@ -1251,7 +1258,10 @@ Include this package_id in your response and do not include original photo files
                 checked, validation = validate_and_repair_design_spec(checked, photo_ids, design_asset_ids)
                 if parsed.path.endswith("/validate"):
                     counts = [{"alternative": index, "elements": len(item["elements"]), "photos": sum(x["type"] == "photo" for x in item["elements"]), "design_assets": sum(x["type"] == "design_asset" for x in item["elements"])} for index, item in enumerate(checked["alternatives"])]
-                    self._json({"valid": True, "warnings": validation["warnings"], "repairs": validation["repairs"], "validation": validation, "alternatives": counts, "package_id": package_id, "spec": checked})
+                    self._json({"valid": not validation.get("errors"), "errors": validation.get("errors", []), "warnings": validation["warnings"], "repairs": validation["repairs"], "validation": validation, "alternatives": counts, "package_id": package_id, "spec": checked})
+                    return
+                if validation.get("errors"):
+                    self._json({"valid": False, "errors": validation["errors"], "warnings": validation["warnings"], "repairs": validation["repairs"], "validation": validation, "package_id": package_id}, 422)
                     return
                 index = int(payload.get("alternative_index", 0))
                 if index < 0 or index >= len(checked["alternatives"]): raise ValueError("alternative_index is out of range")

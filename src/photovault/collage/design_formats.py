@@ -16,7 +16,10 @@ from .geometry import mm_to_px, page_dimensions_mm
 
 HEX = re.compile(r"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
 MASKS = {"rectangle", "rounded", "circle", "ellipse"}
-ROLES = {"hero", "secondary", "supporting", "detail", "background"}
+PHOTO_ROLES = {"hero", "supporting", "detail", "sequence", "context", "background", "secondary"}
+TEXT_ROLES = {"title", "subtitle", "caption", "quote", "metadata", "section_label"}
+DESIGN_ROLES = {"accent", "frame", "background", "foreground"}
+ROLES = PHOTO_ROLES | TEXT_ROLES | DESIGN_ROLES
 FONT_ROLES = {"serif", "sans", "script", "display"}
 TEXT_FITS = {"none", "shrink_to_fit", "wrap_and_shrink"}
 MAX_ELEMENTS = 200
@@ -43,6 +46,18 @@ def _boolean(value: Any, name: str, default: bool = False) -> bool:
         return default
     if not isinstance(value, bool):
         raise ValueError(f"{name} must be a boolean")
+    return value
+
+
+def _role(value: Any, kind: str, element_id: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{element_id} role must be a string")
+    supported = {"photo": PHOTO_ROLES, "text": TEXT_ROLES, "design_asset": DESIGN_ROLES}.get(kind, set())
+    if value not in supported:
+        values = ", ".join(sorted(supported))
+        raise ValueError(f"unsupported {kind} role '{value}' for {element_id}; supported roles: {values}")
     return value
 
 
@@ -115,13 +130,14 @@ def validate_design_spec(payload: Any, asset_ids: set[str], design_asset_ids: se
             element["rotation_deg"] = _number(element.get("rotation_deg", 0), "rotation_deg", -3600, 3600)
             element["opacity"] = _number(element.get("opacity", 1), "opacity", 0, 1)
             element["z_index"] = int(_number(element.get("z_index", index), "z_index", -10000, 10000))
+            if "role" in element:
+                element["role"] = _role(element.get("role"), kind, element_id)
             if kind == "photo":
                 asset_id = str(element.get("asset_id") or "")
                 if asset_id not in asset_ids:
                     raise ValueError(f"photo element references an asset outside the package: {asset_id}")
                 element["role"] = str(element.get("role", "detail"))
-                if element["role"] not in ROLES:
-                    raise ValueError("unsupported photo role")
+                _role(element["role"], kind, element_id)
                 image = dict(element.get("image") or {})
                 image["rotation_deg"] = _number(image.get("rotation_deg", 0), "image.rotation_deg", -3600, 3600)
                 image["focus_x"] = _number(image.get("focus_x", .5), "image.focus_x", 0, 1)
@@ -169,6 +185,10 @@ def validate_design_spec(payload: Any, asset_ids: set[str], design_asset_ids: se
                 if "asset_url" in element and not str(element["asset_url"]).startswith("/api/collage/design-assets/"):
                     raise ValueError("design asset URL must be a managed Photo Manager asset URL")
                 element["allow_bleed"] = bool(element.get("allow_bleed", False))
+            if kind != "text" and "allow_photo_overlap" in element:
+                element["allow_photo_overlap"] = _boolean(element.get("allow_photo_overlap"), "allow_photo_overlap")
+            if kind != "text" and "allow_text_overlap" in element:
+                element["allow_text_overlap"] = _boolean(element.get("allow_text_overlap"), "allow_text_overlap")
             elif kind not in {"line"}:
                 fill = element.get("fill")
                 if fill is not None:
@@ -236,11 +256,167 @@ def _rotated_bounds(element: dict[str, Any]) -> tuple[float, float, float, float
     return x + width / 2 - bound_width / 2, y + height / 2 - bound_height / 2, bound_width, bound_height
 
 
+def _bounds(element: dict[str, Any]) -> tuple[float, float, float, float]:
+    left, top, width, height = _rotated_bounds(element)
+    return left, top, left + width, top + height
+
+
+def _intersection(first: dict[str, Any], second: dict[str, Any]) -> tuple[float, float, float, float, float] | None:
+    left_a, top_a, right_a, bottom_a = _bounds(first)
+    left_b, top_b, right_b, bottom_b = _bounds(second)
+    left, top = max(left_a, left_b), max(top_a, top_b)
+    right, bottom = min(right_a, right_b), min(bottom_a, bottom_b)
+    width, height = right - left, bottom - top
+    if width <= 0.01 or height <= 0.01:
+        return None
+    return left, top, right, bottom, width * height
+
+
+def _bounds_gap(first: dict[str, Any], second: dict[str, Any]) -> float:
+    left_a, top_a, right_a, bottom_a = _bounds(first)
+    left_b, top_b, right_b, bottom_b = _bounds(second)
+    dx = max(left_a - right_b, left_b - right_a, 0.0)
+    dy = max(top_a - bottom_b, top_b - bottom_a, 0.0)
+    return math.hypot(dx, dy)
+
+
+def _role_priority(element: dict[str, Any]) -> int:
+    role = str(element.get("role") or "")
+    return {
+        "hero": 100, "title": 95, "subtitle": 85, "section_label": 75,
+        "supporting": 70, "secondary": 65, "sequence": 55, "quote": 50,
+        "caption": 45, "context": 40, "detail": 30, "metadata": 20,
+        "accent": 15, "frame": 10, "background": 0, "foreground": 0,
+    }.get(role, 25)
+
+
+def _material_overlap(first: dict[str, Any], second: dict[str, Any]) -> bool:
+    overlap = _intersection(first, second)
+    if not overlap:
+        return False
+    _, _, _, _, area = overlap
+    left_a, top_a, right_a, bottom_a = _bounds(first)
+    left_b, top_b, right_b, bottom_b = _bounds(second)
+    first_area = max((right_a - left_a) * (bottom_a - top_a), .001)
+    second_area = max((right_b - left_b) * (bottom_b - top_b), .001)
+    return area >= .5 and area / min(first_area, second_area) >= .01
+
+
+def _geometry_findings(alternative: dict[str, Any], page_width: float, page_height: float, safe: float, bleed: float = 0.0) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return deterministic hard errors and soft composition warnings in mm."""
+    elements = [item for item in alternative["elements"] if not item.get("hidden")]
+    errors: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    for element in elements:
+        left, top, right, bottom = _bounds(element)
+        kind = element["type"]
+        if kind in {"photo", "text", "design_asset", "rectangle", "ellipse", "polygon"} and (right - left < .5 or bottom - top < .5):
+            errors.append({"element_id": element["id"], "code": "TINY_ELEMENT", "message": "Element is too small to be usable."})
+        if not element.get("allow_bleed", False) and (left < -bleed or top < -bleed or right > page_width + bleed or bottom > page_height + bleed):
+            errors.append({"element_id": element["id"], "code": "ELEMENT_OUTSIDE_PAGE", "message": "Element extends beyond the allowed bleed."})
+        if kind == "text" and not element.get("allow_bleed", False) and (left < safe or top < safe or right > page_width - safe or bottom > page_height - safe):
+            warnings.append({"element_id": element["id"], "code": "TEXT_OUTSIDE_SAFE_AREA", "message": "Text extends outside the page safe margin."})
+
+    texts = [item for item in elements if item["type"] == "text"]
+    photos = [item for item in elements if item["type"] == "photo"]
+    designs = [item for item in elements if item["type"] in {"design_asset", "rectangle", "ellipse", "polygon"} and float(item.get("opacity", 1)) > .1]
+    for text in texts:
+        for photo in photos:
+            overlap = _intersection(text, photo)
+            if overlap and _material_overlap(text, photo):
+                if text.get("allow_photo_overlap"):
+                    warnings.append({"element_id": text["id"], "code": "INTENTIONAL_TEXT_PHOTO_OVERLAP", "other_element_id": photo["id"], "message": "Text/photo overlap is explicitly permitted."})
+                else:
+                    errors.append({"element_id": text["id"], "code": "TEXT_PHOTO_COLLISION", "other_element_id": photo["id"], "message": "Text materially intersects a photo without explicit permission."})
+                    if int(photo.get("z_index", 0)) > int(text.get("z_index", 0)):
+                        errors.append({"element_id": text["id"], "code": "TEXT_COVERED_BY_PHOTO", "other_element_id": photo["id"], "message": "Text is hidden behind a higher z-index photo."})
+            elif not overlap and not text.get("allow_photo_overlap") and _bounds_gap(text, photo) <= 3.0:
+                warnings.append({"element_id": text["id"], "code": "TEXT_PHOTO_CLEARANCE", "other_element_id": photo["id"], "distance_mm": round(_bounds_gap(text, photo), 2), "message": "Text is closer than the preferred 3 mm visual clearance."})
+        for other in texts:
+            if text["id"] >= other["id"] or text.get("allow_text_overlap") or other.get("allow_text_overlap"):
+                continue
+            if _material_overlap(text, other):
+                errors.append({"element_id": text["id"], "code": "TEXT_TEXT_COLLISION", "other_element_id": other["id"], "message": "Text elements materially intersect without explicit permission."})
+        for design in designs:
+            if int(design.get("z_index", 0)) <= int(text.get("z_index", 0)) or text.get("allow_text_overlap"):
+                continue
+            if _material_overlap(text, design):
+                errors.append({"element_id": text["id"], "code": "TEXT_COVERED_BY_DESIGN", "other_element_id": design["id"], "message": "Text is obscured by an opaque higher z-index design element."})
+
+    for index, first in enumerate(photos):
+        for second in photos[index + 1:]:
+            if not _material_overlap(first, second):
+                continue
+            if first.get("allow_photo_overlap") or second.get("allow_photo_overlap"):
+                warnings.append({"element_id": first["id"], "code": "INTENTIONAL_PHOTO_OVERLAP", "other_element_id": second["id"], "message": "Photo overlap is explicitly permitted."})
+            else:
+                warnings.append({"element_id": first["id"], "code": "PHOTO_PHOTO_COLLISION", "other_element_id": second["id"], "message": "Photo frames overlap without explicit permission."})
+
+    heroes = [item for item in photos if item.get("role") == "hero"]
+    supporting = [item for item in photos if item.get("role") in {"supporting", "secondary", "context"}]
+    if heroes and supporting:
+        hero_area = max(_rotated_bounds(item)[2] * _rotated_bounds(item)[3] for item in heroes)
+        support_areas = sorted(_rotated_bounds(item)[2] * _rotated_bounds(item)[3] for item in supporting)
+        if hero_area <= support_areas[len(support_areas) // 2]:
+            warnings.append({"element_id": heroes[0]["id"], "code": "HERO_NOT_DOMINANT", "message": "The hero photo is not visibly larger than most supporting photos."})
+    return errors, warnings
+
+
+def _text_position_is_free(candidate: dict[str, Any], elements: list[dict[str, Any]], page_width: float, page_height: float, safe: float) -> bool:
+    left, top, right, bottom = _bounds(candidate)
+    if left < safe or top < safe or right > page_width - safe or bottom > page_height - safe:
+        return False
+    for other in elements:
+        if other["id"] == candidate["id"] or other.get("hidden"):
+            continue
+        if other["type"] == "photo" and candidate.get("allow_photo_overlap"):
+            continue
+        if other["type"] == "text" and (candidate.get("allow_text_overlap") or other.get("allow_text_overlap")):
+            continue
+        if other["type"] in {"design_asset", "rectangle", "ellipse", "polygon"} and int(other.get("z_index", 0)) <= int(candidate.get("z_index", 0)):
+            continue
+        if _material_overlap(candidate, other):
+            return False
+    return True
+
+
+def _repair_text_collisions(alternative: dict[str, Any], page_width: float, page_height: float, safe: float, bleed: float = 0.0) -> list[dict[str, Any]]:
+    """Move only lower-priority text into a free safe region; never resize photos."""
+    elements = alternative["elements"]
+    repairs: list[dict[str, Any]] = []
+    _, initial_warnings = _geometry_findings(alternative, page_width, page_height, safe, bleed)
+    _ = initial_warnings
+    for text in sorted((item for item in elements if item["type"] == "text"), key=_role_priority):
+        errors, _ = _geometry_findings(alternative, page_width, page_height, safe, bleed)
+        if not any(item["element_id"] == text["id"] and item["code"] in {"TEXT_PHOTO_COLLISION", "TEXT_COVERED_BY_PHOTO", "TEXT_TEXT_COLLISION", "TEXT_COVERED_BY_DESIGN"} for item in errors):
+            continue
+        left, top, right, bottom = _bounds(text)
+        width = float(text["width_mm"]); height = float(text["height_mm"]); gap = 3.0
+        blockers = [item for item in elements if item["id"] != text["id"] and item["type"] != "line"]
+        candidates: list[tuple[float, float]] = []
+        for blocker in blockers:
+            bx, by, br, bb = _bounds(blocker)
+            candidates.extend([(float(text["x_mm"]), bb + gap), (float(text["x_mm"]), by - height - gap),
+                               (br + gap, float(text["y_mm"])), (bx - width - gap, float(text["y_mm"]))])
+        candidates.extend([(safe, safe), (safe, page_height - safe - height), (page_width - safe - width, safe),
+                           (page_width - safe - width, page_height - safe - height)])
+        original = (float(text["x_mm"]), float(text["y_mm"]))
+        for x, y in candidates:
+            text["x_mm"], text["y_mm"] = round(x, 2), round(y, 2)
+            if _text_position_is_free(text, elements, page_width, page_height, safe):
+                repairs.append({"element_id": text["id"], "reason": "TEXT_COLLISION_MOVE", "from_x_mm": original[0], "from_y_mm": original[1], "to_x_mm": text["x_mm"], "to_y_mm": text["y_mm"]})
+                break
+        else:
+            text["x_mm"], text["y_mm"] = original
+    return repairs
+
+
 def validate_and_repair_design_spec(payload: Any, asset_ids: set[str], design_asset_ids: set[str] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Validate a design and apply only bounded, explainable layout repairs."""
+    """Validate a design, conservatively repair text, then validate again."""
     checked = validate_design_spec(payload, asset_ids, design_asset_ids)
     page_width, page_height = page_dimensions_mm(checked["page_spec"])
     safe = float(checked["page_spec"].get("safe_margin_mm", 8))
+    bleed = float(checked["page_spec"].get("bleed_mm", 3))
     warnings: list[dict[str, Any]] = []
     repairs: list[dict[str, Any]] = []
     for alternative in checked["alternatives"]:
@@ -279,31 +455,22 @@ def validate_and_repair_design_spec(payload: Any, asset_ids: set[str], design_as
                 if (float(final_metrics["width_mm"]) > float(element["width_mm"]) + .01 or
                         float(final_metrics["height_mm"]) > float(element["height_mm"]) + .01):
                     warnings.append({"element_id": element["id"], "code": "TEXT_OVERFLOW", "message": "Text may overflow its box; edit the text box or font size."})
-
-            left, top, bound_width, bound_height = _rotated_bounds(element)
-            if not element.get("allow_bleed", False) and (left < -float(checked["page_spec"].get("bleed_mm", 3)) or top < -float(checked["page_spec"].get("bleed_mm", 3)) or left + bound_width > page_width + float(checked["page_spec"].get("bleed_mm", 3)) or top + bound_height > page_height + float(checked["page_spec"].get("bleed_mm", 3))):
-                warnings.append({"element_id": element["id"], "code": "ELEMENT_OUTSIDE_PAGE", "message": "Element extends beyond the allowed bleed."})
-
-        photo_elements = [item for item in alternative["elements"] if item["type"] == "photo"]
-        for index, first in enumerate(photo_elements):
-            fx, fy, fw, fh = _rotated_bounds(first)
-            first_area = max(fw * fh, .001)
-            for second in photo_elements[index + 1:]:
-                sx, sy, sw, sh = _rotated_bounds(second)
-                overlap = max(0.0, min(fx + fw, sx + sw) - max(fx, sx)) * max(0.0, min(fy + fh, sy + sh) - max(fy, sy))
-                coverage = overlap / first_area
-                if coverage > .20 and str(first.get("role", "detail")) in {"hero", "secondary"}:
-                    warnings.append({"element_id": first["id"], "covered_by": second["id"], "code": "EXCESSIVE_PHOTO_OVERLAP", "coverage": round(coverage, 3), "message": "Major photo is covered by another photo; confirm that the overlap is intentional."})
-        text_elements = [item for item in alternative["elements"] if item["type"] == "text"]
-        for text in text_elements:
-            tx, ty, tw, th = _rotated_bounds(text)
-            for photo in photo_elements:
-                px, py, pw, ph = _rotated_bounds(photo)
-                overlap = max(0.0, min(tx + tw, px + pw) - max(tx, px)) * max(0.0, min(ty + th, py + ph) - max(ty, py))
-                if overlap / max(tw * th, .001) > .15 and int(photo.get("z_index", 0)) > int(text.get("z_index", 0)):
-                    warnings.append({"element_id": text["id"], "covered_by": photo["id"], "code": "TEXT_COVERED_BY_PHOTO", "message": "Text is behind a foreground photo."})
-
-    report = {"validation_status": "repaired" if repairs else ("warnings" if warnings else "valid"), "warnings": warnings, "repairs": repairs}
+            repairs.extend(_repair_text_collisions(alternative, page_width, page_height, safe, bleed))
+    errors: list[dict[str, Any]] = []
+    for alternative in checked["alternatives"]:
+        alternative_errors, alternative_warnings = _geometry_findings(alternative, page_width, page_height, safe, bleed)
+        errors.extend(alternative_errors)
+        warnings.extend(alternative_warnings)
+    # Preserve a stable report shape for the UI while de-duplicating pair findings.
+    def unique(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        seen = set(); result = []
+        for item in items:
+            key = tuple(sorted((key, str(value)) for key, value in item.items() if key in {"element_id", "code", "other_element_id"}))
+            if key in seen: continue
+            seen.add(key); result.append(item)
+        return result
+    errors, warnings, repairs = unique(errors), unique(warnings), unique(repairs)
+    report = {"validation_status": "errors" if errors else ("repaired" if repairs else ("warnings" if warnings else "valid")), "errors": errors, "warnings": warnings, "repairs": repairs}
     return checked, report
 
 

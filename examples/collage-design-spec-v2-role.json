@@ -1,0 +1,72 @@
+{
+  "format": "CollageDesignSpec",
+  "schema_version": 2,
+  "package_id": "fixture:role-regression",
+  "catalog_id": "fixture-catalog",
+  "page_spec": {
+    "type": "single",
+    "width_mm": 210,
+    "height_mm": 297,
+    "orientation": "portrait",
+    "bleed_mm": 3,
+    "safe_margin_mm": 8,
+    "gutter_mm": 4,
+    "dpi": 300,
+    "background": "#f5f2ed"
+  },
+  "style": "editorial family memory",
+  "style_intent": "One dominant hero with a quiet title and supporting image.",
+  "mode": "from_scratch",
+  "assets": [
+    {"label": "A01", "asset_id": "fixture-photo-01", "filename": "fixture.jpg", "media_type": "IMAGE"}
+  ],
+  "alternatives": [
+    {
+      "id": "role-regression",
+      "name": "Hero and title",
+      "reason": "The hero remains the focal point and the title stays in clear negative space.",
+      "elements": [
+        {
+          "id": "photo-01",
+          "type": "photo",
+          "asset_id": "fixture-photo-01",
+          "role": "hero",
+          "x_mm": 20,
+          "y_mm": 45,
+          "width_mm": 170,
+          "height_mm": 120,
+          "rotation_deg": 0,
+          "image": {"rotation_deg": 0, "focus_x": 0.5, "focus_y": 0.5, "zoom": 1},
+          "mask": {"type": "rectangle"},
+          "border": {"width_mm": 1.5, "color": "#FFFFFF", "opacity": 1},
+          "opacity": 1,
+          "z_index": 10
+        },
+        {
+          "id": "title-01",
+          "type": "text",
+          "role": "title",
+          "content": "RHS Garden Wisley",
+          "x_mm": 20,
+          "y_mm": 15,
+          "width_mm": 170,
+          "height_mm": 12,
+          "rotation_deg": 0,
+          "opacity": 1,
+          "z_index": 100,
+          "text_style": {
+            "font_id": "serif",
+            "font_size_pt": 18,
+            "weight": "bold",
+            "italic": false,
+            "alignment": "left",
+            "line_height": 1.15,
+            "letter_spacing": 0,
+            "text_fit": "shrink_to_fit",
+            "color": "#314133"
+          }
+        }
+      ]
+    }
+  ]
+}

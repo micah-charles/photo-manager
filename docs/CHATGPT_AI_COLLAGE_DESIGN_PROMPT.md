@@ -1,6 +1,6 @@
 # Photo Manager — Standard ChatGPT AI Collage Design Prompt
 
-Version: 1.2 · `CollageDesignSpec v2` + optional `layered-template`
+Version: 1.3 · `CollageDesignSpec v2` + optional `layered-template`
 
 Use this prompt after attaching a Photo Manager AI Design Package ZIP, its
 contact sheet, and (when available) the package schemas. The ZIP is a design
@@ -44,14 +44,29 @@ Hard rules:
 10. Use z_index to define one ordered layer stack from back to front. Avoid
     covering faces or important text. Keep text inside the safe margin unless
     the element explicitly allows bleed.
-11. If using decorative SVG in a completed ZIP, keep it under assets/ and use
+
+ROLE RULES:
+
+11. `role` is optional semantic metadata. It describes intent and hierarchy;
+    it never grants overlap permission and never changes z-order, geometry, or
+    clipping. For photos use only `hero`, `supporting`, `detail`, `sequence`,
+    `context`, `background`, or backward-compatible `secondary`. For text use
+    only `title`, `subtitle`, `caption`, `quote`, `metadata`, or `section_label`.
+    For design/decorative elements use only `accent`, `frame`, `background`, or
+    `foreground`. Do not invent `primary`, `main`, `feature`, `filmstrip`,
+    `memory`, `portrait`, or `hero-photo`.
+12. There should normally be exactly one hero photo unless the composition
+    clearly calls for otherwise. Role affects hierarchy and conservative repair
+    priority only. Keep `allow_photo_overlap` and `allow_text_overlap` false
+    unless the specific overlap is intentional and explicitly declared.
+13. If using decorative SVG in a completed ZIP, keep it under assets/ and use
     only safe static vector content. No script, HTML, foreignObject, remote
     URL, data URL, event attribute, or arbitrary markup. Prefer the primitive
     rectangle/ellipse/line/polygon elements when possible.
-12. Do not include original photo files, GPS data, private logs, secrets, or
+14. Do not include original photo files, GPS data, private logs, secrets, or
     local absolute filesystem paths. Thumbnails remain the visual reference;
     asset IDs remain the authoritative references.
-13. If the package manifest declares `layered-template` and
+15. If the package manifest declares `layered-template` and
     `transparent-photo-slots`, preserve its `template` metadata. Use only the
     declared slot IDs (A01, A02, ...) and add `slot_id` to every photo element.
     Do not flatten, screenshot, repaint, convert, or replace
@@ -113,18 +128,44 @@ Professional art-direction rules:
     rotations are purposeful, and whether every decoration is recognisable.
     Redesign if it looks automatically tiled rather than art-directed.
 
+MECHANICAL GEOMETRY RULES:
+
+22. Before returning JSON, check transformed bounds including rotation. No
+    ordinary text may intersect a photo, another text element, or an opaque
+    higher z-index design element unless the corresponding explicit overlap
+    permission is true. A z-index change is not a collision fix.
+23. Keep approximately 3 mm preferred visual clearance between unrelated text
+    and photos/decorations where practical. A real intersection is an error;
+    clearance is a warning. Keep important text inside safe margins and all
+    elements within page bounds or explicitly valid bleed.
+24. Every text box must be large enough for its content. Prefer
+    `wrap_and_shrink` or `shrink_to_fit`; never rely on silent browser clipping.
+    PhotoManager will validate, attempt only conservative text repairs, and
+    reject an alternative if hard errors remain.
+
 Return this shape:
 
 {
   "format": "CollageDesignSpec",
   "schema_version": 2,
-  "package_id": "<copied from package>",
-  "catalog_id": "<copied from package>",
-  "page_spec": { "<copied exactly unless explicitly changed>" },
+  "package_id": "fixture:prompt-example",
+  "catalog_id": "example-catalog",
+  "page_spec": {
+    "type": "single",
+    "width_mm": 210,
+    "height_mm": 297,
+    "bleed_mm": 3,
+    "safe_margin_mm": 8,
+    "gutter_mm": 4,
+    "dpi": 300,
+    "background": "#f5f2ed"
+  },
   "style": "<short style>",
   "style_intent": "<short design intent>",
   "mode": "from_scratch",
-  "assets": ["<copied complete assets array>"],
+  "assets": [
+    {"label": "A01", "asset_id": "example-photo-01", "filename": "example.jpg", "media_type": "IMAGE"}
+  ],
   "alternatives": [
     {
       "id": "<stable unique id>",
@@ -186,6 +227,9 @@ Before returning, check:
 - no text element uses `text`; use `content`;
 - no generic `decoration` element exists;
 - no face or important subject is accidentally hidden by a higher z_index;
+- role values are supported for the element type and do not imply overlap;
+- no text/photo, text/text, or opaque design/text collision remains;
+- approximately 3 mm preferred text clearance is used where practical;
 - the output contains no original photo bytes, private paths, GPS, or secrets.
 
 If the package is layered, the completed ZIP must also preserve

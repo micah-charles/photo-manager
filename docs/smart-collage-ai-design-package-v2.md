@@ -23,6 +23,14 @@ Original photographs, GPS metadata, local absolute paths, and arbitrary HTML/SVG
 
 Decorative artwork is optional. Only SVG, PNG, and WebP members under `assets/` are accepted; SVG is parsed through an allow-list before it is served to Fabric. The importer rejects traversal, scripts, external URLs, duplicate IDs, unknown assets, non-finite numbers, and unsupported versions.
 
+The optional `role` field is semantic metadata, not a layout permission. Photos
+support `hero`, `supporting`, `detail`, `sequence`, `context`, `background`, and
+backward-compatible `secondary`; text supports `title`, `subtitle`, `caption`,
+`quote`, `metadata`, and `section_label`; design assets support `accent`,
+`frame`, `background`, and `foreground`. Unknown or type-inappropriate roles
+are rejected. `allow_photo_overlap` and `allow_text_overlap` remain explicit
+and default to false.
+
 ## Geometry and editing
 
 `page_spec` is the physical source of truth. Photo, text, decoration, and design-art elements share one ordered `elements` array. Positions and sizes use `x_mm`, `y_mm`, `width_mm`, `height_mm`; frame rotation is independent from the photo crop's image rotation, focus, and zoom. The browser uses a deterministic display scale, while high-resolution PNG export converts the same document to the requested DPI and reloads connected originals.
@@ -34,6 +42,21 @@ Guides are a DOM overlay only. They are not Fabric objects and therefore cannot 
 `examples/kew-gardens-ai-design-v2.json` is a catalog-neutral, 300 × 300 mm reference with 12 explicit photo slots, title/date/caption text, layer order, masks, borders, shadows, rotation, and text-fit rules. Its `example_asset_*` IDs are placeholders for the currently selected catalog assets; it contains no personal photographs.
 
 The older `examples/kew-gardens-ai-design-v1.json` remains available to verify the explicit v1 adapter.
+
+## Validation pipeline
+
+Every AI alternative follows this pipeline before a document is published:
+
+```text
+schema → semantic roles → transformed mm bounds → collision/clearance checks
+      → conservative text repair → validation again → editable document
+```
+
+Text/photo, text/text, opaque design/text collisions, invalid page bounds,
+unsupported roles, and unusable text boxes are hard errors. Photo overlap is a
+warning unless explicitly permitted. New AI layouts target approximately 3 mm
+visual text clearance; the browser renderer keeps its existing 2 mm compatibility
+threshold for final render warnings.
 
 ## Verification checklist
 

@@ -477,6 +477,61 @@ async function loadTemplateMask(element, context = null) {
   }
 }
 
+/*
+ * Layered-template masks are authored in template/page coordinates.  The
+ * manifest keeps each mask at the full template canvas size and places the
+ * visible aperture at the slot's x/y position.  Fabric clip paths, however,
+ * are attached to an individual photo and must be expressed in that photo's
+ * local frame.  Crop the page-space mask to the slot bounds before scaling it
+ * into the frame; otherwise the aperture is scaled down a second time and
+ * only a small strip or square of the photo is visible.
+ */
+function templateMaskCrop(element, mask, context) {
+  const layered = context?.doc?.metadata?.layered_template;
+  const slotId = element?.template_slot_id || element?.slot_id;
+  const slot = slotId ? layered?.slots?.[slotId] : null;
+  const rect = slot?.rect_mm || slot;
+  const page = context?.doc?.page_spec || {};
+  const rawPageWidth = Number(page.width_mm);
+  const rawPageHeight = Number(page.height_mm);
+  const pageWidthMm = rawPageWidth > 0 ? rawPageWidth * (page.type === "spread" ? 2 : 1) : 0;
+  const pageHeightMm = rawPageHeight > 0 ? rawPageHeight : 0;
+  const sourceWidth = Number(mask?.width || 0);
+  const sourceHeight = Number(mask?.height || 0);
+  const xMm = Number(rect?.x_mm);
+  const yMm = Number(rect?.y_mm);
+  const widthMm = Number(rect?.width_mm);
+  const heightMm = Number(rect?.height_mm);
+  if (!slot || !(pageWidthMm > 0) || !(pageHeightMm > 0) || !(sourceWidth > 0) || !(sourceHeight > 0)
+      || ![xMm, yMm, widthMm, heightMm].every(Number.isFinite) || !(widthMm > 0) || !(heightMm > 0)) return null;
+  const x = clamp(xMm / pageWidthMm * sourceWidth, 0, sourceWidth - 1);
+  const y = clamp(yMm / pageHeightMm * sourceHeight, 0, sourceHeight - 1);
+  const right = clamp((xMm + widthMm) / pageWidthMm * sourceWidth, x + 1, sourceWidth);
+  const bottom = clamp((yMm + heightMm) / pageHeightMm * sourceHeight, y + 1, sourceHeight);
+  return { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
+}
+
+function configureTemplateMask(element, mask, context, frameWidth, frameHeight, centerX, centerY) {
+  const crop = templateMaskCrop(element, mask, context);
+  if (!crop) {
+    context?.report?.warnings?.push({
+      element_id: elementId(element),
+      code: "TEMPLATE_MASK_SLOT_UNRESOLVED",
+      message: "Template mask could not be mapped to its slot; the normal photo mask was used.",
+    });
+    return false;
+  }
+  mask.set({
+    cropX: crop.x, cropY: crop.y, width: crop.width, height: crop.height,
+    left: centerX, top: centerY, originX: "center", originY: "center",
+    scaleX: frameWidth / Math.max(crop.width, 1),
+    scaleY: frameHeight / Math.max(crop.height, 1),
+    angle: Number(element.rotation_deg || 0), absolutePositioned: true,
+    objectCaching: false,
+  });
+  return true;
+}
+
 async function addPhoto(element, loaded = null, context = null) {
   const ctx = context || createRenderContext(state.canvas);
   const id = elementId(element);
@@ -523,17 +578,7 @@ async function addPhoto(element, loaded = null, context = null) {
   const templateMask = loaded && Object.prototype.hasOwnProperty.call(loaded, "templateMask")
     ? loaded.templateMask
     : await loadTemplateMask(element, ctx);
-  if (templateMask) {
-    // Masks are normalised by the server to white RGB + alpha visibility. In
-    // Fabric an absolute-positioned image clip path therefore gives the same
-    // aperture in the interactive canvas and the off-screen export canvas.
-    templateMask.set({
-      left: centerX, top: centerY, originX: "center", originY: "center",
-      scaleX: frameWidth / Math.max(Number(templateMask.width || 1), 1),
-      scaleY: frameHeight / Math.max(Number(templateMask.height || 1), 1),
-      angle: Number(element.rotation_deg || 0), absolutePositioned: true,
-      objectCaching: false,
-    });
+  if (templateMask && configureTemplateMask(element, templateMask, ctx, frameWidth, frameHeight, centerX, centerY)) {
     image.clipPath = templateMask;
     image._templateMask = templateMask;
   } else {
@@ -900,7 +945,8 @@ async function addLayeredDebugOverlay(targetCanvas, context) {
     if (debug.masks && (element.template_mask_url || element.template_mask_asset_id)) {
       const mask = await loadTemplateMask(element, context);
       if (!mask) continue;
-      mask.set({ left: x + width / 2, top: y + height / 2, originX: "center", originY: "center", scaleX: width / Math.max(Number(mask.width || 1), 1), scaleY: height / Math.max(Number(mask.height || 1), 1), angle: Number(element.rotation_deg || 0), opacity: .22, selectable: false, evented: false, objectCaching: false });
+      if (!configureTemplateMask(element, mask, context, width, height, x + width / 2, y + height / 2)) continue;
+      mask.set({ opacity: .22, selectable: false, evented: false, objectCaching: false });
       mask._debugLayer = true; mask.excludeFromExport = true;
       targetCanvas.add(mask);
     }
@@ -1386,6 +1432,13 @@ function importDebugDocument(file) {
 async function validateAiSpec(spec) {
   status("Validating AI design…");
   const result = await api("/api/collage/design-imports/validate", { method: "POST", body: JSON.stringify({ spec, package_id: spec.package_id }) });
+  if (!result.valid) {
+    state.aiSpec = null; state.aiPackageId = null;
+    $("alternative-picker").hidden = true; $("apply-ai").disabled = true;
+    const first = result.errors?.[0];
+    status(`AI design rejected: ${first?.message || "unresolved layout errors"}${first?.element_id ? ` (${first.element_id})` : ""}`);
+    return;
+  }
   state.aiSpec = result.spec; state.aiPackageId = result.package_id || spec.package_id || null;
   const selector = $("alternative"); selector.innerHTML = (result.alternatives || []).map((item) => `<option value="${item.alternative}">Alternative ${item.alternative + 1} · ${item.photos} photos · ${item.elements} elements</option>`).join("");
   $("alternative-picker").hidden = (result.alternatives || []).length < 2; $("apply-ai").disabled = false; status(`Validated ${result.alternatives?.length || 0} AI design alternative(s).`);
