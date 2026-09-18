@@ -375,61 +375,89 @@ function repairRenderedTextCollisions(targetCanvas, visibleElements, context) {
   const validation = window.collageRenderValidation;
   if (!validation) return;
   const page = canvasSize(context.doc);
-  const objectMap = renderedObjectsByElement(targetCanvas);
-  const records = [];
-  for (const element of visibleElements) {
-    const id = elementId(element);
-    const kind = element.type === "text" ? "text" : element.type === "photo" ? "photo-frame" : element.type === "design_asset" ? "design-asset" : null;
-    if (!kind) continue;
-    const object = (objectMap.get(id) || []).find((candidate) => candidate?._kind === kind);
-    if (!object || object.visible === false) continue;
-    object.setCoords?.();
-    records.push({ id, element, kind, object, bounds: fabricBounds(object) });
-  }
-  const blockers = records.filter((record) => record.kind === "photo-frame" || record.kind === "design-asset");
-  const textRecords = records.filter((record) => record.kind === "text");
-  for (const record of textRecords) {
-    if (textRenderPositionIsSafe(record.object, record.element, records, page, context)) continue;
-    const originalLeft = Number(record.object.left || 0);
-    const originalTop = Number(record.object.top || 0);
-    const declaredLeft = Number(record.element.x || originalLeft);
-    const declaredTop = Number(record.element.y || originalTop);
-    const gap = Math.max(2 * PX_PER_MM, 8);
-    const candidates = [{ left: declaredLeft, top: declaredTop, reason: "DECLARED_ANCHOR" }];
-    for (const blocker of blockers) {
-      const b = blocker.bounds;
-      candidates.push(
-        { left: b.right + gap, top: b.top, reason: "RIGHT_OF_BLOCKER", blocker: blocker.id },
-        { left: b.left - gap - Math.max(1, Number(record.object.width || 0)), top: b.top, reason: "LEFT_OF_BLOCKER", blocker: blocker.id },
-        { left: b.left, top: b.bottom + gap, reason: "BELOW_BLOCKER", blocker: blocker.id },
-        { left: b.left, top: b.top - gap - Math.max(1, Number(record.object.height || 0)), reason: "ABOVE_BLOCKER", blocker: blocker.id },
-      );
+  const collectRecords = () => {
+    const objectMap = renderedObjectsByElement(targetCanvas);
+    const records = [];
+    for (const element of visibleElements) {
+      const id = elementId(element);
+      const kind = element.type === "text" ? "text" : element.type === "photo" ? "photo-frame" : element.type === "design_asset" ? "design-asset" : null;
+      if (!kind) continue;
+      const object = (objectMap.get(id) || []).find((candidate) => candidate?._kind === kind);
+      if (!object || object.visible === false) continue;
+      object.setCoords?.();
+      records.push({ id, element, kind, object, bounds: fabricBounds(object) });
     }
-    // Last-resort bounded grid search. This keeps the repair deterministic and
-    // avoids inventing a new layout algorithm while still finding a readable
-    // text zone when the AI placed text inside a photo's footprint.
-    const safe = Number(context?.doc?.page_spec?.safe_margin_mm || 8) * PX_PER_MM;
-    for (let top = safe; top <= page.height - safe; top += 24) {
-      for (let left = safe; left <= page.width - safe; left += 24) candidates.push({ left, top, reason: "SAFE_GRID" });
-    }
-    candidates.sort((a, b) => (Math.hypot(a.left - declaredLeft, a.top - declaredTop) - Math.hypot(b.left - declaredLeft, b.top - declaredTop)));
-    let repaired = null;
-    for (const candidate of candidates) {
-      record.object.set({ left: candidate.left, top: candidate.top });
-      record.object.setCoords?.();
-      if (textRenderPositionIsSafe(record.object, record.element, records, page, context)) {
-        repaired = candidate;
-        break;
+    return records;
+  };
+
+  // A repair changes the browser-measured geometry of the composition. Restart
+  // from a fresh Fabric bounds snapshot after every move so a later text object
+  // cannot rely on stale blockers or stale neighbouring text bounds. The fixed
+  // point limit keeps malformed AI input bounded and deterministic.
+  const maxPasses = 6;
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    const records = collectRecords();
+    const textRecords = records.filter((record) => record.kind === "text");
+    let moved = false;
+    for (const record of textRecords) {
+      // Re-measure all objects before checking each text candidate. This is
+      // intentionally redundant with the per-pass snapshot: Fabric can update
+      // text metrics after setCoords/initDimensions and the next text must see
+      // those actual bounds immediately.
+      const currentRecords = collectRecords();
+      const currentRecord = currentRecords.find((candidate) => candidate.id === record.id && candidate.kind === "text");
+      if (!currentRecord || textRenderPositionIsSafe(currentRecord.object, currentRecord.element, currentRecords, page, context)) continue;
+      const originalLeft = Number(currentRecord.object.left || 0);
+      const originalTop = Number(currentRecord.object.top || 0);
+      const declaredLeft = Number(currentRecord.element.x || originalLeft);
+      const declaredTop = Number(currentRecord.element.y || originalTop);
+      const gap = Math.max(2 * PX_PER_MM, 8);
+      const candidates = [{ left: declaredLeft, top: declaredTop, reason: "DECLARED_ANCHOR" }];
+      const currentBlockers = currentRecords.filter((candidate) => candidate.kind === "photo-frame" || candidate.kind === "design-asset");
+      for (const blocker of currentBlockers) {
+        const b = blocker.bounds;
+        candidates.push(
+          { left: b.right + gap, top: b.top, reason: "RIGHT_OF_BLOCKER", blocker: blocker.id },
+          { left: b.left - gap - Math.max(1, Number(currentRecord.object.width || 0)), top: b.top, reason: "LEFT_OF_BLOCKER", blocker: blocker.id },
+          { left: b.left, top: b.bottom + gap, reason: "BELOW_BLOCKER", blocker: blocker.id },
+          { left: b.left, top: b.top - gap - Math.max(1, Number(currentRecord.object.height || 0)), reason: "ABOVE_BLOCKER", blocker: blocker.id },
+        );
       }
+      // Last-resort bounded grid search. This keeps the repair deterministic and
+      // avoids inventing a new layout algorithm while still finding a readable
+      // text zone when the AI placed text inside a photo's footprint.
+      const safe = Number(context?.doc?.page_spec?.safe_margin_mm || 8) * PX_PER_MM;
+      for (let top = safe; top <= page.height - safe; top += 24) {
+        for (let left = safe; left <= page.width - safe; left += 24) candidates.push({ left, top, reason: "SAFE_GRID" });
+      }
+      candidates.sort((a, b) => (Math.hypot(a.left - declaredLeft, a.top - declaredTop) - Math.hypot(b.left - declaredLeft, b.top - declaredTop)));
+      let repaired = null;
+      for (const candidate of candidates) {
+        currentRecord.object.set({ left: candidate.left, top: candidate.top });
+        currentRecord.object.setCoords?.();
+        const measuredRecords = collectRecords();
+        const measured = measuredRecords.find((item) => item.id === currentRecord.id && item.kind === "text");
+        if (measured && textRenderPositionIsSafe(measured.object, measured.element, measuredRecords, page, context)) {
+          repaired = candidate;
+          break;
+        }
+      }
+      if (!repaired) {
+        currentRecord.object.set({ left: originalLeft, top: originalTop });
+        currentRecord.object.setCoords?.();
+        continue;
+      }
+      const position = syncTextElementPosition(currentRecord.object, currentRecord.element);
+      renderRepair(currentRecord.element, "FABRIC_TEXT_COLLISION_MOVE", { ...position, strategy: repaired.reason, blocker: repaired.blocker || null, pass: pass + 1 }, context);
+      targetCanvas.renderAll?.();
+      moved = true;
+      // Restart the pass with a full record rebuild. This makes the fixed-point
+      // behavior explicit and prevents subsequent repairs from using snapshots
+      // that predate the move just applied.
+      break;
     }
-    if (!repaired) {
-      record.object.set({ left: originalLeft, top: originalTop });
-      record.object.setCoords?.();
-      continue;
-    }
-    const position = syncTextElementPosition(record.object, record.element);
-    renderRepair(record.element, "FABRIC_TEXT_COLLISION_MOVE", { ...position, strategy: repaired.reason, blocker: repaired.blocker || null }, context);
-    record.bounds = fabricBounds(record.object);
+    if (!moved) break;
+    targetCanvas.renderAll?.();
   }
 }
 

@@ -52,6 +52,10 @@ class CollageEditorContractTests(unittest.TestCase):
         self.assertIn('originX: "left", originY: "top"', source)
         self.assertIn('FABRIC_TEXT_COLLISION_MOVE', source)
         self.assertIn('object.setCoords?.();', source)
+        self.assertIn('const collectRecords = () => {', source)
+        self.assertIn('const maxPasses = 6;', source)
+        self.assertIn('const measuredRecords = collectRecords();', source)
+        self.assertIn('pass: pass + 1', source)
         for code in (
             "FABRIC_TEXT_DECLARED_BOX_OVERFLOW",
             "FABRIC_TEXT_PHOTO_COLLISION",
