@@ -279,6 +279,11 @@ function setTextFontSize(object, sizePx) {
 
 function fitTextObject(object, element, context = null) {
   const style = element.text_style || {};
+  // Textbox sizing calls initDimensions(), which can change Fabric's internal
+  // dimensions. Keep the document anchor explicit so browser font metrics can
+  // never silently turn an x/y from the document into a different visual
+  // position.
+  const anchor = { left: Number(element.x || 0), top: Number(element.y || 0) };
   const targetWidth = Math.max(1, Number(element.width || 1));
   const targetHeight = Math.max(1, Number(element.height || 1));
   const fit = String(style.text_fit || "shrink_to_fit");
@@ -318,6 +323,7 @@ function fitTextObject(object, element, context = null) {
   }
   object.set({ width: targetWidth });
   object.initDimensions?.();
+  object.set(anchor);
   object.setCoords?.();
   const finalMetrics = actualTextMetrics(object);
   const finalSizePt = Number(object.fontSize || originalSizePx) / PT_TO_PX;
@@ -329,6 +335,101 @@ function fitTextObject(object, element, context = null) {
   }
   if (finalMetrics.width > targetWidth + 0.5 || finalMetrics.height > targetHeight + 0.5) {
     renderWarning(element, "FABRIC_TEXT_OVERFLOW", "Text still exceeds its declared box after browser-metric fitting.", { width_px: finalMetrics.width, height_px: finalMetrics.height }, context);
+  }
+}
+
+function syncTextElementPosition(object, element) {
+  const oldX = Number(element.x || 0);
+  const oldY = Number(element.y || 0);
+  element.x = Math.round(Number(object.left || 0));
+  element.y = Math.round(Number(object.top || 0));
+  if (Number.isFinite(Number(element.x_mm))) element.x_mm = Number((element.x / PX_PER_MM).toFixed(2));
+  if (Number.isFinite(Number(element.y_mm))) element.y_mm = Number((element.y / PX_PER_MM).toFixed(2));
+  return { from_x: oldX, from_y: oldY, to_x: element.x, to_y: element.y };
+}
+
+function textRenderPositionIsSafe(object, element, records, page, context = null) {
+  const bounds = fabricBounds(object);
+  const safe = Number(context?.doc?.page_spec?.safe_margin_mm || 8) * PX_PER_MM;
+  if (!element.allow_bleed && (bounds.left < safe - 0.5 || bounds.top < safe - 0.5 || bounds.right > page.width - safe + 0.5 || bounds.bottom > page.height - safe + 0.5)) return false;
+  const validation = window.collageRenderValidation;
+  const textArea = Math.max(validation.rectArea(bounds), 0.001);
+  for (const record of records) {
+    if (record.id === elementId(element)) continue;
+    if (record.kind === "photo-frame" && !element.allow_photo_overlap) {
+      const intersection = validation.rectIntersection(bounds, record.bounds, 0.5);
+      const ratio = intersection ? intersection.area / Math.min(textArea, Math.max(validation.rectArea(record.bounds), 0.001)) : 0;
+      if (intersection && intersection.area >= 1 && ratio >= 0.01) return false;
+      if (!intersection && validation.boundsDistance(bounds, record.bounds) <= (2 * PX_PER_MM) + 0.5) return false;
+    }
+    if (record.kind === "text" && !element.allow_text_overlap && !record.element.allow_text_overlap) {
+      const intersection = validation.rectIntersection(bounds, record.bounds, 0.5);
+      const ratio = intersection ? intersection.area / Math.min(textArea, Math.max(validation.rectArea(record.bounds), 0.001)) : 0;
+      if (intersection && intersection.area >= 16 && ratio >= 0.1) return false;
+    }
+  }
+  return true;
+}
+
+function repairRenderedTextCollisions(targetCanvas, visibleElements, context) {
+  const validation = window.collageRenderValidation;
+  if (!validation) return;
+  const page = canvasSize(context.doc);
+  const objectMap = renderedObjectsByElement(targetCanvas);
+  const records = [];
+  for (const element of visibleElements) {
+    const id = elementId(element);
+    const kind = element.type === "text" ? "text" : element.type === "photo" ? "photo-frame" : element.type === "design_asset" ? "design-asset" : null;
+    if (!kind) continue;
+    const object = (objectMap.get(id) || []).find((candidate) => candidate?._kind === kind);
+    if (!object || object.visible === false) continue;
+    object.setCoords?.();
+    records.push({ id, element, kind, object, bounds: fabricBounds(object) });
+  }
+  const blockers = records.filter((record) => record.kind === "photo-frame" || record.kind === "design-asset");
+  const textRecords = records.filter((record) => record.kind === "text");
+  for (const record of textRecords) {
+    if (textRenderPositionIsSafe(record.object, record.element, records, page, context)) continue;
+    const originalLeft = Number(record.object.left || 0);
+    const originalTop = Number(record.object.top || 0);
+    const declaredLeft = Number(record.element.x || originalLeft);
+    const declaredTop = Number(record.element.y || originalTop);
+    const gap = Math.max(2 * PX_PER_MM, 8);
+    const candidates = [{ left: declaredLeft, top: declaredTop, reason: "DECLARED_ANCHOR" }];
+    for (const blocker of blockers) {
+      const b = blocker.bounds;
+      candidates.push(
+        { left: b.right + gap, top: b.top, reason: "RIGHT_OF_BLOCKER", blocker: blocker.id },
+        { left: b.left - gap - Math.max(1, Number(record.object.width || 0)), top: b.top, reason: "LEFT_OF_BLOCKER", blocker: blocker.id },
+        { left: b.left, top: b.bottom + gap, reason: "BELOW_BLOCKER", blocker: blocker.id },
+        { left: b.left, top: b.top - gap - Math.max(1, Number(record.object.height || 0)), reason: "ABOVE_BLOCKER", blocker: blocker.id },
+      );
+    }
+    // Last-resort bounded grid search. This keeps the repair deterministic and
+    // avoids inventing a new layout algorithm while still finding a readable
+    // text zone when the AI placed text inside a photo's footprint.
+    const safe = Number(context?.doc?.page_spec?.safe_margin_mm || 8) * PX_PER_MM;
+    for (let top = safe; top <= page.height - safe; top += 24) {
+      for (let left = safe; left <= page.width - safe; left += 24) candidates.push({ left, top, reason: "SAFE_GRID" });
+    }
+    candidates.sort((a, b) => (Math.hypot(a.left - declaredLeft, a.top - declaredTop) - Math.hypot(b.left - declaredLeft, b.top - declaredTop)));
+    let repaired = null;
+    for (const candidate of candidates) {
+      record.object.set({ left: candidate.left, top: candidate.top });
+      record.object.setCoords?.();
+      if (textRenderPositionIsSafe(record.object, record.element, records, page, context)) {
+        repaired = candidate;
+        break;
+      }
+    }
+    if (!repaired) {
+      record.object.set({ left: originalLeft, top: originalTop });
+      record.object.setCoords?.();
+      continue;
+    }
+    const position = syncTextElementPosition(record.object, record.element);
+    renderRepair(record.element, "FABRIC_TEXT_COLLISION_MOVE", { ...position, strategy: repaired.reason, blocker: repaired.blocker || null }, context);
+    record.bounds = fabricBounds(record.object);
   }
 }
 
@@ -660,7 +761,7 @@ async function addDesignAsset(element, loaded = null, context = null) {
 function textOptions(element, context = null) {
   const style = element.text_style || {};
   return {
-    left: Number(element.x || 0), top: Number(element.y || 0), width: Number(element.width || 240),
+    left: Number(element.x || 0), top: Number(element.y || 0), originX: "left", originY: "top", width: Number(element.width || 240),
     fontFamily: FONT_STACKS[style.font_id] || FONT_STACKS.serif, fontSize: Number(style.font_size_pt || 12) * PT_TO_PX,
     fontWeight: style.weight || "normal", fontStyle: style.italic ? "italic" : "normal",
     textAlign: style.alignment || "left", lineHeight: Number(style.line_height || 1.15),
@@ -982,11 +1083,11 @@ async function renderDocument(targetCanvas, doc, options = {}) {
     if (result?.rendered) context.report.rendered_element_ids.push(elementId(element));
   }
   await addLayeredDebugOverlay(targetCanvas, context);
-  // All asset loads and bounded text repairs are complete at this point. The
-  // post-render pass deliberately measures the real Fabric objects, so browser
-  // font metrics, wrapping, rotation, scale and frame geometry are authoritative
-  // for the final composition report. It never moves objects or changes the
-  // document; safe-area/font fitting remain the only bounded render repairs.
+  // Measure and repair in the same Fabric coordinate space used by both the
+  // editor and PNG export. Schema/mm bounds alone cannot account for browser
+  // font metrics, wrapping, rotation and actual textbox bounds.
+  targetCanvas.renderAll();
+  repairRenderedTextCollisions(targetCanvas, visible, context);
   targetCanvas.renderAll();
   if (window.collageRenderValidation) {
     window.collageRenderValidation.validateRenderedComposition({

@@ -48,6 +48,9 @@ class CollageEditorContractTests(unittest.TestCase):
         self.assertIn("targetCanvas.renderAll();", source)
         self.assertIn("validateRenderedComposition", source)
         self.assertIn("renderedObjectsByElement(targetCanvas)", source)
+        self.assertIn("repairRenderedTextCollisions(targetCanvas, visible, context)", source)
+        self.assertIn('originX: "left", originY: "top"', source)
+        self.assertIn('FABRIC_TEXT_COLLISION_MOVE', source)
         self.assertIn('object.setCoords?.();', source)
         for code in (
             "FABRIC_TEXT_DECLARED_BOX_OVERFLOW",

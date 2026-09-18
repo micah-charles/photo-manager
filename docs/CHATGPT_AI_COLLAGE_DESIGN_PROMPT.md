@@ -138,6 +138,15 @@ MECHANICAL GEOMETRY RULES:
     and photos/decorations where practical. A real intersection is an error;
     clearance is a warning. Keep important text inside safe margins and all
     elements within page bounds or explicitly valid bleed.
+
+24. Give every text element a dedicated text zone. Prefer at least 5 mm of
+    visual clearance between AI-generated text and any photo frame, decoration,
+    or foreground asset. Do not place narrative text immediately beside a
+    photo when wrapping, browser font substitution, or final print metrics
+    could make the rendered text bounds cross into that photo. The final
+    Fabric/browser bounds are authoritative; a text element that is valid in
+    mm coordinates but collides after rendering must be moved to a clear zone
+    and validated again.
 24. Every text box must be large enough for its content. Prefer
     `wrap_and_shrink` or `shrink_to_fit`; never rely on silent browser clipping.
     PhotoManager will validate, attempt only conservative text repairs, and
