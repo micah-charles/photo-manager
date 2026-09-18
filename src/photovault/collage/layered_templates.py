@@ -15,6 +15,7 @@ from typing import Any
 
 from PIL import Image, ImageChops, ImageDraw
 
+from .design_formats import PHOTO_ROLES
 from .geometry import page_dimensions_mm
 
 CAPABILITY = "layered-template"
@@ -176,7 +177,7 @@ def validate_layered_template(manifest: dict[str, Any], design: dict[str, Any], 
         if not isinstance(slot_id, str) or not slot_id or len(slot_id) > 32 or not isinstance(raw_slot, dict):
             raise ValueError("layered template slot IDs and definitions are invalid")
         role = str(raw_slot.get("role", "supporting"))
-        if role not in {"hero", "secondary", "supporting", "detail", "background"}:
+        if role not in PHOTO_ROLES:
             raise ValueError(f"unsupported layered template role for {slot_id}")
         _slot_rect(raw_slot, page)
         mask_path = _safe_template_path(masks[slot_id], names, f"template.masks.{slot_id}")

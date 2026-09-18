@@ -23,7 +23,7 @@ def png(image: Image.Image) -> bytes:
     return output.getvalue()
 
 
-def package_images(*, foreground_alpha: int = 0, mask_shape: str = "rectangle") -> tuple[_Archive, dict, dict, set[str]]:
+def package_images(*, foreground_alpha: int = 0, mask_shape: str = "rectangle", slot_role: str = "hero") -> tuple[_Archive, dict, dict, set[str]]:
     foreground = Image.new("RGBA", (200, 200), (255, 255, 255, foreground_alpha))
     mask = Image.new("L", (200, 200), 0)
     draw = ImageDraw.Draw(mask)
@@ -44,7 +44,7 @@ def package_images(*, foreground_alpha: int = 0, mask_shape: str = "rectangle") 
         "template": {
             "foreground": "template/foreground.png",
             "masks": {"A01": "template/masks/A01.png"},
-            "slots": {"A01": {"role": "hero", "x_mm": 10, "y_mm": 10, "width_mm": 80, "height_mm": 80}},
+            "slots": {"A01": {"role": slot_role, "x_mm": 10, "y_mm": 10, "width_mm": 80, "height_mm": 80}},
         },
     }
     design = {"page_spec": {"type": "single", "width_mm": 100, "height_mm": 100}}
@@ -52,6 +52,14 @@ def package_images(*, foreground_alpha: int = 0, mask_shape: str = "rectangle") 
 
 
 class LayeredTemplateTests(unittest.TestCase):
+    def test_accepts_all_supported_photo_roles_for_layered_slots(self):
+        for role in ("sequence", "context", "secondary"):
+            with self.subTest(role=role):
+                archive, manifest, design, names = package_images(slot_role=role)
+                result = validate_layered_template(manifest, design, archive, names)
+                self.assertIsNotNone(result)
+                self.assertEqual(result["template"]["slots"]["A01"]["role"], role)
+
     def test_normalises_white_mask_to_alpha_without_changing_contract(self):
         archive, manifest, design, names = package_images(mask_shape="circle")
         result = validate_layered_template(manifest, design, archive, names)
