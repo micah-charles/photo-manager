@@ -282,6 +282,21 @@ def _adaptive_editorial_layout(
         ]
         return slots, 207, 62, "grid"
 
+    if asset_count == 9:
+        # Nine photos form a complete 2 + 3 + 4 page.  Allocate both guided
+        # sub-heroes and the supporting beat explicitly so role imbalance
+        # cannot strand one source photo in a singleton gallery.
+        slots = top + [
+            (14, 121, 58, 39, "secondary", "rectangle"),
+            (76, 121, 58, 39, "supporting", "rectangle"),
+            (138, 121, 58, 39, "detail", "rectangle"),
+            (14, 166, 44, 34, "detail", "rectangle"),
+            (61, 166, 44, 34, "detail", "rectangle"),
+            (108, 166, 44, 34, "detail", "rectangle"),
+            (155, 166, 41, 34, "detail", "rectangle"),
+        ]
+        return slots, 207, 62, "grid"
+
     if asset_count <= 12:
         # 2 top anchors + 3 readable beats + 4 smaller details = 9 editorial
         # positions. Only 1–3 photos need the closing gallery.

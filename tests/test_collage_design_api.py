@@ -58,6 +58,16 @@ class CollageDesignApiTests(unittest.TestCase):
         self.assertEqual(max(photo["y_mm"] for photo in photos), 166)
         self.assertEqual(sum(photo["y_mm"] == 166 for photo in photos), 5)
 
+    def test_nine_assets_use_a_complete_editorial_grid(self) -> None:
+        section = {"title": "Cable car", "topic_name": "Test trip"}
+        asset_ids = [f"asset-{index:02d}" for index in range(1, 10)]
+        guidance = {"Cable car": {"hero_indices": [1], "subhero_indices": [2, 3], "supporting_indices": [4]}}
+        spec, _, _ = build_a4_design_spec(section, asset_ids, guidance)
+        photos = [element for element in spec["alternatives"][0]["elements"] if element.get("type") == "photo"]
+        self.assertEqual(len(photos), len(asset_ids))
+        self.assertEqual(spec["composition"]["gallery_asset_count"], 0)
+        self.assertEqual(sum(photo["y_mm"] == 166 for photo in photos), 4)
+
     def test_export_validate_import_and_save_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "photos"
