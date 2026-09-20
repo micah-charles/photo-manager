@@ -304,6 +304,22 @@ def _adaptive_editorial_layout(
                 (155, 189, 41, 75, "detail", "rectangle"),
             ]
             return slots, 264, 0, "grid"
+        if archetype == "scenic_hero" and variant == "waterfall_family_walk":
+            # Keep the family-led hero and waterfall sub-hero, but use the
+            # extended 2 + 3 + 4 rhythm so the supporting walk and cascade
+            # frames remain readable instead of ending in a compressed strip.
+            slots = [
+                (14, 45, 118, 78, "hero", "rectangle"),
+                (138, 45, 58, 78, "secondary", "rounded"),
+                (14, 131, 58, 52, "secondary", "rectangle"),
+                (76, 131, 58, 52, "supporting", "rectangle"),
+                (138, 131, 58, 52, "detail", "rectangle"),
+                (14, 189, 43, 75, "detail", "rectangle"),
+                (61, 189, 43, 75, "detail", "rectangle"),
+                (108, 189, 43, 75, "detail", "rectangle"),
+                (155, 189, 41, 75, "detail", "rectangle"),
+            ]
+            return slots, 264, 0, "grid"
         if archetype == "scenic_hero" and variant == "ridge_people_right":
             # This ridge story has one wide scenic anchor and one vertical
             # mother/child portrait.  Keep both readable at the top, then use
