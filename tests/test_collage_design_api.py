@@ -136,6 +136,30 @@ class CollageDesignApiTests(unittest.TestCase):
         self.assertEqual(sum(photo["y_mm"] == 189 for photo in photos), 4)
         self.assertEqual(next(photo for photo in photos if photo["asset_id"] == "asset-09")["image"]["focus_y"], 0.54)
 
+    def test_nine_photo_snowdonia_story_promotes_landscape_hero_and_fills_a4_field(self) -> None:
+        section = {"title": "Snowdonia - On the Way", "topic_name": "Test trip"}
+        asset_ids = [f"asset-{index:02d}" for index in range(1, 10)]
+        guidance = {
+            "Snowdonia - On the Way": {
+                "layout_archetype": "scenic_hero",
+                "composition_variant": "snowdonia_sheep_lake",
+                "hero_indices": [7, 8],
+                "subhero_indices": [1, 5],
+                "supporting_indices": [8],
+                "detail_indices": [2, 3, 4, 6, 9],
+            }
+        }
+        spec, hero_ids, subhero_ids = build_a4_design_spec(section, asset_ids, guidance)
+        photos = [element for element in spec["alternatives"][0]["elements"] if element.get("type") == "photo"]
+        self.assertEqual(set(photo["asset_id"] for photo in photos), set(asset_ids))
+        self.assertEqual(len({photo["asset_id"] for photo in photos}), len(asset_ids))
+        self.assertEqual(spec["composition"]["gallery_asset_count"], 0)
+        self.assertEqual(hero_ids, ["asset-07"])
+        self.assertEqual(subhero_ids, ["asset-01", "asset-05"])
+        self.assertEqual([(photo["x_mm"], photo["y_mm"], photo["width_mm"], photo["height_mm"]) for photo in photos[:2]], [(14, 45, 118, 78), (138, 45, 58, 78)])
+        self.assertEqual(sum(photo["y_mm"] == 189 for photo in photos), 4)
+        self.assertEqual(next(photo for photo in photos if photo["asset_id"] == "asset-08")["role"], "supporting")
+
     def test_role_summary_matches_roles_that_were_rendered(self) -> None:
         section = {"title": "Castle views", "topic_name": "Test trip"}
         asset_ids = [f"asset-{index:02d}" for index in range(1, 13)]

@@ -25,7 +25,7 @@
     "Snowdown Mountatin 01": {"title": "山頂上的母子同行", "layout_archetype": "scenic_hero", "composition_variant": "panorama_then_portraits", "hero_indices": [8, 5], "subhero_indices": [5, 6], "supporting_indices": [7], "detail_indices": [1, 2, 3, 4], "focus_x_by_index": {"5": 0.46, "6": 0.46, "7": 0.48}, "focus_y_by_index": {"3": 0.40, "5": 0.43, "6": 0.46, "7": 0.46}},
     "Snowdown Mountatin 02": {"title": "山脊上的同行身影", "layout_archetype": "scenic_hero", "composition_variant": "ridge_people_right", "hero_indices": [7, 2], "subhero_indices": [9, 3], "supporting_indices": [1], "detail_indices": [2, 4, 5, 6, 8], "focus_y_by_index": {"7": 0.48, "9": 0.54}},
     "Snowdown Mountatin 03": {"title": "雲影下的山谷全景", "hero_indices": [2, 1], "subhero_indices": [5, 6, 7, 11]},
-    "Snowdonia - On the Way": {"title": "Snowdonia｜沿途山野、羊群與湖泊", "hero_indices": [8, 7], "subhero_indices": [1, 4, 5, 6]},
+    "Snowdonia - On the Way": {"title": "Snowdonia｜沿途山野、羊群與湖泊", "layout_archetype": "scenic_hero", "composition_variant": "snowdonia_sheep_lake", "hero_indices": [7, 8], "subhero_indices": [1, 5], "supporting_indices": [8], "detail_indices": [2, 3, 4, 6, 9]},
     "Ogwen Valley 01": {"title": "Ogwen Valley｜山溪橋上與黃花旁的同行", "hero_indices": [10, 2], "subhero_indices": [3, 8, 9, 12]},
     "Ogwen Valley 02": {"title": "瀑布、山谷與母子同行", "hero_indices": [8, 6], "subhero_indices": [2, 5, 7, 9]},
     "Ogwen Valley 03": {"title": "高山湖畔的家庭時光", "hero_indices": [11, 1], "subhero_indices": [4, 5, 7, 12]},
