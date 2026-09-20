@@ -68,6 +68,23 @@ class CollageDesignApiTests(unittest.TestCase):
         self.assertEqual(spec["composition"]["gallery_asset_count"], 0)
         self.assertEqual(sum(photo["y_mm"] == 166 for photo in photos), 4)
 
+    def test_eight_assets_keep_two_subheroes_in_a_balanced_closing_grid(self) -> None:
+        section = {"title": "Snowdown Mountatin 01", "topic_name": "Test trip"}
+        asset_ids = [f"asset-{index:02d}" for index in range(1, 9)]
+        guidance = {
+            "Snowdown Mountatin 01": {
+                "hero_indices": [1, 2],
+                "subhero_indices": [2, 3],
+            }
+        }
+        spec, _, subhero_ids = build_a4_design_spec(section, asset_ids, guidance)
+        photos = [element for element in spec["alternatives"][0]["elements"] if element.get("type") == "photo"]
+        self.assertEqual([photo["asset_id"] for photo in photos], asset_ids)
+        self.assertEqual(spec["composition"]["gallery_asset_count"], 0)
+        self.assertEqual(len(subhero_ids), 2)
+        self.assertEqual(spec["composition"]["rendered_role_counts"]["secondary"], 2)
+        self.assertEqual(sum(photo["y_mm"] == 169 for photo in photos), 3)
+
     def test_role_summary_matches_roles_that_were_rendered(self) -> None:
         section = {"title": "Castle views", "topic_name": "Test trip"}
         asset_ids = [f"asset-{index:02d}" for index in range(1, 13)]

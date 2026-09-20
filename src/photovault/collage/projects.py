@@ -297,6 +297,23 @@ def _adaptive_editorial_layout(
         ]
         return slots, 207, 62, "grid"
 
+    if asset_count == 8:
+        # Eight-photo stories need two secondary beats in the editorial flow.
+        # Without the second secondary slot, a second guided sub-hero falls
+        # through to the contact area and becomes a lonely closing card.  Use
+        # a balanced 2 + 3 + 3 composition instead: the final row becomes a
+        # real closing cluster, while every source asset remains prominent
+        # enough to read as part of the story.
+        slots = top + [
+            (14, 121, 58, 42, "secondary", "rectangle"),
+            (76, 121, 58, 42, "supporting", "rectangle"),
+            (138, 121, 58, 42, "detail", "rectangle"),
+            (14, 169, 58, 50, "detail", "rectangle"),
+            (76, 169, 58, 50, "detail", "rectangle"),
+            (138, 169, 58, 50, "detail", "rectangle"),
+        ]
+        return slots, 226, 50, "grid"
+
     if asset_count <= 12:
         # 2 top anchors + 3 readable beats + 4 smaller details = 9 editorial
         # positions. Only 1–3 photos need the closing gallery.
@@ -575,12 +592,10 @@ def build_a4_design_spec(section: dict[str, Any], asset_ids: list[str], guidance
     caption_y = min(photo_bottom + 3.5, 270.0)
     if closing_caption and caption_y + 8 <= 280:
         elements.append({"id": "closing-caption", "type": "text", "content": closing_caption, "x_mm": 14, "y_mm": caption_y, "width_mm": 182, "height_mm": 7, "text_style": {"font_id": "serif", "font_size_pt": 7.5, "weight": "600", "color": "#43534b", "line_height": 1.1}, "z_index": 80})
-    # Short six-photo stories still need the same true page footer as the
-    # longer layouts; otherwise the unused lower page area reads like a
-    # missing composition block.  Longer stories keep their caption-aware
-    # footer close to the content without colliding with the page edge.
-    footer_y = 284.0 if len(asset_ids) <= 6 else min(284.0, max(220.0, photo_bottom + (18.0 if closing_caption else 12.0)))
-    elements.append({"id": "footer", "type": "text", "content": f"{len(asset_ids)} photos · {len(rendered_hero_ids)} hero · {len(rendered_subhero_ids)} sub-hero · {archetype.replace('_', ' ')}", "x_mm": 14, "y_mm": footer_y, "width_mm": 182, "height_mm": 6, "text_style": {"font_id": "sans", "font_size_pt": 6.5, "weight": "normal", "color": "#687169", "line_height": 1.1}, "z_index": 90})
+    # Rendering diagnostics belong in ``metadata.composition`` and the editor
+    # inspector, never in the artwork itself.  Keeping the page free of a
+    # generated "N photos · hero · sub-hero" footer makes the exported page
+    # read as a finished story rather than a debug sheet.
     composition = {
         "layout_archetype": archetype,
         "composition_variant": variant,
