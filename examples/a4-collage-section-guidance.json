@@ -28,7 +28,7 @@
     "Snowdonia - On the Way": {"title": "Snowdonia｜沿途山野、羊群與湖泊", "layout_archetype": "scenic_hero", "composition_variant": "snowdonia_sheep_lake", "hero_indices": [7, 8], "subhero_indices": [1, 5], "supporting_indices": [8], "detail_indices": [2, 3, 4, 6, 9]},
     "Ogwen Valley 01": {"title": "Ogwen Valley｜山溪橋上與黃花旁的同行", "hero_indices": [10, 2], "subhero_indices": [3, 8, 9, 12]},
     "Ogwen Valley 02": {"title": "瀑布、山谷與母子同行", "layout_archetype": "scenic_hero", "composition_variant": "waterfall_family_walk", "hero_indices": [8, 6], "subhero_indices": [2, 5], "supporting_indices": [7], "detail_indices": [1, 3, 4, 9]},
-    "Ogwen Valley 03": {"title": "高山湖畔的家庭時光", "hero_indices": [11, 1], "subhero_indices": [4, 5, 7, 12]},
+    "Ogwen Valley 03": {"title": "高山湖畔的家庭時光", "layout_archetype": "scenic_hero", "composition_variant": "family_lakeside_sequence", "hero_indices": [11, 1], "subhero_indices": [4], "supporting_indices": [1, 2, 3, 6, 7], "detail_indices": [5, 8, 9, 10, 12, 13, 14], "focus_y_by_index": {"5": 0.44, "8": 0.44, "9": 0.44, "10": 0.44, "12": 0.44, "13": 0.44, "14": 0.44}},
     "Bangor - Penrhyn Castle 01": {"title": "Bangor · Penrhyn Castle｜紅葉城牆下的同行", "hero_indices": [8, 11], "subhero_indices": [1, 4, 7, 10]},
     "Bangor - Penrhyn Castle 02": {"title": "華麗室內與古堡生活", "hero_indices": [4, 9], "subhero_indices": [1, 3, 6, 8]},
     "Bangor - Penrhyn Castle 03": {"title": "拱廊深處的光影", "hero_indices": [2, 9], "subhero_indices": [1, 3, 5, 10]},

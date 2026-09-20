@@ -349,6 +349,29 @@ def _adaptive_editorial_layout(
         ]
         return slots, 207, 62, "grid"
 
+    if asset_count == 14 and archetype == "scenic_hero" and variant == "family_lakeside_sequence":
+        # This family/lakeside section contains a near-duplicate burst.  Keep
+        # every frame, but make the repeated family shots read as a deliberate
+        # closing strip while the lake, mountain and walking views retain
+        # readable editorial slots in the middle of the page.
+        slots = [
+            (14, 45, 118, 78, "hero", "rectangle"),
+            (138, 45, 58, 78, "secondary", "rounded"),
+            (14, 131, 58, 48, "supporting", "rectangle"),
+            (76, 131, 58, 48, "supporting", "rectangle"),
+            (138, 131, 58, 48, "supporting", "rectangle"),
+            (14, 184, 58, 48, "supporting", "rectangle"),
+            (76, 184, 58, 48, "supporting", "rectangle"),
+            (138, 184, 58, 48, "detail", "rectangle"),
+            (14, 237, 28, 27, "detail", "rectangle"),
+            (45, 237, 28, 27, "detail", "rectangle"),
+            (76, 237, 28, 27, "detail", "rectangle"),
+            (107, 237, 28, 27, "detail", "rectangle"),
+            (138, 237, 28, 27, "detail", "rectangle"),
+            (169, 237, 27, 27, "detail", "rectangle"),
+        ]
+        return slots, 264, 0, "filmstrip"
+
     if asset_count == 8:
         # Eight-photo stories need two secondary beats in the editorial flow.
         # Without the second secondary slot, a second guided sub-hero falls
