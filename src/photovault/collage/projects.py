@@ -264,6 +264,24 @@ def _adaptive_editorial_layout(
         ]
         return slots, 191, 75, "grid"
 
+    if asset_count == 10:
+        # Ten photos should also resolve to a complete story grid.  Leaving
+        # one asset for the gallery creates a singleton that reads like an
+        # accidental leftover rather than an intentional closing beat.
+        slots = top + [
+            # Keep a second guided sub-hero in the editorial flow instead of
+            # allowing it to fall through into a one-photo gallery.
+            (14, 121, 58, 39, "secondary", "rectangle"),
+            (76, 121, 58, 39, "supporting", "rectangle"),
+            (138, 121, 58, 39, "detail", "rectangle"),
+            (14, 166, 33, 34, "detail", "rectangle"),
+            (50, 166, 33, 34, "detail", "rectangle"),
+            (86, 166, 33, 34, "detail", "rectangle"),
+            (122, 166, 33, 34, "detail", "rectangle"),
+            (158, 166, 38, 34, "detail", "rectangle"),
+        ]
+        return slots, 207, 62, "grid"
+
     if asset_count <= 12:
         # 2 top anchors + 3 readable beats + 4 smaller details = 9 editorial
         # positions. Only 1–3 photos need the closing gallery.
