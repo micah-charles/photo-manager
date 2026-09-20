@@ -231,6 +231,31 @@ class CollageDesignApiTests(unittest.TestCase):
         self.assertEqual(sum(photo["y_mm"] == 178 for photo in photos), 5)
         self.assertEqual(max(photo["y_mm"] + photo["height_mm"] for photo in photos), 261)
 
+    def test_ten_photo_birthplace_family_story_promotes_dining_group(self) -> None:
+        section = {"title": "Shakespeare's Birthplace - Micah", "topic_name": "Test trip"}
+        asset_ids = [f"asset-{index:02d}" for index in range(1, 11)]
+        guidance = {
+            "Shakespeare's Birthplace - Micah": {
+                "layout_archetype": "architecture_journey",
+                "composition_variant": "birthplace_family_story",
+                "hero_indices": [2, 9],
+                "subhero_indices": [3, 7, 8, 10],
+                "supporting_indices": [9],
+                "detail_indices": [1, 4, 5, 6, 8, 10],
+            }
+        }
+        spec, hero_ids, subhero_ids = build_a4_design_spec(section, asset_ids, guidance)
+        photos = [element for element in spec["alternatives"][0]["elements"] if element.get("type") == "photo"]
+        self.assertEqual(set(photo["asset_id"] for photo in photos), set(asset_ids))
+        self.assertEqual(len({photo["asset_id"] for photo in photos}), len(asset_ids))
+        self.assertEqual(spec["composition"]["gallery_asset_count"], 0)
+        self.assertEqual(hero_ids, ["asset-02"])
+        self.assertEqual(subhero_ids, ["asset-03", "asset-07"])
+        dining = next(photo for photo in photos if photo["asset_id"] == "asset-09")
+        self.assertEqual((dining["x_mm"], dining["y_mm"], dining["width_mm"], dining["height_mm"]), (76, 121, 80, 52))
+        self.assertEqual(sum(photo["y_mm"] == 178 for photo in photos), 5)
+        self.assertEqual(max(photo["y_mm"] + photo["height_mm"] for photo in photos), 261)
+
     def test_ten_photo_interior_sequence_promotes_distinctive_supporting_frame(self) -> None:
         section = {"title": "Bangor - Penrhyn Castle 03", "topic_name": "Test trip"}
         asset_ids = [f"asset-{index:02d}" for index in range(1, 11)]

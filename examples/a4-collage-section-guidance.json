@@ -34,7 +34,7 @@
     "Bangor - Penrhyn Castle 03": {"title": "拱廊深處的光影", "layout_archetype": "architecture_journey", "composition_variant": "interior_sequence", "hero_indices": [2, 9], "subhero_indices": [1, 3], "supporting_indices": [4], "detail_indices": [5, 6, 7, 8, 9, 10]},
     "Bangor - Penrhyn Castle 04": {"title": "宴會廳、彩窗與古宅細節", "hero_indices": [5, 12], "subhero_indices": [1, 6, 7, 11]},
     "Bangor - Penrhyn Castle 05": {"title": "花園、海灣與城堡的春日風景", "hero_indices": [4, 3], "subhero_indices": [1, 2, 8, 9]},
-    "Shakespeare's Birthplace - Micah": {"title": "Stratford-upon-Avon · Shakespeare's Birthplace｜老屋前與家人共聚", "hero_indices": [2, 9], "subhero_indices": [3, 7, 8, 10]},
+    "Shakespeare's Birthplace - Micah": {"title": "Stratford-upon-Avon · Shakespeare's Birthplace｜老屋前與家人共聚", "layout_archetype": "architecture_journey", "composition_variant": "birthplace_family_story", "hero_indices": [2, 9], "subhero_indices": [3, 7, 8, 10], "supporting_indices": [9], "detail_indices": [1, 4, 5, 6, 8, 10]},
     "Shakespeare's Birthplace 01": {"title": "彩窗、古堂與同行家人", "hero_indices": [11, 1], "subhero_indices": [2, 3, 4, 7]},
     "Shakespeare's Birthplace 02": {"title": "莎士比亞小鎮街景與故居", "hero_indices": [1, 3], "subhero_indices": [6, 8, 10, 12]},
     "Bodnant Garden - Group": {"title": "Bodnant Garden｜花海中的全家合照", "hero_indices": [1, 8], "subhero_indices": [2, 3, 6, 9]},

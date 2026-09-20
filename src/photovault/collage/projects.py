@@ -268,6 +268,24 @@ def _adaptive_editorial_layout(
         # Ten photos should also resolve to a complete story grid.  Leaving
         # one asset for the gallery creates a singleton that reads like an
         # accidental leftover rather than an intentional closing beat.
+        if archetype == "architecture_journey" and variant == "birthplace_family_story":
+            # The birthplace page is not only an architecture record: its
+            # strongest emotional beat is the family gathered around the
+            # table.  Keep the Tudor-house hero and companion street view,
+            # promote the wide family dining frame to a readable supporting
+            # slot, and let the remaining house/details close the A4 story.
+            # Every source photo remains a distinct editorial element.
+            slots = top + [
+                (14, 121, 58, 52, "secondary", "rectangle"),
+                (76, 121, 80, 52, "supporting", "rectangle"),
+                (160, 121, 36, 52, "detail", "rectangle"),
+                (14, 178, 34, 83, "detail", "rectangle"),
+                (51, 178, 34, 83, "detail", "rectangle"),
+                (88, 178, 34, 83, "detail", "rectangle"),
+                (125, 178, 34, 83, "detail", "rectangle"),
+                (162, 178, 34, 83, "detail", "rectangle"),
+            ]
+            return slots, 264, 0, "grid"
         if archetype == "architecture_journey" and variant == "interior_sequence":
             # This corridor/arcade story has a distinctive interior-person
             # frame that should read as a supporting beat, not disappear among
