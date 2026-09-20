@@ -36,15 +36,16 @@ class CollageDesignApiTests(unittest.TestCase):
         self.assertGreaterEqual(spec["composition"]["editorial_slot_count"], 9)
         self.assertLessEqual(spec["composition"]["gallery_asset_count"], 3)
 
-    def test_one_remaining_asset_is_a_small_closing_vignette(self) -> None:
+    def test_six_assets_use_a_complete_editorial_grid(self) -> None:
         section = {"title": "Bangor Cathedral", "topic_name": "Test trip"}
         asset_ids = [f"asset-{index:02d}" for index in range(1, 7)]
         spec, _, _ = build_a4_design_spec(section, asset_ids, {})
         photos = [element for element in spec["alternatives"][0]["elements"] if element.get("type") == "photo"]
         last = photos[-1]
         self.assertEqual(len(photos), len(asset_ids))
-        self.assertLess(last["width_mm"], 100)
-        self.assertLess(last["height_mm"], 45)
+        self.assertEqual(spec["composition"]["gallery_asset_count"], 0)
+        self.assertEqual(last["y_mm"], 128)
+        self.assertGreater(last["height_mm"], 45)
 
     def test_export_validate_import_and_save_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
