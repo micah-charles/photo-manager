@@ -231,6 +231,32 @@ class CollageDesignApiTests(unittest.TestCase):
         self.assertEqual(sum(photo["y_mm"] == 178 for photo in photos), 5)
         self.assertEqual(max(photo["y_mm"] + photo["height_mm"] for photo in photos), 261)
 
+    def test_ten_photo_interior_sequence_promotes_distinctive_supporting_frame(self) -> None:
+        section = {"title": "Bangor - Penrhyn Castle 03", "topic_name": "Test trip"}
+        asset_ids = [f"asset-{index:02d}" for index in range(1, 11)]
+        guidance = {
+            "Bangor - Penrhyn Castle 03": {
+                "layout_archetype": "architecture_journey",
+                "composition_variant": "interior_sequence",
+                "hero_indices": [2, 9],
+                "subhero_indices": [1, 3],
+                "supporting_indices": [4],
+                "detail_indices": [5, 6, 7, 8, 9, 10],
+            }
+        }
+        spec, hero_ids, subhero_ids = build_a4_design_spec(section, asset_ids, guidance)
+        photos = [element for element in spec["alternatives"][0]["elements"] if element.get("type") == "photo"]
+        self.assertEqual(set(photo["asset_id"] for photo in photos), set(asset_ids))
+        self.assertEqual(len({photo["asset_id"] for photo in photos}), len(asset_ids))
+        self.assertEqual(spec["composition"]["gallery_asset_count"], 0)
+        self.assertEqual(hero_ids, ["asset-02"])
+        self.assertEqual(subhero_ids, ["asset-01", "asset-03"])
+        self.assertEqual([(photo["x_mm"], photo["y_mm"], photo["width_mm"], photo["height_mm"]) for photo in photos[:2]], [(14, 45, 120, 70), (138, 45, 58, 70)])
+        supporting = next(photo for photo in photos if photo["asset_id"] == "asset-04")
+        self.assertEqual((supporting["x_mm"], supporting["y_mm"], supporting["width_mm"], supporting["height_mm"]), (14, 121, 80, 52))
+        self.assertEqual(sum(photo["y_mm"] == 178 for photo in photos), 5)
+        self.assertEqual(max(photo["y_mm"] + photo["height_mm"] for photo in photos), 261)
+
     def test_role_summary_matches_roles_that_were_rendered(self) -> None:
         section = {"title": "Castle views", "topic_name": "Test trip"}
         asset_ids = [f"asset-{index:02d}" for index in range(1, 13)]

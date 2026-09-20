@@ -31,7 +31,7 @@
     "Ogwen Valley 03": {"title": "高山湖畔的家庭時光", "layout_archetype": "scenic_hero", "composition_variant": "family_lakeside_sequence", "hero_indices": [11, 1], "subhero_indices": [4], "supporting_indices": [1, 2, 3, 6, 7], "detail_indices": [5, 8, 9, 10, 12, 13, 14], "focus_y_by_index": {"5": 0.44, "8": 0.44, "9": 0.44, "10": 0.44, "12": 0.44, "13": 0.44, "14": 0.44}},
     "Bangor - Penrhyn Castle 01": {"title": "Bangor · Penrhyn Castle｜紅葉城牆下的同行", "hero_indices": [8, 11], "subhero_indices": [1, 4, 7, 10]},
     "Bangor - Penrhyn Castle 02": {"title": "華麗室內與古堡生活", "layout_archetype": "architecture_journey", "composition_variant": "interior_architecture", "hero_indices": [4, 9], "subhero_indices": [1, 3, 6, 8]},
-    "Bangor - Penrhyn Castle 03": {"title": "拱廊深處的光影", "hero_indices": [2, 9], "subhero_indices": [1, 3, 5, 10]},
+    "Bangor - Penrhyn Castle 03": {"title": "拱廊深處的光影", "layout_archetype": "architecture_journey", "composition_variant": "interior_sequence", "hero_indices": [2, 9], "subhero_indices": [1, 3], "supporting_indices": [4], "detail_indices": [5, 6, 7, 8, 9, 10]},
     "Bangor - Penrhyn Castle 04": {"title": "宴會廳、彩窗與古宅細節", "hero_indices": [5, 12], "subhero_indices": [1, 6, 7, 11]},
     "Bangor - Penrhyn Castle 05": {"title": "花園、海灣與城堡的春日風景", "hero_indices": [4, 3], "subhero_indices": [1, 2, 8, 9]},
     "Shakespeare's Birthplace - Micah": {"title": "Stratford-upon-Avon · Shakespeare's Birthplace｜老屋前與家人共聚", "hero_indices": [2, 9], "subhero_indices": [3, 7, 8, 10]},
