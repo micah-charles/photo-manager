@@ -286,6 +286,24 @@ def _adaptive_editorial_layout(
         # Nine photos form a complete 2 + 3 + 4 page.  Allocate both guided
         # sub-heroes and the supporting beat explicitly so role imbalance
         # cannot strand one source photo in a singleton gallery.
+        if archetype == "scenic_hero" and variant == "ridge_people_right":
+            # This ridge story has one wide scenic anchor and one vertical
+            # mother/child portrait.  Keep both readable at the top, then use
+            # a 3 + 4 closing grid that reaches the lower A4 field.  The
+            # supporting single-person frame stays visible, but never competes
+            # with the people-led sub-hero.
+            slots = [
+                (14, 45, 58, 78, "secondary", "rounded"),
+                (78, 45, 118, 78, "hero", "rectangle"),
+                (14, 131, 58, 52, "supporting", "rectangle"),
+                (76, 131, 58, 52, "secondary", "rectangle"),
+                (138, 131, 58, 52, "detail", "rectangle"),
+                (14, 189, 43, 75, "detail", "rectangle"),
+                (61, 189, 43, 75, "detail", "rectangle"),
+                (108, 189, 43, 75, "detail", "rectangle"),
+                (155, 189, 41, 75, "detail", "rectangle"),
+            ]
+            return slots, 264, 0, "grid"
         slots = top + [
             (14, 121, 58, 39, "secondary", "rectangle"),
             (76, 121, 58, 39, "supporting", "rectangle"),
