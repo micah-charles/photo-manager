@@ -16,6 +16,7 @@ const state = {
   layerFilter: "all", layerSearch: "",
   lastExportReport: null,
   renderValidation: { validation_status: "valid", warnings: [], repairs: [] },
+  projects: [], project: null, projectId: null,
 };
 window.fabricSpikeState = state;
 
@@ -162,6 +163,14 @@ function normalizeDocument(raw) {
     ...item,
     type: item.type || (item.photo_id || item.asset_id ? "photo" : "rectangle"),
     element_id: item.element_id || item.id || `element-${index + 1}`,
+    // AI design specs express geometry in millimetres, while Fabric renders
+    // in pixels. Photo frames are already projected by the API, but text,
+    // lines and decoration layers arrive with *_mm fields only.
+    x: item.x ?? Number(item.x_mm || 0) * PX_PER_MM,
+    y: item.y ?? Number(item.y_mm || 0) * PX_PER_MM,
+    width: item.width ?? Number(item.width_mm || 0) * PX_PER_MM,
+    height: item.height ?? Number(item.height_mm || 0) * PX_PER_MM,
+    stroke_width: item.stroke_width ?? Number(item.stroke_width_mm || 0) * PX_PER_MM,
     z_index: Number(item.z_index ?? index),
   }));
   documentValue.frames = documentValue.elements.filter((item) => item.type === "photo");
@@ -814,7 +823,9 @@ function addDecoration(element, context = null) {
   let object;
   const strokeWidth = Number(element.stroke_width || 0) * PX_PER_MM;
   if (element.type === "text") {
-    object = new fabric.Textbox(String(element.content || ""), textOptions(element, ctx));
+    const options = textOptions(element, ctx);
+    delete options.width;
+    object = new fabric.Text(String(element.content || ""), options);
     fitTextObject(object, element, ctx);
     keepTextInsideSafeArea(object, element, ctx);
   } else if (element.type === "line") object = new fabric.Line([0, 0, width, height], { left: x, top: y, stroke: element.stroke || "#292521", strokeWidth, opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: ctx.interactive && !element.locked && !element.hidden, evented: ctx.interactive && !element.locked && !element.hidden, objectCaching: false });
@@ -1281,6 +1292,71 @@ async function loadCandidates() {
   if (Number.isInteger(queryIndex) && queryIndex >= 0 && queryIndex < state.candidates.length) $("candidate").value = queryIndex;
 }
 
+function projectStatus(message) { if ($("project-status")) $("project-status").textContent = message; }
+
+function renderProjectDocuments(project) {
+  const select = $("project-document");
+  if (!select) return;
+  const documents = Array.isArray(project?.documents) ? project.documents : [];
+  select.innerHTML = `<option value="">${documents.length ? "Choose a saved collage…" : "No collages in this project"}</option>` + documents.map((item, index) => `<option value="${esc(item.document_id)}">${String(index + 1).padStart(2, "0")} · ${esc(item.title || item.section_title || "Untitled collage")}</option>`).join("");
+  select.disabled = !documents.length;
+  if ($("open-project-document")) $("open-project-document").disabled = !documents.length;
+}
+
+async function loadProject(projectId) {
+  if (!projectId) { state.project = null; state.projectId = null; renderProjectDocuments(null); projectStatus("Choose a project or create one."); return; }
+  const project = await api(`/api/collage/projects/${encodeURIComponent(projectId)}`);
+  state.project = project; state.projectId = project.project_id;
+  if ($("project")) $("project").value = project.project_id;
+  renderProjectDocuments(project);
+  projectStatus(`${project.name} · ${(project.documents || []).length} saved collage${(project.documents || []).length === 1 ? "" : "s"}.`);
+}
+
+async function loadProjects() {
+  const data = await api("/api/collage/projects");
+  state.projects = data.projects || [];
+  const select = $("project");
+  if (!select) return;
+  select.innerHTML = `<option value="">Choose a project…</option>` + state.projects.map((project) => `<option value="${esc(project.project_id)}">${esc(project.name)} · ${project.document_count} collages</option>`).join("");
+  const requested = new URLSearchParams(location.search).get("project");
+  const documentProject = state.doc?.metadata?.project_id;
+  const projectId = requested || documentProject || state.projects[0]?.project_id || "";
+  if (projectId) await loadProject(projectId);
+}
+
+async function createProjectFromPrompt() {
+  const name = window.prompt("Project name", "2026 Apr Mothers Visit · A4 Story Collages");
+  if (!name?.trim()) return;
+  const project = await api("/api/collage/projects", { method: "POST", body: JSON.stringify({ name: name.trim(), description: "A4 collages generated from topic subsections with curated hero and sub-hero guidance." }) });
+  await loadProjects();
+  await loadProject(project.project_id);
+  projectStatus(`Created project ${project.name}.`);
+}
+
+async function attachDocumentToProject(document) {
+  if (!state.projectId || !document?.document_id) return;
+  const result = await api(`/api/collage/projects/${encodeURIComponent(state.projectId)}/documents`, { method: "POST", body: JSON.stringify({ document_id: document.document_id }) });
+  state.project = result.project; renderProjectDocuments(state.project); projectStatus(`${state.project.name} · saved current collage.`);
+}
+
+async function buildProject() {
+  if (!state.projectId) { status("Create or choose a Project first."); return; }
+  try {
+    status("Building the 33 A4 collages from the five 0412–0416 topics…");
+    const result = await api(`/api/collage/projects/${encodeURIComponent(state.projectId)}/generate`, { method: "POST", body: JSON.stringify({}) });
+    state.project = result.project; renderProjectDocuments(state.project);
+    projectStatus(`${state.project.name} · ${result.generated} A4 collages ready.`);
+    status(`Project ready: ${result.generated} subsection collages generated.`);
+  } catch (error) { status(`Project generation failed: ${error.message}`); }
+}
+
+async function openProjectDocument() {
+  const documentId = $("project-document")?.value;
+  const item = (state.project?.documents || []).find((document) => document.document_id === documentId);
+  if (!item) { status("Choose a saved project collage first."); return; }
+  await openDocument(item.document_url);
+}
+
 async function openDocument(url) {
   const documentUrl = url || state.savedDocumentUrl || state.candidates[Number($("candidate")?.value)]?.document;
   if (!documentUrl) { status("Choose a candidate first, or import an AI design."); return; }
@@ -1288,6 +1364,9 @@ async function openDocument(url) {
   // opened directly from an AI-design URL as well as run candidates.
   state.savedDocumentUrl = documentUrl;
   state.doc = normalizeDocument(await api(documentUrl)); state.history = []; state.future = []; state.activeId = elements()[0] ? elementId(elements()[0]) : null;
+  const documentProjectId = state.doc.metadata?.project_id;
+  if (documentProjectId && state.projects.some((project) => project.project_id === documentProjectId)) await loadProject(documentProjectId);
+  if ($( "project-document" ) && state.doc.document_id) $( "project-document" ).value = state.doc.document_id;
   await loadPhotos(); await queueRender(); updateDocumentChrome(); status("Document loaded. Fabric canvas ready.");
 }
 
@@ -1559,7 +1638,9 @@ async function saveVariant() {
   try {
     const payload = snapshot(); payload.elements = elements(); payload.frames = elements().filter((element) => element.type === "photo"); payload.cells = payload.frames;
     const result = await api("/api/collage/documents", { method: "POST", body: JSON.stringify(payload) });
-    state.doc = normalizeDocument(result.document); state.savedDocumentUrl = result.document_url; state.activeId = elements()[0] ? elementId(elements()[0]) : null; await loadPhotos(); await queueRender(); status(`Saved editable variant ${result.document.document_id}.`);
+    state.doc = normalizeDocument(result.document); state.savedDocumentUrl = result.document_url; state.activeId = elements()[0] ? elementId(elements()[0]) : null; await loadPhotos(); await queueRender();
+    if (state.projectId) await attachDocumentToProject(result.document);
+    status(`Saved editable variant ${result.document.document_id}.`);
   } catch (error) { status(`Save failed: ${error.message}`); }
 }
 
@@ -1714,6 +1795,11 @@ function wire() {
   $("layout")?.addEventListener("click", () => setMode("layout")); $("crop")?.addEventListener("click", () => setMode("crop")); $("pan-image")?.addEventListener("click", () => setMode("crop"));
   $("render-mode")?.addEventListener("change", (event) => setRenderMode(event.target.value).catch((error) => status(`Photo source change failed: ${error.message}`)));
   $("reload")?.addEventListener("click", () => openDocument().catch((error) => status(error.message)));
+  $("project")?.addEventListener("change", () => loadProject($("project").value).catch((error) => projectStatus(error.message)));
+  $("new-project")?.addEventListener("click", () => createProjectFromPrompt().catch((error) => status(`Project creation failed: ${error.message}`)));
+  $("open-project")?.addEventListener("click", () => loadProject($("project").value).catch((error) => projectStatus(error.message)));
+  $("build-project")?.addEventListener("click", () => buildProject());
+  $("open-project-document")?.addEventListener("click", () => openProjectDocument().catch((error) => status(`Project collage failed to open: ${error.message}`)));
   $("fit")?.addEventListener("click", () => { fitPage(); state.canvas.requestRenderAll(); status("Page fitted to the available window."); });
   $("save")?.addEventListener("click", saveVariant); $("save-browser")?.addEventListener("click", openBrowserSaveDialog); $("load-browser")?.addEventListener("click", openBrowserLoadDialog);
   $("confirm-browser-save")?.addEventListener("click", saveBrowserCopy); $("cancel-browser-save")?.addEventListener("click", () => $("save-browser-dialog")?.close());
@@ -1755,6 +1841,8 @@ async function populate() {
   if (query.get("run")) $("run").value = query.get("run");
   if (query.get("document")) await openDocument(query.get("document"));
   else { await loadCandidates(); if (query.has("candidate")) await openDocument(); }
+  await loadProjects();
+  if ($("project-document") && state.doc?.document_id) $("project-document").value = state.doc.document_id;
 }
 
 wire(); populate().catch((error) => status(`Unable to load collage data: ${error.message}`));

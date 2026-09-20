@@ -50,11 +50,22 @@ from photovault.collage.design_formats import (
 )
 from photovault.collage.layered_templates import validate_layered_template
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+from photovault.collage.projects import _advice_for, _archetype, create_project, list_projects, make_document, read_project, save_project
 
 STATIC_ROOT = Path(__file__).with_name("static")
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_ROOT = PROJECT_ROOT / "examples"
 PACKAGE_ID_RE = re.compile(r"^pkg_[0-9a-f]{32}$")
+PROJECT_ID_RE = re.compile(r"^project_[0-9a-f]{32}$")
+
+
+def _a4_guidance() -> dict[str, object]:
+    path = EXAMPLES_ROOT / "a4-collage-section-guidance.json"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"sections": {}}
+    return value if isinstance(value, dict) else {"sections": {}}
 
 
 def _package_manifest(catalog_path: Path, package_id: str) -> dict[str, object]:
@@ -775,6 +786,20 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                     self._json({"total": total, "items": merged[:200], "months": [], "years": [], "days": {}, "next_cursor": None, "has_more": total > 200})
             finally: connection.close()
             return
+        if parsed.path == "/api/collage/projects":
+            self._json({"projects": list_projects(self.catalog_path)})
+            return
+        if parsed.path.startswith("/api/collage/projects/"):
+            project_id = parsed.path.removeprefix("/api/collage/projects/").strip("/")
+            if not PROJECT_ID_RE.fullmatch(project_id):
+                self._json({"error": "invalid project id"}, 400)
+                return
+            project = read_project(self.catalog_path, project_id)
+            if project is None:
+                self._json({"error": "project not found"}, 404)
+                return
+            self._json(project)
+            return
         if parsed.path.startswith("/api/collage/design-packages/"):
             package_id = parsed.path.removeprefix("/api/collage/design-packages/").strip("/")
             if not PACKAGE_ID_RE.fullmatch(package_id):
@@ -1050,6 +1075,100 @@ class PhotoVaultHandler(BaseHTTPRequestHandler):
                            "design_assets": sum(isinstance(element, dict) and element.get("type") == "design_asset" for element in item.get("elements", []))}
                           for index, item in enumerate(alternatives) if isinstance(item, dict)]
                 self._json({"valid": True, "package_id": package["package_id"], "spec": spec, "alternatives": counts, "validation": package_validation, "decorative_assets": package.get("decorative_assets", []), "template_assets": package.get("template_assets", []), "layered_template": package.get("layered_template")}, 201)
+                return
+            if parsed.path == "/api/collage/projects":
+                project = create_project(self.catalog_path, str(payload.get("name", "")), str(payload.get("description", "")))
+                self._json(project, 201)
+                return
+            if parsed.path.startswith("/api/collage/projects/"):
+                suffix = parsed.path.removeprefix("/api/collage/projects/").strip("/").split("/")
+                project_id = suffix[0] if suffix else ""
+                if not PROJECT_ID_RE.fullmatch(project_id):
+                    self._json({"error": "invalid project id"}, 400)
+                    return
+                project = read_project(self.catalog_path, project_id)
+                if project is None:
+                    self._json({"error": "project not found"}, 404)
+                    return
+                if len(suffix) == 2 and suffix[1] == "documents":
+                    document_id = str(payload.get("document_id", ""))
+                    if not re.fullmatch(r"doc_[0-9a-f]{32}", document_id):
+                        raise ValueError("document_id is invalid")
+                    document_path = (self.catalog_path.parent / "collage-documents" / f"{document_id}.json").resolve()
+                    document_root = (self.catalog_path.parent / "collage-documents").resolve()
+                    if document_root not in document_path.parents or not document_path.is_file():
+                        self._json({"error": "document not found"}, 404)
+                        return
+                    document = json.loads(document_path.read_text(encoding="utf-8"))
+                    metadata = document.get("metadata") if isinstance(document, dict) else {}
+                    metadata = metadata if isinstance(metadata, dict) else {}
+                    entry = {
+                        "document_id": document_id,
+                        "document_url": f"/api/collage/documents/{document_id}",
+                        "title": str(payload.get("title") or metadata.get("design_title") or metadata.get("section_title") or document.get("provider", "Collage")),
+                        "topic_id": metadata.get("topic_id"), "topic_name": metadata.get("topic_name"),
+                        "section_id": metadata.get("section_id"), "section_title": metadata.get("section_title"),
+                        "hero_asset_ids": list(metadata.get("hero_asset_ids") or []), "subhero_asset_ids": list(metadata.get("subhero_asset_ids") or []),
+                        "status": "ready", "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    }
+                    documents = [item for item in project.get("documents", []) if isinstance(item, dict) and item.get("section_id") != entry["section_id"] and item.get("document_id") != document_id]
+                    documents.append(entry)
+                    project["documents"] = documents
+                    save_project(self.catalog_path, project)
+                    self._json({"ok": True, "project": project, "document": entry}, 201)
+                    return
+                if len(suffix) == 2 and suffix[1] == "generate":
+                    requested_topics = [str(value) for value in payload.get("topic_ids", []) if str(value)]
+                    requested_sections = {str(value) for value in payload.get("section_ids", []) if str(value)}
+                    connection = connect(self.catalog_path)
+                    try:
+                        if requested_topics:
+                            topic_rows = list(connection.execute("SELECT id,name FROM events WHERE id IN (%s)" % ",".join("?" for _ in requested_topics), requested_topics))
+                        else:
+                            topic_rows = list(connection.execute("SELECT id,name FROM events WHERE name IN (?,?,?,?,?) ORDER BY name", tuple(f"2026 Apr Mothers Visit - {day}" for day in ("0412", "0413", "0414", "0415", "0416"))))
+                        sections: list[dict[str, object]] = []
+                        for topic_id, topic_name in topic_rows:
+                            for raw_section in list_topic_sections(connection, str(topic_id)):
+                                section_id = str(raw_section["id"])
+                                if requested_sections and section_id not in requested_sections:
+                                    continue
+                                asset_rows = connection.execute("SELECT asset_id FROM topic_section_assets WHERE section_id=? ORDER BY sort_order,asset_id", (section_id,)).fetchall()
+                                asset_ids = [str(row[0]) for row in asset_rows]
+                                if not asset_ids:
+                                    continue
+                                item_payload = library_payload(connection, LibraryQuery(asset_ids=tuple(asset_ids), media_type="IMAGE", limit=len(asset_ids)))
+                                item_by_id = {str(item["asset_id"]): item for item in item_payload["items"]}
+                                items = [item_by_id[asset_id] for asset_id in asset_ids if asset_id in item_by_id]
+                                sections.append({"section_id": section_id, "topic_id": str(topic_id), "topic_name": str(topic_name), "title": str(raw_section["title"]), "asset_items": items})
+                    finally:
+                        connection.close()
+                    guidance = _a4_guidance().get("sections", {})
+                    existing_by_section = {str(item.get("section_id")): item for item in project.get("documents", []) if isinstance(item, dict) and item.get("section_id")}
+                    force = bool(payload.get("force"))
+                    generated: list[dict[str, object]] = []
+                    archetypes = [_archetype(section, _advice_for(section, guidance)) for section in sections]
+                    for album_index, section in enumerate(sections):
+                        section_id = str(section["section_id"])
+                        if not force and section_id in existing_by_section:
+                            generated.append(existing_by_section[section_id])
+                            continue
+                        album_context = {
+                            "index": album_index,
+                            "count": len(sections),
+                            "previous_archetype": archetypes[album_index - 1] if album_index else None,
+                            "next_archetype": archetypes[album_index + 1] if album_index + 1 < len(archetypes) else None,
+                        }
+                        document, hero_ids, subhero_ids = make_document(section, list(section["asset_items"]), guidance, project_id, album_context)
+                        document_path = self.catalog_path.parent / "collage-documents" / f"{document['document_id']}.json"
+                        _write_json_atomic(document_path, document)
+                        metadata = document["metadata"]
+                        generated.append({"document_id": document["document_id"], "document_url": f"/api/collage/documents/{document['document_id']}", "title": str(metadata.get("design_title") or metadata.get("section_title") or section["title"]), "topic_id": section["topic_id"], "topic_name": section["topic_name"], "section_id": section_id, "section_title": section["title"], "hero_asset_ids": hero_ids, "subhero_asset_ids": subhero_ids, "status": "ready", "updated_at": document["modified_at"]})
+                    project["documents"] = generated
+                    project["generation"] = {"format": "PhotoManager A4 Collage Guidance", "schema_version": 1, "page_preset": "a4-portrait", "source_topics": [str(row[1]) for row in topic_rows], "section_count": len(generated), "last_run_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+                    save_project(self.catalog_path, project)
+                    self._json({"ok": True, "project": project, "generated": len(generated), "skipped": sum(1 for item in generated if item.get("section_id") in existing_by_section)}, 201)
+                    return
+                self._json({"error": "unknown project action"}, 404)
                 return
             if parsed.path == "/api/collage/design-packages":
                 asset_ids = list(dict.fromkeys(str(value) for value in payload.get("asset_ids", []) if str(value)))

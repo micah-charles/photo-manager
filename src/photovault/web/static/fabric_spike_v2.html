@@ -12,6 +12,7 @@
     .muted{color:#756d64}.status{min-height:24px}
     .bar,.panel{background:#fff;border:1px solid #ded7ce;border-radius:14px;padding:14px;margin:14px 0}
     .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .project-bar{background:#eef6f3;border-color:#b8d7cf}.project-bar select{max-width:360px}.project-bar #project-status{flex:1;min-width:220px}
     button,select,input{font:inherit;padding:8px 10px;border:1px solid #c9c0b5;border-radius:8px;background:#fff}
     button.primary{background:#302b26;color:#fff}button:disabled,input:disabled,select:disabled{opacity:.45;cursor:not-allowed}
       button[aria-pressed="true"]{background:#286e67;border-color:#286e67;color:#fff}
@@ -49,6 +50,13 @@
       <label id="candidate-control">Candidate <select id="candidate"><option>Choose a run</option></select></label>
       <button id="open" class="primary">Open candidate</button><span id="ai-document-summary" class="badge" hidden></span><span id="identity" class="badge">No document loaded</span>
     </section>
+    <section class="bar project-bar">
+      <label>Project <select id="project"><option value="">Loading projects…</option></select></label>
+      <button id="new-project">New project</button><button id="open-project">Open project</button><button id="build-project" class="primary">Build 33 A4 collages</button>
+      <label>Project collage <select id="project-document"><option value="">Choose a saved collage…</option></select></label>
+      <button id="open-project-document">Open collage</button>
+      <span id="project-status" class="muted">Projects keep generated and edited collages together.</span>
+    </section>
     <section class="bar">
       <button id="undo">Undo</button><button id="redo">Redo</button><button id="layout" class="primary">Layout mode</button><button id="crop">Crop mode</button><button id="pan-image" title="Drag the selected photo inside its frame" aria-pressed="false">✋ Pan image</button><button id="fit">Fit page</button><button id="save" class="primary">Save variant</button><button id="reload">Reload saved</button><button id="save-browser" title="Save this editable document in this browser">Save browser copy</button><button id="load-browser" title="Load an editable document saved in this browser">Load browser copy</button><span id="browser-memory-status" class="muted"></span>
       <button id="export">Export file (JSON)</button><span class="inline-control" title="Preview PNG target resolution. This is independent from the page DPI.">Preview DPI <input id="preview-dpi" type="number" min="72" max="1200" step="1" value="150" style="width:70px"></span><button id="export-png">Export preview PNG (150 DPI)</button><span class="inline-control" title="High-resolution PNG target resolution. Original photos are used for this export.">High-res DPI <input id="hires-dpi" type="number" min="72" max="1200" step="1" value="300" style="width:70px"></span><button id="export-hires" class="primary">Export high-res PNG (300 DPI)</button><button id="export-package">Export ChatGPT package</button><span id="export-dpi-summary" class="muted" aria-live="polite"></span>
@@ -78,7 +86,9 @@
     </section>
   </main>
   <script src="/vendor/fabric/index.min.js"></script>
-      <script src="/collage_geometry.js?v=20260914-8"></script><script src="/collage_render_validation.js?v=20260915-render-validation-1"></script><script src="/fabric_spike_v3.js?v=20260918-render-repair-2-pan-2"></script>
+  <script src="/collage_geometry.js?v=20260914-8"></script>
+  <script src="/collage_render_validation.js?v=20260915-render-validation-1"></script>
+  <script src="/fabric_spike_v3.js?v=20260920-projects-1"></script>
   <script src="/collage_editor_package.js?v=20260914-2"></script>
 </body>
 </html>

@@ -11,6 +11,7 @@ from pathlib import Path
 from PIL import Image
 
 from photovault.catalog.scanner import register_volume, scan_volume
+from photovault.catalog.organization import create_event, create_topic_section
 from photovault.database.connection import connect
 from photovault.platform.base import VolumeIdentity
 from photovault.web.server import PhotoVaultHandler, ThreadingHTTPServer
@@ -132,6 +133,59 @@ class CollageDesignApiTests(unittest.TestCase):
             self.assertTrue(saved["variant"])
             self.assertNotEqual(saved["document"]["document_id"], document["document_id"])
             self.assertEqual(saved["document"]["elements"][1]["rotation_deg"], 9)
+
+    def test_project_generates_and_lists_a4_section_collages(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "photos"
+            root.mkdir()
+            Image.new("RGB", (320, 240), "#d36c5c").save(root / "one.jpg")
+            Image.new("RGB", (240, 320), "#4b8f8c").save(root / "two.jpg")
+            Image.new("RGB", (320, 240), "#8f7ac4").save(root / "three.jpg")
+            catalog = Path(directory) / "catalog.db"
+            db = connect(catalog)
+            volume_id = register_volume(db, root, _Provider())
+            scan_volume(db, volume_id, root)
+            asset_ids = [str(row[0]) for row in db.execute("SELECT id FROM assets ORDER BY id")]
+            topic_id = create_event(db, "2026 Apr Mothers Visit - 0412")
+            section_id = create_topic_section(db, topic_id, "Bangor Cathedral", asset_ids)
+            db.close()
+
+            server = ThreadingHTTPServer(("127.0.0.1", 0), PhotoVaultHandler)
+            server.catalog_path = catalog
+            server.collage_runs = {}
+            server.collage_jobs = {}
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            self.addCleanup(server.shutdown)
+            self.addCleanup(server.server_close)
+
+            def request(method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+                encoded = json.dumps(body).encode() if body is not None else None
+                headers = {"Content-Type": "application/json"} if encoded is not None else {}
+                connection.request(method, path, encoded, headers)
+                response = connection.getresponse()
+                payload = json.loads(response.read())
+                status = response.status
+                connection.close()
+                return status, payload
+
+            status, project = request("POST", "/api/collage/projects", {"name": "0412 A4 test"})
+            self.assertEqual(status, 201)
+            project_id = project["project_id"]
+            status, generated = request("POST", f"/api/collage/projects/{project_id}/generate", {"topic_ids": [topic_id]})
+            self.assertEqual(status, 201)
+            self.assertEqual(generated["generated"], 1)
+            self.assertEqual(generated["project"]["documents"][0]["section_id"], section_id)
+            document_id = generated["project"]["documents"][0]["document_id"]
+            status, document = request("GET", f"/api/collage/documents/{document_id}")
+            self.assertEqual(status, 200)
+            self.assertEqual(document["page_spec"]["preset_id"], "a4-portrait")
+            self.assertEqual(document["metadata"]["project_id"], project_id)
+            self.assertEqual(len(document["frames"]), 3)
+            self.assertEqual({frame["photo_id"] for frame in document["frames"]}, set(asset_ids))
+            self.assertEqual(sum(frame.get("role") == "hero" for frame in document["frames"]), 1)
+            self.assertEqual(document["metadata"]["composition"]["rendered_asset_count"], 3)
 
 
 if __name__ == "__main__":
