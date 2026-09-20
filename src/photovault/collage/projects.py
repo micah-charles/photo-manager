@@ -304,6 +304,23 @@ def _adaptive_editorial_layout(
         # a balanced 2 + 3 + 3 composition instead: the final row becomes a
         # real closing cluster, while every source asset remains prominent
         # enough to read as part of the story.
+        if archetype == "scenic_hero" and variant == "panorama_then_portraits":
+            # For an eight-photo scenic/family story, keep the establishing
+            # view and the people-led sub-hero as comparable top anchors.
+            # The full 2 + 3 + 3 grid then reaches into the lower A4 field,
+            # avoiding both a landscape-dominated hierarchy and a dead-space
+            # tail while retaining every source photo.
+            slots = [
+                (14, 45, 92, 72, "hero", "rectangle"),
+                (110, 45, 86, 72, "secondary", "rounded"),
+                (14, 125, 58, 55, "secondary", "rectangle"),
+                (76, 125, 58, 55, "supporting", "rectangle"),
+                (138, 125, 58, 55, "detail", "rectangle"),
+                (14, 185, 58, 72, "detail", "rectangle"),
+                (76, 185, 58, 72, "detail", "rectangle"),
+                (138, 185, 58, 72, "detail", "rectangle"),
+            ]
+            return slots, 257, 0, "grid"
         slots = top + [
             (14, 121, 58, 42, "secondary", "rectangle"),
             (76, 121, 58, 42, "supporting", "rectangle"),
@@ -508,9 +525,27 @@ def build_a4_design_spec(section: dict[str, Any], asset_ids: list[str], guidance
         {"id": "rule", "type": "line", "x_mm": 14, "y_mm": 38, "width_mm": 182, "height_mm": 0, "stroke": "#9aa99c", "stroke_width": 0.7, "z_index": 12},
     ]
 
+    asset_index = {asset_id: index + 1 for index, asset_id in enumerate(asset_ids)}
+
     def photo(element_id: str, asset_id: str, x: float, y: float, width: float, height: float, role: str, z: int, mask: str = "rectangle") -> dict[str, Any]:
         visual_weight = {"hero": 1.0, "secondary": 0.55, "supporting": 0.3, "detail": 0.18}.get(role, 0.12)
-        return {"id": element_id, "type": "photo", "asset_id": asset_id, "role": role, "visual_weight": visual_weight, "x_mm": x, "y_mm": y, "width_mm": width, "height_mm": height, "rotation_deg": 0, "image": {"focus_x": 0.5, "focus_y": 0.5, "zoom": 1}, "mask": {"type": mask}, "border": {"width_mm": 1.2, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.12, "blur_mm": 1.5, "offset_x_mm": 0.3, "offset_y_mm": 0.6}, "z_index": z}
+        focus_x = 0.5
+        focus_by_index = advice.get("focus_x_by_index")
+        if isinstance(focus_by_index, dict):
+            try:
+                focus_x = float(focus_by_index.get(str(asset_index[asset_id]), focus_x))
+            except (KeyError, TypeError, ValueError):
+                focus_x = 0.5
+        focus_x = min(1.0, max(0.0, focus_x))
+        focus_y = 0.5
+        focus_by_index = advice.get("focus_y_by_index")
+        if isinstance(focus_by_index, dict):
+            try:
+                focus_y = float(focus_by_index.get(str(asset_index[asset_id]), focus_y))
+            except (KeyError, TypeError, ValueError):
+                focus_y = 0.5
+        focus_y = min(1.0, max(0.0, focus_y))
+        return {"id": element_id, "type": "photo", "asset_id": asset_id, "role": role, "visual_weight": visual_weight, "x_mm": x, "y_mm": y, "width_mm": width, "height_mm": height, "rotation_deg": 0, "image": {"focus_x": focus_x, "focus_y": focus_y, "zoom": 1}, "mask": {"type": mask}, "border": {"width_mm": 1.2, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.12, "blur_mm": 1.5, "offset_x_mm": 0.3, "offset_y_mm": 0.6}, "z_index": z}
 
     slots, contact_y, contact_height, contact_style = _layout_slots(archetype, variant)
     adaptive = _adaptive_editorial_layout(archetype, variant, len(asset_ids))

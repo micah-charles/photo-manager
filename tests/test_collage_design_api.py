@@ -85,6 +85,32 @@ class CollageDesignApiTests(unittest.TestCase):
         self.assertEqual(spec["composition"]["rendered_role_counts"]["secondary"], 2)
         self.assertEqual(sum(photo["y_mm"] == 169 for photo in photos), 3)
 
+    def test_eight_photo_scenic_story_balances_people_anchor_and_fills_a4_field(self) -> None:
+        section = {"title": "Snowdown Mountatin 01", "topic_name": "Test trip"}
+        asset_ids = [f"asset-{index:02d}" for index in range(1, 9)]
+        guidance = {
+            "Snowdown Mountatin 01": {
+                "layout_archetype": "scenic_hero",
+                "composition_variant": "panorama_then_portraits",
+                "hero_indices": [8, 5],
+                "subhero_indices": [5, 6],
+                "supporting_indices": [7],
+                "detail_indices": [1, 2, 3, 4],
+                "focus_x_by_index": {"5": 0.46, "6": 0.46, "7": 0.48},
+                "focus_y_by_index": {"3": 0.40, "5": 0.43, "6": 0.46, "7": 0.46},
+            }
+        }
+        spec, _, subhero_ids = build_a4_design_spec(section, asset_ids, guidance)
+        photos = [element for element in spec["alternatives"][0]["elements"] if element.get("type") == "photo"]
+        self.assertEqual(set(photo["asset_id"] for photo in photos), set(asset_ids))
+        self.assertEqual(len({photo["asset_id"] for photo in photos}), len(asset_ids))
+        self.assertEqual(spec["composition"]["gallery_asset_count"], 0)
+        self.assertEqual(len(subhero_ids), 2)
+        self.assertEqual([(photo["x_mm"], photo["y_mm"], photo["width_mm"], photo["height_mm"]) for photo in photos[:2]], [(14, 45, 92, 72), (110, 45, 86, 72)])
+        self.assertEqual(sum(photo["y_mm"] == 185 for photo in photos), 3)
+        self.assertEqual(next(photo for photo in photos if photo["asset_id"] == "asset-05")["image"]["focus_x"], 0.46)
+        self.assertEqual(next(photo for photo in photos if photo["asset_id"] == "asset-03")["image"]["focus_y"], 0.40)
+
     def test_role_summary_matches_roles_that_were_rendered(self) -> None:
         section = {"title": "Castle views", "topic_name": "Test trip"}
         asset_ids = [f"asset-{index:02d}" for index in range(1, 13)]
