@@ -68,6 +68,19 @@ class CollageDesignApiTests(unittest.TestCase):
         self.assertEqual(spec["composition"]["gallery_asset_count"], 0)
         self.assertEqual(sum(photo["y_mm"] == 166 for photo in photos), 4)
 
+    def test_role_summary_matches_roles_that_were_rendered(self) -> None:
+        section = {"title": "Castle views", "topic_name": "Test trip"}
+        asset_ids = [f"asset-{index:02d}" for index in range(1, 13)]
+        guidance = {"Castle views": {"hero_indices": [1, 2], "subhero_indices": [2, 3, 4, 5]}}
+        spec, hero_ids, subhero_ids = build_a4_design_spec(section, asset_ids, guidance)
+        photos = [element for element in spec["alternatives"][0]["elements"] if element.get("type") == "photo"]
+        rendered_secondary = [photo["asset_id"] for photo in photos if photo.get("role") == "secondary"]
+        self.assertEqual(hero_ids, [photo["asset_id"] for photo in photos if photo.get("role") == "hero"][:1])
+        self.assertEqual(subhero_ids, rendered_secondary)
+        self.assertEqual(spec["composition"]["subheroes"], rendered_secondary)
+        self.assertEqual(spec["composition"]["rendered_role_counts"]["secondary"], len(rendered_secondary))
+        self.assertEqual(len(photos), len(asset_ids))
+
     def test_export_validate_import_and_save_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "photos"

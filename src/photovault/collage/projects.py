@@ -549,11 +549,23 @@ def build_a4_design_spec(section: dict[str, Any], asset_ids: list[str], guidance
         used.add(asset_id)
         elements.append(photo(f"contact-{index}", asset_id, x, y, width, height, "detail", 50 + index))
 
-    rendered_photo_ids = [str(element["asset_id"]) for element in elements if element.get("type") == "photo"]
+    rendered_photo_elements = [element for element in elements if element.get("type") == "photo"]
+    rendered_photo_ids = [str(element["asset_id"]) for element in rendered_photo_elements]
     if len(rendered_photo_ids) != len(asset_ids) or set(rendered_photo_ids) != set(asset_ids):
         raise ValueError(
             f"collage generator lost or duplicated assets: expected {len(asset_ids)}, rendered {len(rendered_photo_ids)}"
         )
+
+    # Report the roles that actually made it into the page.  Guidance can
+    # nominate several possible sub-heroes, but a given archetype/variant may
+    # only have one prominent secondary frame.  The exported metadata must
+    # describe the rendered page rather than the unbounded preference list.
+    rendered_role_ids = {
+        role: [str(element["asset_id"]) for element in rendered_photo_elements if element.get("role") == role]
+        for role in ("hero", "secondary", "supporting", "detail")
+    }
+    rendered_hero_ids = rendered_role_ids["hero"][:1]
+    rendered_subhero_ids = rendered_role_ids["secondary"]
 
     closing_caption = str(advice.get("closing_caption") or "")
     photo_bottom = max(
@@ -568,16 +580,16 @@ def build_a4_design_spec(section: dict[str, Any], asset_ids: list[str], guidance
     # missing composition block.  Longer stories keep their caption-aware
     # footer close to the content without colliding with the page edge.
     footer_y = 284.0 if len(asset_ids) <= 6 else min(284.0, max(220.0, photo_bottom + (18.0 if closing_caption else 12.0)))
-    elements.append({"id": "footer", "type": "text", "content": f"{len(asset_ids)} photos · {len(hero_ids)} hero · {len(subhero_ids)} sub-hero · {archetype.replace('_', ' ')}", "x_mm": 14, "y_mm": footer_y, "width_mm": 182, "height_mm": 6, "text_style": {"font_id": "sans", "font_size_pt": 6.5, "weight": "normal", "color": "#687169", "line_height": 1.1}, "z_index": 90})
+    elements.append({"id": "footer", "type": "text", "content": f"{len(asset_ids)} photos · {len(rendered_hero_ids)} hero · {len(rendered_subhero_ids)} sub-hero · {archetype.replace('_', ' ')}", "x_mm": 14, "y_mm": footer_y, "width_mm": 182, "height_mm": 6, "text_style": {"font_id": "sans", "font_size_pt": 6.5, "weight": "normal", "color": "#687169", "line_height": 1.1}, "z_index": 90})
     composition = {
         "layout_archetype": archetype,
         "composition_variant": variant,
         "contact_style": contact_style,
         "narrative_direction": str(advice.get("narrative_direction") or "top_to_bottom"),
-        "dominant_hero": hero_ids[0] if hero_ids else None,
-        "subheroes": subhero_ids,
-        "supporting": groups["supporting"],
-        "details": groups["detail"] + groups["remaining"],
+        "dominant_hero": rendered_hero_ids[0] if rendered_hero_ids else None,
+        "subheroes": rendered_subhero_ids,
+        "supporting": rendered_role_ids["supporting"],
+        "details": rendered_role_ids["detail"],
         "all_asset_ids": asset_ids,
         "asset_count": len(asset_ids),
         "rendered_asset_count": len(rendered_photo_ids),
@@ -586,6 +598,7 @@ def build_a4_design_spec(section: dict[str, Any], asset_ids: list[str], guidance
         "editorial_slot_count": len(slots),
         "gallery_asset_count": len(remaining_ids),
         "visual_weight_policy": {"hero": 1.0, "secondary": 0.55, "supporting": 0.3, "detail": "0.12-0.22"},
+        "rendered_role_counts": {role: len(ids) for role, ids in rendered_role_ids.items()},
         "similarity_groups": advice.get("similarity_groups") or [],
         "album_context": dict(album_context or {}),
         "invariants": {"all_assets_rendered": True, "max_dominant_heroes": 1, "avoid_duplicate_prominent_members": True},
@@ -595,7 +608,7 @@ def build_a4_design_spec(section: dict[str, Any], asset_ids: list[str], guidance
         "assets": [{"asset_id": asset_id, "label": f"A{index + 1:02d}"} for index, asset_id in enumerate(asset_ids)],
         "alternatives": [{"id": "a4-storyboard", "style": f"editorial {archetype.replace('_', ' ')} · {variant}", "reason": f"One dominant hero leads a {archetype.replace('_', ' ')} reading order; controlled variation {variant} prevents adjacent pages from becoming clones, while every source asset remains visible in an intentional supporting/detail area.", "elements": elements}],
     }
-    return spec, hero_ids[:2], subhero_ids[:4]
+    return spec, rendered_hero_ids, rendered_subhero_ids
 
 
 def make_document(section: dict[str, Any], asset_items: list[dict[str, Any]], guidance: dict[str, Any], project_id: str, album_context: dict[str, Any] | None = None) -> tuple[dict[str, Any], list[str], list[str]]:
