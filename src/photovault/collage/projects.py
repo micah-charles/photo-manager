@@ -180,9 +180,14 @@ def _role_ids(asset_ids: list[str], advice: dict[str, Any]) -> dict[str, list[st
 def _contact_slots(count: int, y: float, height: float, style: str = "grid") -> list[tuple[float, float, float, float]]:
     if count <= 0:
         return []
+    # A single remaining photo is still required, but it must not suddenly
+    # become a second hero just because it is the last item in the list.
+    # Keep it as a small closing vignette with intentional breathing room.
+    if count == 1:
+        return [(76, y, 58, min(38.0, height))]
     if count <= 2:
         columns = count
-        max_cell_height = 55.0
+        max_cell_height = 42.0
     elif count <= 6:
         columns = min(3, count)
         max_cell_height = 38.0
@@ -197,7 +202,9 @@ def _contact_slots(count: int, y: float, height: float, style: str = "grid") -> 
             columns = min(6, max(1, (count + 1) // 2))
             max_cell_height = 27.0
     if count >= 8 and style == "grid":
-        columns = 6
+        # Five columns keeps the last row balanced for the common 8–12 photo
+        # case. Six columns made the lower story read like an inventory wall.
+        columns = 5
     rows = (count + columns - 1) // columns
     gap = 3.0
     cell_height = min(max_cell_height, (height - gap * (rows - 1)) / rows)
@@ -211,6 +218,66 @@ def _contact_slots(count: int, y: float, height: float, style: str = "grid") -> 
         for column in range(columns):
             slots.append((14 + offset + column * (width + gap), y + row * (cell_height + gap), width, cell_height))
     return slots[:count]
+
+
+def _adaptive_editorial_layout(
+    archetype: str,
+    variant: str,
+    asset_count: int,
+) -> tuple[list[tuple[float, float, float, float, str, str]], float, float, str] | None:
+    """Use more editorial slots before falling back to the all-assets gallery.
+
+    The old layouts reserved only four or five slots, so a 10–12 photo section
+    pushed most of its story into a tiny contact sheet.  These layouts preserve
+    the same visual grammar but promote more content-specific images into
+    readable supporting/detail frames.  The final gallery still receives every
+    remaining asset, so this is a hierarchy change, never a filtering change.
+    """
+    if asset_count < 10:
+        return None
+
+    hero_right = variant in {"hero_right", "spine"}
+    if archetype == "detail_mosaic":
+        top = [
+            (14, 45, 88, 70, "hero", "rectangle"),
+            (108, 45, 88, 70, "secondary", "rectangle"),
+        ]
+    elif hero_right:
+        top = [
+            (14, 45, 58, 70, "secondary", "rounded"),
+            (76, 45, 120, 70, "hero", "rectangle"),
+        ]
+    else:
+        top = [
+            (14, 45, 120, 70, "hero", "rectangle"),
+            (138, 45, 58, 70, "secondary", "rounded"),
+        ]
+
+    if asset_count <= 12:
+        # 2 top anchors + 3 readable beats + 4 smaller details = 9 editorial
+        # positions. Only 1–3 photos need the closing gallery.
+        slots = top + [
+            (14, 121, 58, 39, "supporting", "rectangle"),
+            (76, 121, 58, 39, "detail", "rectangle"),
+            (138, 121, 58, 39, "detail", "rectangle"),
+            (14, 166, 44, 34, "detail", "rectangle"),
+            (61, 166, 44, 34, "detail", "rectangle"),
+            (108, 166, 44, 34, "detail", "rectangle"),
+            (155, 166, 41, 34, "detail", "rectangle"),
+        ]
+        return slots, 207, 62, "staggered"
+
+    # Larger sections still need all photos, but the upper two thirds retain
+    # a clear reading order before the final balanced gallery row(s).
+    slots = top + [
+        (14, 121, 58, 39, "supporting", "rectangle"),
+        (76, 121, 58, 39, "detail", "rectangle"),
+        (138, 121, 58, 39, "detail", "rectangle"),
+        (14, 166, 58, 34, "detail", "rectangle"),
+        (76, 166, 58, 34, "detail", "rectangle"),
+        (138, 166, 58, 34, "detail", "rectangle"),
+    ]
+    return slots, 207, 62, "grid"
 
 
 def _layout_slots(archetype: str, variant: str) -> tuple[list[tuple[float, float, float, float, str, str]], float, float, str]:
@@ -385,6 +452,9 @@ def build_a4_design_spec(section: dict[str, Any], asset_ids: list[str], guidance
         return {"id": element_id, "type": "photo", "asset_id": asset_id, "role": role, "visual_weight": visual_weight, "x_mm": x, "y_mm": y, "width_mm": width, "height_mm": height, "rotation_deg": 0, "image": {"focus_x": 0.5, "focus_y": 0.5, "zoom": 1}, "mask": {"type": mask}, "border": {"width_mm": 1.2, "color": "#ffffff", "opacity": 1}, "shadow": {"color": "#000000", "opacity": 0.12, "blur_mm": 1.5, "offset_x_mm": 0.3, "offset_y_mm": 0.6}, "z_index": z}
 
     slots, contact_y, contact_height, contact_style = _layout_slots(archetype, variant)
+    adaptive = _adaptive_editorial_layout(archetype, variant, len(asset_ids))
+    if adaptive is not None:
+        slots, contact_y, contact_height, contact_style = adaptive
     slot_roles = {
         "hero": hero_ids,
         "secondary": subhero_ids,
@@ -435,10 +505,21 @@ def build_a4_design_spec(section: dict[str, Any], asset_ids: list[str], guidance
         used.add(asset_id)
         elements.append(photo(f"contact-{index}", asset_id, x, y, width, height, "detail", 50 + index))
 
+    rendered_photo_ids = [str(element["asset_id"]) for element in elements if element.get("type") == "photo"]
+    if len(rendered_photo_ids) != len(asset_ids) or set(rendered_photo_ids) != set(asset_ids):
+        raise ValueError(
+            f"collage generator lost or duplicated assets: expected {len(asset_ids)}, rendered {len(rendered_photo_ids)}"
+        )
+
     closing_caption = str(advice.get("closing_caption") or "")
-    if closing_caption and contact_y + contact_height < 267:
-        elements.append({"id": "closing-caption", "type": "text", "content": closing_caption, "x_mm": 14, "y_mm": contact_y + contact_height - 5, "width_mm": 182, "height_mm": 8, "text_style": {"font_id": "serif", "font_size_pt": 7, "weight": "600", "color": "#43534b", "line_height": 1.1}, "z_index": 80})
-    elements.append({"id": "footer", "type": "text", "content": f"{len(asset_ids)} photos · 1 dominant hero · {len(subhero_ids)} sub-hero · {archetype.replace('_', ' ')}", "x_mm": 14, "y_mm": 278, "width_mm": 182, "height_mm": 7, "text_style": {"font_id": "sans", "font_size_pt": 6.5, "weight": "normal", "color": "#687169", "line_height": 1.1}, "z_index": 90})
+    photo_bottom = max(
+        (float(element["y_mm"]) + float(element["height_mm"]) for element in elements if element.get("type") == "photo"),
+        default=contact_y,
+    )
+    caption_y = min(photo_bottom + 3.5, 270.0)
+    if closing_caption and caption_y + 8 <= 280:
+        elements.append({"id": "closing-caption", "type": "text", "content": closing_caption, "x_mm": 14, "y_mm": caption_y, "width_mm": 182, "height_mm": 7, "text_style": {"font_id": "serif", "font_size_pt": 7.5, "weight": "600", "color": "#43534b", "line_height": 1.1}, "z_index": 80})
+    elements.append({"id": "footer", "type": "text", "content": f"{len(asset_ids)} photos · {len(hero_ids)} hero · {len(subhero_ids)} sub-hero · {archetype.replace('_', ' ')}", "x_mm": 14, "y_mm": 284, "width_mm": 182, "height_mm": 6, "text_style": {"font_id": "sans", "font_size_pt": 6.5, "weight": "normal", "color": "#687169", "line_height": 1.1}, "z_index": 90})
     composition = {
         "layout_archetype": archetype,
         "composition_variant": variant,
@@ -450,7 +531,11 @@ def build_a4_design_spec(section: dict[str, Any], asset_ids: list[str], guidance
         "details": groups["detail"] + groups["remaining"],
         "all_asset_ids": asset_ids,
         "asset_count": len(asset_ids),
-        "rendered_asset_count": len(used),
+        "rendered_asset_count": len(rendered_photo_ids),
+        "all_assets_rendered": len(rendered_photo_ids) == len(asset_ids) and set(rendered_photo_ids) == set(asset_ids),
+        "photo_element_asset_ids": rendered_photo_ids,
+        "editorial_slot_count": len(slots),
+        "gallery_asset_count": len(remaining_ids),
         "visual_weight_policy": {"hero": 1.0, "secondary": 0.55, "supporting": 0.3, "detail": "0.12-0.22"},
         "similarity_groups": advice.get("similarity_groups") or [],
         "album_context": dict(album_context or {}),
