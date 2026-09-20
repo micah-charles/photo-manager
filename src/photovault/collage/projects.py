@@ -236,7 +236,7 @@ def _adaptive_editorial_layout(
     if asset_count < 6:
         return None
 
-    hero_right = variant in {"hero_right", "spine"}
+    hero_right = variant in {"hero_right", "spine", "interior_architecture"}
     if archetype == "detail_mosaic":
         top = [
             (14, 45, 88, 70, "hero", "rectangle"),
@@ -268,6 +268,23 @@ def _adaptive_editorial_layout(
         # Ten photos should also resolve to a complete story grid.  Leaving
         # one asset for the gallery creates a singleton that reads like an
         # accidental leftover rather than an intentional closing beat.
+        if archetype == "architecture_journey" and variant == "interior_architecture":
+            # Interior castle stories need the same two anchors as the
+            # existing spine variant, but the architectural details should
+            # occupy the lower A4 field at readable sizes instead of ending
+            # around the middle of the page.  Keep every source photo in the
+            # editorial grid: 2 anchors + 3 middle beats + 5 details.
+            slots = top + [
+                (14, 121, 58, 50, "secondary", "rectangle"),
+                (76, 121, 58, 50, "supporting", "rectangle"),
+                (138, 121, 58, 50, "detail", "rectangle"),
+                (14, 178, 34, 83, "detail", "rectangle"),
+                (51, 178, 34, 83, "detail", "rectangle"),
+                (88, 178, 34, 83, "detail", "rectangle"),
+                (125, 178, 34, 83, "detail", "rectangle"),
+                (162, 178, 34, 83, "detail", "rectangle"),
+            ]
+            return slots, 264, 0, "grid"
         slots = top + [
             # Keep a second guided sub-hero in the editorial flow instead of
             # allowing it to fall through into a one-photo gallery.

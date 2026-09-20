@@ -208,6 +208,29 @@ class CollageDesignApiTests(unittest.TestCase):
         self.assertEqual(sum(photo["y_mm"] == 237 for photo in photos), 6)
         self.assertEqual(next(photo for photo in photos if photo["asset_id"] == "asset-08")["image"]["focus_y"], 0.44)
 
+    def test_ten_photo_interior_architecture_story_fills_a4_field(self) -> None:
+        section = {"title": "Bangor - Penrhyn Castle 02", "topic_name": "Test trip"}
+        asset_ids = [f"asset-{index:02d}" for index in range(1, 11)]
+        guidance = {
+            "Bangor - Penrhyn Castle 02": {
+                "layout_archetype": "architecture_journey",
+                "composition_variant": "interior_architecture",
+                "hero_indices": [4, 9],
+                "subhero_indices": [1, 3, 6, 8],
+            }
+        }
+        spec, hero_ids, subhero_ids = build_a4_design_spec(section, asset_ids, guidance)
+        photos = [element for element in spec["alternatives"][0]["elements"] if element.get("type") == "photo"]
+        self.assertEqual(set(photo["asset_id"] for photo in photos), set(asset_ids))
+        self.assertEqual(len({photo["asset_id"] for photo in photos}), len(asset_ids))
+        self.assertEqual(spec["composition"]["gallery_asset_count"], 0)
+        self.assertEqual(hero_ids, ["asset-04"])
+        self.assertEqual(subhero_ids, ["asset-01", "asset-03"])
+        self.assertEqual([(photo["x_mm"], photo["y_mm"], photo["width_mm"], photo["height_mm"]) for photo in photos[:2]], [(14, 45, 58, 70), (76, 45, 120, 70)])
+        self.assertEqual(sum(photo["y_mm"] == 121 for photo in photos), 3)
+        self.assertEqual(sum(photo["y_mm"] == 178 for photo in photos), 5)
+        self.assertEqual(max(photo["y_mm"] + photo["height_mm"] for photo in photos), 261)
+
     def test_role_summary_matches_roles_that_were_rendered(self) -> None:
         section = {"title": "Castle views", "topic_name": "Test trip"}
         asset_ids = [f"asset-{index:02d}" for index in range(1, 13)]
