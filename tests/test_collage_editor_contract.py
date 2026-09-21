@@ -115,3 +115,23 @@ class CollageEditorContractTests(unittest.TestCase):
         self.assertIn("transform.focus_y", source)
         self.assertIn("absolutePositioned: true", source)
         self.assertIn("const left = Number(element.x || 0) + width / 2", source)
+
+    def test_sample_workflow_supports_template_sizes_counts_and_section_roles(self):
+        html = (ROOT / "src/photovault/web/static/fabric_spike_v2.html").read_text(encoding="utf-8")
+        workflow = (ROOT / "src/photovault/web/static/collage_sample_workflow.js").read_text(encoding="utf-8")
+        for phrase in (
+            'id="sample-template"', 'id="sample-topic"', 'id="sample-section"',
+            'id="sample-hero-mode"', 'id="sample-hero"', 'id="sample-subheroes"',
+            'id="sample-template-match"', 'id="generate-from-section"',
+        ):
+            self.assertIn(phrase, html)
+        for phrase in (
+            'A4 portrait', 'A4 landscape', 'count: 12',
+            'Array.from({ length: 11 }', 'function buildTemplateSpec',
+            'function editorialSlots', 'weightedRow', 'squareSlotOrder',
+            'mask: "ellipse"', 'mask: "circle"',
+            'every section photo is included exactly once',
+            'api(`/api/topics/${encodeURIComponent(topicId)}/sections`)',
+            'api(`/api/sections/${encodeURIComponent(sectionId)}/assets`)',
+        ):
+            self.assertIn(phrase, workflow)

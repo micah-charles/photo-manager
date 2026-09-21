@@ -645,10 +645,19 @@ def build_a4_design_spec(section: dict[str, Any], asset_ids: list[str], guidance
     editorial_order = hero_ids + subhero_ids + groups["supporting"] + groups["detail"] + groups["remaining"]
 
     title_label = title
+    # A section may provide a human-written subtitle/caption.  Keep the
+    # generated header compact and readable at A4 size: the title is lifted
+    # slightly, while the subtitle gets the same 12pt treatment used by the
+    # hand-tuned collage pages.  Sections without guidance retain the existing
+    # topic/section context line so older guidance remains backwards compatible.
+    subtitle_label = str(
+        advice.get("subtitle")
+        or f"{section.get('topic_name', '2026 Apr Mothers Visit')} · {section.get('title', '')}"
+    )
     elements: list[dict[str, Any]] = [
         {"id": "paper", "type": "rectangle", "x_mm": 0, "y_mm": 0, "width_mm": 210, "height_mm": 297, "fill": "#f5f2ed", "z_index": 0},
-        {"id": "title", "type": "text", "content": title_label, "x_mm": 14, "y_mm": 11, "width_mm": 182, "height_mm": 14, "text_style": {"font_id": "serif", "font_size_pt": 18, "weight": "bold", "color": "#263b35", "line_height": 1.05}, "z_index": 10},
-        {"id": "context", "type": "text", "content": f"{section.get('topic_name', '2026 Apr Mothers Visit')} · {section.get('title', '')}", "x_mm": 14, "y_mm": 28, "width_mm": 182, "height_mm": 7, "text_style": {"font_id": "sans", "font_size_pt": 7, "weight": "600", "color": "#5f655e", "line_height": 1.1, "letter_spacing": 0.4}, "z_index": 11},
+        {"id": "title", "type": "text", "content": title_label, "x_mm": 14, "y_mm": 8, "width_mm": 182, "height_mm": 14, "text_style": {"font_id": "serif", "font_size_pt": 18, "weight": "bold", "color": "#263b35", "line_height": 1.05}, "z_index": 10},
+        {"id": "context", "type": "text", "content": subtitle_label, "x_mm": 14, "y_mm": 24, "width_mm": 182, "height_mm": 9, "text_style": {"font_id": "sans", "font_size_pt": 12, "weight": "600", "color": "#5f655e", "line_height": 1.05, "letter_spacing": 0.2}, "z_index": 11},
         {"id": "rule", "type": "line", "x_mm": 14, "y_mm": 38, "width_mm": 182, "height_mm": 0, "stroke": "#9aa99c", "stroke_width": 0.7, "z_index": 12},
     ]
 
@@ -796,7 +805,7 @@ def make_document(section: dict[str, Any], asset_items: list[dict[str, Any]], gu
     document = to_collage_document(checked, 0, asset_map)
     document["metadata"] = {
         **document.get("metadata", {}), "project_id": project_id, "topic_id": section.get("topic_id"), "topic_name": section.get("topic_name"),
-        "section_id": section.get("section_id"), "section_title": section.get("title"), "design_title": str((guidance.get(str(section.get("title")), {}) or {}).get("title") or section.get("title")), "guidance_title": spec["alternatives"][0]["reason"],
+        "section_id": section.get("section_id"), "section_title": section.get("title"), "design_title": str((guidance.get(str(section.get("title")), {}) or {}).get("title") or section.get("title")), "design_subtitle": str((guidance.get(str(section.get("title")), {}) or {}).get("subtitle") or ""), "guidance_title": spec["alternatives"][0]["reason"],
         "generation_method": "semantic-all-assets-editorial-v3", "hero_asset_ids": hero_ids, "subhero_asset_ids": subhero_ids, "composition": spec.get("composition", {}),
     }
     document["style"] = "A4 editorial family travel scrapbook"

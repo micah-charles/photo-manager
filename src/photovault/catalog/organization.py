@@ -24,6 +24,16 @@ def _normalise_tag(name: str) -> str:
     return clean.casefold()
 
 
+def _ensure_event_name_available(connection: sqlite3.Connection, name: str, *, event_id: str | None = None) -> None:
+    query = "SELECT 1 FROM events WHERE name=?"
+    parameters: tuple[str, ...] = (name,)
+    if event_id is not None:
+        query += " AND id<>?"
+        parameters += (event_id,)
+    if connection.execute(query, parameters).fetchone() is not None:
+        raise ValueError("a topic with this name already exists")
+
+
 @dataclass(frozen=True)
 class Event:
     id: str
@@ -105,6 +115,7 @@ def create_event(
     clean = " ".join(name.strip().split())
     if not clean:
         raise ValueError("event name is required")
+    _ensure_event_name_available(connection, clean)
     if start_datetime and end_datetime and start_datetime > end_datetime:
         raise ValueError("event start must not be after event end")
     if default_place_id and connection.execute("SELECT 1 FROM places WHERE id=?", (default_place_id,)).fetchone() is None:
@@ -450,6 +461,7 @@ def update_event(connection: sqlite3.Connection, event_id: str, *, name: str, st
     clean = " ".join(name.strip().split())
     if not clean:
         raise ValueError("event name is required")
+    _ensure_event_name_available(connection, clean, event_id=event_id)
     if start_datetime and end_datetime and start_datetime > end_datetime:
         raise ValueError("event start must not be after event end")
     if default_place_id and connection.execute("SELECT 1 FROM places WHERE id=?", (default_place_id,)).fetchone() is None:

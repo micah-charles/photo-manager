@@ -42,10 +42,15 @@
     "Bodnant Garden - Charles Mum": {"title": "Charles Mum 走進杜鵑花徑", "hero_indices": [1, 10], "subhero_indices": [2, 3, 5, 7]},
     "Bodnant Garden - Flowers": {"title": "杜鵑花海與春日植物", "hero_indices": [1, 10], "subhero_indices": [2, 3, 6, 14]},
     "Bodnant Garden - Micah": {"title": "Micah 在花園裡的春日身影", "hero_indices": [7, 1], "subhero_indices": [5, 9, 12, 13]},
-    "Bibury 00": {"title": "Bibury｜河畔石屋與古橋初見", "hero_indices": [9, 2], "subhero_indices": [3, 5, 8, 10]},
+    "Bibury 00": {"title": "Bibury｜河畔石屋與古橋初見", "subtitle": "旅程走進蜂蜜色石屋村落，沿著河水看見第一眼的 Bibury", "layout_archetype": "architecture_journey", "composition_variant": "hero_left", "hero_indices": [9, 2], "subhero_indices": [3, 5, 8, 10], "closing_caption": "石橋、流水與蜂蜜色石屋，讓旅程在 Cotswolds 的午後慢慢展開。"},
     "Bibury 02": {"title": "河橋、流水與一家人的午後", "hero_indices": [10, 3], "subhero_indices": [5, 8, 11, 14]},
-    "Bibury 01": {"title": "蜂蜜色石屋小巷與下午茶", "hero_indices": [4, 5], "subhero_indices": [2, 6, 8, 10]},
+    "Bibury 01": {"title": "石屋小巷、河畔流水與一家人的午後", "subtitle": "由蜂蜜色石屋走到河邊，把相聚的午後留在 Bibury", "layout_archetype": "travel_scrapbook", "composition_variant": "stacked", "dominant_indices": [2], "hero_indices": [2, 14], "subhero_indices": [18, 19], "supporting_indices": [3, 4, 5, 6, 7, 16, 17], "detail_indices": [1, 8, 9, 10, 11, 12, 13, 15], "closing_caption": "由石屋小巷走到河畔，再坐下來喝杯咖啡；這一頁記住的是風景，也是一起走過的午後。"},
     "St Mary Church - Tree Garden": {"title": "St Mary's Church Tree Garden｜綠蔭拱門下的家人身影", "hero_indices": [5, 10], "subhero_indices": [4, 6, 9, 13]},
-    "St Mary's Church": {"title": "St Mary's Church｜修剪樹影中的教堂與墓園", "hero_indices": [3, 7], "subhero_indices": [1, 4, 6, 11]}
+    "St Mary's Church": {"title": "St Mary's Church｜修剪樹影中的教堂與墓園", "hero_indices": [3, 7], "subhero_indices": [1, 4, 6, 11]},
+    "Go to Shrewsbury - NCO Concert": {"title": "旅程出發｜Mika · NCO Concert", "subtitle": "第一站：用音樂揭開旅程序章", "layout_archetype": "sequence_journey", "composition_variant": "journey", "hero_indices": [1, 2], "subhero_indices": [3, 4, 6, 8], "closing_caption": "旅程由音樂開始，第一站是 Mika 的 NCO Concert。"},
+    "Shrewsbury": {"title": "Shrewsbury｜旅程第一天", "subtitle": "晴朗的天空、酒店初遇與一路上的笑聲", "layout_archetype": "travel_scrapbook", "composition_variant": "hero_left", "hero_indices": [1, 2], "subhero_indices": [3, 4, 6, 8], "closing_caption": "陽光明亮，笑容也跟著亮起來；這是我們旅程的第一天。"},
+    "RHS Wisley - 01": {"title": "RHS Garden Wisley｜鬱金香花海初見", "subtitle": "英國旅程第一站：在盛放的花季迎接春日", "layout_archetype": "family_memory", "composition_variant": "hero_left", "hero_indices": [1, 8], "subhero_indices": [2, 3, 7, 11], "closing_caption": "初到英國，第一站便遇上盛放的鬱金香；花海裡也留下了我們同行的身影。"},
+    "RHS Wisley - 02": {"title": "花園裡的春日花色", "subtitle": "一朵一朵，記下我們在 Wisley 看見的花", "layout_archetype": "detail_mosaic", "composition_variant": "mosaic", "hero_indices": [7, 16], "subhero_indices": [12, 13, 17, 9], "closing_caption": "從細小花瓣到整片花圃，春天在花園裡變成一幅幅彩色的記憶。"},
+    "RHS Wisley - 03": {"title": "櫻花與其他春日花卉", "subtitle": "從櫻花到杜鵑，花園把春天一一展開", "layout_archetype": "scenic_hero", "composition_variant": "panorama_then_portraits", "hero_indices": [5, 8], "subhero_indices": [3, 12, 15, 16], "closing_caption": "櫻花、杜鵑與各色花卉接連盛放，讓這趟 Wisley 春日散步一路都有驚喜。"}
   }
 }

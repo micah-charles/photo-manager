@@ -24,6 +24,35 @@ class _Provider:
 
 
 class CollageDesignApiTests(unittest.TestCase):
+    def test_guided_header_uses_subtitle_copy_and_compact_twelve_point_style(self) -> None:
+        section = {"title": "Shrewsbury", "topic_name": "2026 Apr Mothers Visit - 0410-11"}
+        guidance = {
+            "Shrewsbury": {
+                "title": "Shrewsbury｜旅程第一天",
+                "subtitle": "晴朗的天空、酒店初遇與一路上的笑聲",
+            }
+        }
+        spec, _, _ = build_a4_design_spec(section, ["asset-01", "asset-02"], guidance)
+        texts = {element["id"]: element for element in spec["alternatives"][0]["elements"] if element.get("type") == "text"}
+        self.assertEqual(texts["title"]["content"], "Shrewsbury｜旅程第一天")
+        self.assertEqual(texts["context"]["content"], "晴朗的天空、酒店初遇與一路上的笑聲")
+        self.assertEqual(texts["context"]["text_style"]["font_size_pt"], 12)
+        self.assertEqual(texts["title"]["y_mm"], 8)
+        self.assertEqual(texts["context"]["y_mm"], 24)
+
+    def test_wisley_guidance_can_describe_three_distinct_flower_stories(self) -> None:
+        guidance = {
+            "RHS Wisley - 01": {"title": "RHS Garden Wisley｜鬱金香花海初見", "subtitle": "英國旅程第一站：在盛放的花季迎接春日", "hero_indices": [1, 8]},
+            "RHS Wisley - 02": {"title": "花園裡的春日花色", "subtitle": "一朵一朵，記下我們在 Wisley 看見的花", "hero_indices": [7, 16]},
+            "RHS Wisley - 03": {"title": "櫻花與其他春日花卉", "subtitle": "從櫻花到杜鵑，花園把春天一一展開", "hero_indices": [5, 8]},
+        }
+        for section_title, advice in guidance.items():
+            spec, _, _ = build_a4_design_spec({"title": section_title, "topic_name": "2026 Apr Mothers Visit - 0404"}, [f"asset-{i:02d}" for i in range(1, 18)], guidance)
+            texts = {element["id"]: element for element in spec["alternatives"][0]["elements"] if element.get("type") == "text"}
+            self.assertEqual(texts["title"]["content"], advice["title"])
+            self.assertEqual(texts["context"]["content"], advice["subtitle"])
+            self.assertEqual(spec["composition"]["rendered_asset_count"], 17)
+
     def test_a4_story_keeps_every_asset_and_adapts_dense_sections(self) -> None:
         section = {"title": "Conwy Castle", "topic_name": "Test trip"}
         asset_ids = [f"asset-{index:02d}" for index in range(1, 13)]

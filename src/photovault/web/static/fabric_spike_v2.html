@@ -28,6 +28,14 @@
     .badge{display:inline-block;padding:3px 7px;border-radius:999px;background:#e8f2ef;color:#286e67;font-size:12px}
     .layers{display:flex;flex-direction:column;gap:6px;margin-top:10px;max-height:360px;overflow:auto}.layers-tools{display:flex;gap:5px;margin-top:8px}.layers-tools select,.layers-tools input{min-width:0;width:50%;font-size:11px;padding:4px}.layer-group{border:1px solid #e2dbd2;border-radius:7px;background:#fff}.layer-group-toggle{width:100%;display:flex;align-items:center;gap:5px;border:0;border-radius:6px;padding:5px 7px;background:#f6f2ed;text-align:left;font-size:11px;font-weight:700;cursor:pointer}.layer-group-toggle:hover{background:#eee7df}.layer-group-count{margin-left:auto;color:#7a7066;font-weight:400}.layer-group-items{display:flex;flex-direction:column;gap:2px;padding:3px}.layer-subgroup{margin:2px 0}.layer-subgroup-toggle{width:100%;border:0;background:transparent;text-align:left;padding:3px 7px;color:#6e6257;font-size:10px;font-weight:700;cursor:pointer}.layer-row{display:flex;align-items:center;gap:3px;width:100%;border:1px solid transparent;border-radius:5px;background:#fff;text-align:left;padding:4px 5px;font-size:11px;min-height:25px;cursor:pointer}.layer-row:hover{border-color:#c9bfb3;background:#fbf8f4}.layer-row.active{border-color:#286e67;background:#e8f2ef}.layer-icon{width:18px;height:18px;padding:0;border:0;background:transparent;color:#72685f;font-size:11px;cursor:pointer;flex:0 0 18px}.layer-icon:hover{color:#286e67}.layer-type{color:#286e67;font-size:10px;font-weight:700;flex:0 0 auto}.layer-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .warning{background:#fff5d9;border-color:#e2c36d}.inline-control{display:inline-flex;align-items:center;gap:5px}
+    .sample-workflow{background:#f7fbfa;border-color:#b8d7cf;display:block}
+    .sample-workflow-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .sample-workflow-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:10px}
+    .sample-workflow-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:#5f554c}
+    .sample-workflow-grid select{min-width:0;width:100%}
+    .sample-workflow-grid select[multiple]{min-height:92px}
+    .sample-workflow-status{display:block;margin-top:9px;min-height:18px}
+    .sample-role-help{margin:8px 0 0;font-size:12px;line-height:1.4}
     #guide-overlay{position:absolute;pointer-events:none;border:1px dashed #6b7d77;box-sizing:border-box;opacity:.8;z-index:4;display:none}
     #guide-overlay .safe{position:absolute;inset:8px;border:1px dashed #c08d58}
     #guide-overlay .spine{position:absolute;top:0;bottom:0;left:50%;border-left:1px dashed #a35c5c}
@@ -60,12 +68,26 @@
     <section class="bar">
       <button id="undo">Undo</button><button id="redo">Redo</button><button id="layout" class="primary">Layout mode</button><button id="crop">Crop mode</button><button id="pan-image" title="Drag the selected photo inside its frame" aria-pressed="false">✋ Pan image</button><button id="fit">Fit page</button><button id="save" class="primary">Save variant</button><button id="reload">Reload saved</button><button id="save-browser" title="Save this editable document in this browser">Save browser copy</button><button id="load-browser" title="Load an editable document saved in this browser">Load browser copy</button><span id="browser-memory-status" class="muted"></span>
       <button id="export">Export file (JSON)</button><span class="inline-control" title="Preview PNG target resolution. This is independent from the page DPI.">Preview DPI <input id="preview-dpi" type="number" min="72" max="1200" step="1" value="150" style="width:70px"></span><button id="export-png">Export preview PNG (150 DPI)</button><span class="inline-control" title="High-resolution PNG target resolution. Original photos are used for this export.">High-res DPI <input id="hires-dpi" type="number" min="72" max="1200" step="1" value="300" style="width:70px"></span><button id="export-hires" class="primary">Export high-res PNG (300 DPI)</button><button id="export-package">Export ChatGPT package</button><span id="export-dpi-summary" class="muted" aria-live="polite"></span>
-      <button id="load-sample">Load Kew Gardens AI sample (v2)</button><button id="import-ai">Import AI design JSON</button><button id="import-ai-package">Import AI Design Package ZIP</button><button id="import-debug">Import layout JSON</button>
+      <label class="inline-control" title="Choose a built-in template sample before opening it">Sample <select id="sample-template" aria-label="Template sample"></select></label><button id="load-sample" class="primary">Open selected sample</button><button id="import-ai">Import AI design JSON</button><button id="import-ai-package">Import AI Design Package ZIP</button><button id="import-debug">Import layout JSON</button>
       <label class="inline-control"><input id="show-guides" type="checkbox"> Show page guides</label>
       <span id="layered-tools" class="inline-control" hidden title="Debug controls for transparent-slot templates"><b>Template</b><label class="inline-control"><input id="show-template-guides" type="checkbox"> Slots</label><label class="inline-control"><input id="show-template-masks" type="checkbox"> Masks</label><label class="inline-control"><input id="hide-template-foreground" type="checkbox"> Hide foreground</label></span>
       <input id="import-ai-file" type="file" accept="application/json,.json" hidden><input id="import-ai-package-file" type="file" accept="application/zip,.zip" hidden><input id="import-debug-file" type="file" accept="application/json,.json" hidden>
       <span id="alternative-picker" class="inline-control" hidden>Alternative <select id="alternative"></select><button id="apply-ai" disabled>Open selected</button></span>
       <span id="status" class="muted status"></span>
+    </section>
+    <section id="sample-workflow" class="bar sample-workflow" aria-labelledby="sample-workflow-title">
+      <div class="sample-workflow-head"><strong id="sample-workflow-title">Generate from a topic section</strong><span class="muted">Choose the source section, assign hero roles, then open the matching template.</span></div>
+      <div class="sample-workflow-grid">
+        <label>1 · Topic <select id="sample-topic"><option value="">Loading topics…</option></select></label>
+        <label>2 · Section <select id="sample-section" disabled><option value="">Choose a topic first…</option></select></label>
+        <label>3 · Hero mode <select id="sample-hero-mode"><option value="single">One hero</option><option value="hero-subhero">Hero + sub-hero</option><option value="multiple">Multiple hero photos</option></select></label>
+        <label>4 · Primary hero <select id="sample-hero" disabled><option value="">Choose a section first…</option></select></label>
+        <label id="sample-subhero-wrap">Additional hero / sub-hero photos <select id="sample-subheroes" multiple disabled aria-describedby="sample-role-help"></select></label>
+        <label>Template match <select id="sample-template-match" disabled><option value="">Choose a section first…</option></select></label>
+        <button id="generate-from-section" class="primary" disabled>Generate from selected section</button>
+      </div>
+      <span id="sample-workflow-status" class="sample-workflow-status muted" aria-live="polite"></span>
+      <p id="sample-role-help" class="sample-role-help muted">The template must match the section photo count exactly. The selected primary hero and additional photos are used only to set visual prominence; every section photo remains in the generated collage.</p>
     </section>
     <dialog id="save-browser-dialog" aria-labelledby="save-browser-title">
       <h2 id="save-browser-title">Save browser copy</h2>
@@ -89,6 +111,7 @@
   <script src="/collage_geometry.js?v=20260914-8"></script>
   <script src="/collage_render_validation.js?v=20260915-render-validation-1"></script>
   <script src="/fabric_spike_v3.js?v=20260920-projects-1"></script>
+  <script src="/collage_sample_workflow.js?v=20260921-template-workflow-2"></script>
   <script src="/collage_editor_package.js?v=20260914-2"></script>
 </body>
 </html>

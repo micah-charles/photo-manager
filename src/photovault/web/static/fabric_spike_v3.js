@@ -1829,7 +1829,7 @@ function wire() {
   $("import-debug-file")?.addEventListener("change", (event) => { if (event.target.files?.[0]) importDebugDocument(event.target.files[0]); event.target.value = ""; });
   $("layers-filter")?.addEventListener("change", (event) => { state.layerFilter = event.target.value; refreshLayers(); });
   $("layers-search")?.addEventListener("input", (event) => { state.layerSearch = event.target.value; refreshLayers(); });
-  $("apply-ai")?.addEventListener("click", applyAiDesign); $("load-sample")?.addEventListener("click", loadSample);
+  $("apply-ai")?.addEventListener("click", applyAiDesign);
   $("undo")?.addEventListener("click", async () => { if (!state.history.length) return; state.future.push(snapshot()); state.doc = normalizeDocument(state.history.pop()); state.activeId = elements()[0] ? elementId(elements()[0]) : null; await loadPhotos(); await queueRender(); status("Undid the last operation."); });
   $("redo")?.addEventListener("click", async () => { if (!state.future.length) return; state.history.push(snapshot()); state.doc = normalizeDocument(state.future.pop()); state.activeId = elements()[0] ? elementId(elements()[0]) : null; await loadPhotos(); await queueRender(); status("Redid the last operation."); });
   renderBrowserSaveList(); setupControls(); setupCanvas();

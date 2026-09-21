@@ -107,6 +107,14 @@ class OrganisationTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT membership_source FROM event_assets WHERE event_id=?", (event_id,)).fetchone()[0], "date_range")
             db.close()
 
+    def test_duplicate_event_name_has_a_user_facing_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            db = self._catalog(temp)
+            create_event(db, "2026 Apr Mothers Visit - 0411")
+            with self.assertRaisesRegex(ValueError, "topic with this name already exists"):
+                create_event(db, "  2026 Apr Mothers Visit - 0411  ")
+            db.close()
+
     def test_user_review_metadata_validates_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             db = self._catalog(temp)
