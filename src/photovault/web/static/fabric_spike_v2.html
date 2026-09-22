@@ -36,6 +36,9 @@
     .sample-workflow-grid select[multiple]{min-height:92px}
     .sample-workflow-status{display:block;margin-top:9px;min-height:18px}
     .sample-role-help{margin:8px 0 0;font-size:12px;line-height:1.4}
+    #sample-recommendations{justify-content:flex-start;margin-top:8px;font-size:12px}
+    #sample-recommendations button{font-size:12px;padding:6px 9px}
+    @media(max-width:760px){.sample-workflow-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     #guide-overlay{position:absolute;pointer-events:none;border:1px dashed #6b7d77;box-sizing:border-box;opacity:.8;z-index:4;display:none}
     #guide-overlay .safe{position:absolute;inset:8px;border:1px dashed #c08d58}
     #guide-overlay .spine{position:absolute;top:0;bottom:0;left:50%;border-left:1px dashed #a35c5c}
@@ -80,14 +83,15 @@
       <div class="sample-workflow-grid">
         <label>1 · Topic <select id="sample-topic"><option value="">Loading topics…</option></select></label>
         <label>2 · Section <select id="sample-section" disabled><option value="">Choose a topic first…</option></select></label>
-        <label>3 · Hero mode <select id="sample-hero-mode"><option value="single">One hero</option><option value="hero-subhero">Hero + sub-hero</option><option value="multiple">Multiple hero photos</option></select></label>
+        <label>3 · Hero mode <select id="sample-hero-mode"><option value="auto">Template / existing roles</option><option value="single">One hero</option><option value="hero-subhero">Hero + sub-hero</option><option value="multiple">Multiple hero photos</option></select></label>
         <label>4 · Primary hero <select id="sample-hero" disabled><option value="">Choose a section first…</option></select></label>
         <label id="sample-subhero-wrap">Additional hero / sub-hero photos <select id="sample-subheroes" multiple disabled aria-describedby="sample-role-help"></select></label>
-        <label>Template match <select id="sample-template-match" disabled><option value="">Choose a section first…</option></select></label>
+        <label>Page size <select id="sample-template-match"><option value="a4-portrait">A4 portrait</option></select></label>
         <button id="generate-from-section" class="primary" disabled>Generate from selected section</button>
       </div>
       <span id="sample-workflow-status" class="sample-workflow-status muted" aria-live="polite"></span>
-      <p id="sample-role-help" class="sample-role-help muted">The template must match the section photo count exactly. The selected primary hero and additional photos are used only to set visual prominence; every section photo remains in the generated collage.</p>
+      <div id="sample-recommendations" class="sample-workflow-head" aria-label="Recommended template families"></div>
+      <p id="sample-role-help" class="sample-role-help muted">Each family adapts to 10–60 photos, keeping every photo exactly once and editable. Choose a family in the Sample menu above, or try a recommendation. Automatic roles use available composition metadata and crop fit, not visual AI judgement. Manual choices control prominence; sequence families keep capture order. The original Kew reference still requires exactly 12 photos.</p>
     </section>
     <dialog id="save-browser-dialog" aria-labelledby="save-browser-title">
       <h2 id="save-browser-title">Save browser copy</h2>
@@ -110,8 +114,9 @@
   <script src="/vendor/fabric/index.min.js"></script>
   <script src="/collage_geometry.js?v=20260914-8"></script>
   <script src="/collage_render_validation.js?v=20260915-render-validation-1"></script>
-  <script src="/fabric_spike_v3.js?v=20260920-projects-1"></script>
-  <script src="/collage_sample_workflow.js?v=20260921-template-workflow-2"></script>
+  <script src="/fabric_spike_v3.js?v=20260922-library-text-wrap"></script>
+  <script src="/collage_template_library.js?v=20260922-library-1"></script>
+  <script src="/collage_sample_workflow.js?v=20260922-library-1"></script>
   <script src="/collage_editor_package.js?v=20260914-2"></script>
 </body>
 </html>

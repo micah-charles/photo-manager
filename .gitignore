@@ -22,3 +22,4 @@ android-companion/.debug.keystore
 artifacts/
 models/
 reports/smart-collage-poc/
+.gstack/

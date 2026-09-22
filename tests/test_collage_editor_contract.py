@@ -126,12 +126,13 @@ class CollageEditorContractTests(unittest.TestCase):
         ):
             self.assertIn(phrase, html)
         for phrase in (
-            'A4 portrait', 'A4 landscape', 'count: 12',
-            'Array.from({ length: 11 }', 'function buildTemplateSpec',
-            'function editorialSlots', 'weightedRow', 'squareSlotOrder',
-            'mask: "ellipse"', 'mask: "circle"',
-            'every section photo is included exactly once',
+            'window.CollageTemplateLibrary', 'count: 12',
+            'function buildTemplateSpec', 'library.build', 'library.recommend',
+            'sourceSemantics', 'Every', 'section photo is included exactly once',
+            'Some section photos could not be loaded',
             'api(`/api/topics/${encodeURIComponent(topicId)}/sections`)',
             'api(`/api/sections/${encodeURIComponent(sectionId)}/assets`)',
         ):
             self.assertIn(phrase, workflow)
+        self.assertLess(html.index('/collage_template_library.js'), html.index('/collage_sample_workflow.js'))
+        self.assertNotIn('function editorialSlots', workflow)

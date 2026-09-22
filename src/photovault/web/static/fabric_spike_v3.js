@@ -824,8 +824,12 @@ function addDecoration(element, context = null) {
   const strokeWidth = Number(element.stroke_width || 0) * PX_PER_MM;
   if (element.type === "text") {
     const options = textOptions(element, ctx);
-    delete options.width;
-    object = new fabric.Text(String(element.content || ""), options);
+    if (element.text_style?.text_fit === "wrap_and_shrink") {
+      object = new fabric.Textbox(String(element.content || ""), { ...options, strokeWidth: 0, splitByGrapheme: true });
+    } else {
+      delete options.width;
+      object = new fabric.Text(String(element.content || ""), options);
+    }
     fitTextObject(object, element, ctx);
     keepTextInsideSafeArea(object, element, ctx);
   } else if (element.type === "line") object = new fabric.Line([0, 0, width, height], { left: x, top: y, stroke: element.stroke || "#292521", strokeWidth, opacity: Number(element.opacity ?? 1), angle: Number(element.rotation_deg || 0), visible: !element.hidden, selectable: ctx.interactive && !element.locked && !element.hidden, evented: ctx.interactive && !element.locked && !element.hidden, objectCaching: false });
@@ -1664,7 +1668,7 @@ async function validateAiSpec(spec) {
   state.aiSpec = result.spec; state.aiPackageId = result.package_id || spec.package_id || null;
   const selector = $("alternative"); selector.innerHTML = (result.alternatives || []).map((item) => `<option value="${item.alternative}">Alternative ${item.alternative + 1} · ${item.photos} photos · ${item.elements} elements</option>`).join("");
   $("alternative-picker").hidden = (result.alternatives || []).length < 2; $("apply-ai").disabled = false; status(`Validated ${result.alternatives?.length || 0} AI design alternative(s).`);
-  if ((result.alternatives || []).length === 1) await applyAiDesign();
+  if ((result.alternatives || []).length === 1) return await applyAiDesign();
 }
 
 function readFileAsBase64(file) {
@@ -1705,6 +1709,7 @@ async function applyAiDesign() {
     status("Opening validated AI design…");
     const result = await api("/api/collage/design-imports", { method: "POST", body: JSON.stringify({ spec: state.aiSpec, package_id: state.aiPackageId, alternative_index: Number($("alternative")?.value || 0) }) });
     state.doc = normalizeDocument(result.document); state.savedDocumentUrl = result.document_url; state.history = []; state.future = []; state.activeId = elements()[0] ? elementId(elements()[0]) : null; await loadPhotos(); await queueRender(); status(`AI design opened as editable variant ${result.document.document_id}.`);
+    return state.doc;
   } catch (error) { status(`AI design import failed: ${error.message}`); }
 }
 
