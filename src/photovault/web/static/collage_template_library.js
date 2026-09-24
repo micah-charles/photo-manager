@@ -2,7 +2,7 @@
  * this engine. Output is the existing CollageDesignSpec v2, never Fabric JSON. */
 ((root) => {
   "use strict";
-  const VERSION = 1;
+  const VERSION = 3;
   const presets = [
     ["small-square", "20 × 20 cm", 200, 200], ["square", "25 × 25 cm", 250, 250],
     ["large-square", "30 × 30 cm", 300, 300], ["a4-portrait", "A4 portrait", 210, 297],
@@ -44,23 +44,40 @@
     return counts;
   };
 
+  function validBox(value) {
+    const b = Array.isArray(value) ? { left:value[0], top:value[1], right:value[2], bottom:value[3] } : value;
+    if (!b || ![b.left,b.top,b.right,b.bottom].every(v => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1) || b.left >= b.right || b.top >= b.bottom) return null;
+    return { left:b.left, top:b.top, right:b.right, bottom:b.bottom };
+  }
+
+  function orientedBox(box, orientation) {
+    const point = (x,y) => ({ 2:[1-x,y], 3:[1-x,1-y], 4:[x,1-y], 5:[y,x], 6:[1-y,x], 7:[1-y,1-x], 8:[y,1-x] })[orientation] || [x,y];
+    const points = [[box.left,box.top],[box.right,box.top],[box.left,box.bottom],[box.right,box.bottom]].map(([x,y])=>point(x,y));
+    return {left:Math.min(...points.map(p=>p[0])),top:Math.min(...points.map(p=>p[1])),right:Math.max(...points.map(p=>p[0])),bottom:Math.max(...points.map(p=>p[1]))};
+  }
+
   function photoInfo(item, index) {
     let width = number(item.width, 0), height = number(item.height, 0);
     if ([5, 6, 7, 8].includes(Number(item.orientation))) [width, height] = [height, width];
     const analysis = item.analysis || {};
-    const faces = Array.isArray(analysis.faces) ? analysis.faces : [];
-    const faceCentre = faces.length ? {
-      x: faces.reduce((sum, f) => sum + (f.left + f.right) / 2, 0) / faces.length,
-      y: faces.reduce((sum, f) => sum + (f.top + f.bottom) / 2, 0) / faces.length,
-    } : null;
+    // Cached detector coordinates describe original pixels, before EXIF rotation.
+    // Explicit oriented metadata is accepted without applying rotation twice.
+    const orientation = analysis.coordinate_space === "oriented" ? 1 : Number(item.orientation || analysis.orientation || 1);
+    const faces = (Array.isArray(analysis.faces) ? analysis.faces : []).map(validBox).filter(Boolean).map(b=>orientedBox(b,orientation));
+    const subjectTags = [item.subject_type, item.tags, analysis.subject_type, ...(Array.isArray(analysis.subjects) ? analysis.subjects.map(s=>typeof s === "string" ? s : s.label) : [])].filter(Boolean).join(" ").toLowerCase();
+    const subjects = (Array.isArray(analysis.subjects) ? analysis.subjects : []).filter(s=>s && /person|people|portrait|group/i.test(s.label || "")).map(s=>validBox(s.box || s)).filter(Boolean).map(b=>orientedBox(b,orientation));
+    const protectedBoxes = [...faces.map(b=>({left:Math.max(0,b.left-0.025),top:Math.max(0,b.top-0.035),right:Math.min(1,b.right+0.025),bottom:Math.min(1,b.bottom+0.025)})), ...subjects];
+    const people = faces.length > 0 || subjects.length > 0 || (Array.isArray(item.people) ? item.people.length > 0 : Boolean(item.people)) || /person|people|portrait|family|group/.test(subjectTags);
     return {
       ...item, asset_id: String(item.asset_id || ""), index, width, height,
       aspect: width > 0 && height > 0 ? width / height : 1,
       dimensionsKnown: width > 0 && height > 0,
       quality: clamp(number(item.quality_score ?? analysis.quality_score, 50) / 100, 0, 1),
       preference: (item.favourite ? 0.45 : 0) + clamp(number(item.rating, 0) / 5, 0, 1) * 0.5,
-      faceCount: faces.length,
-      focus: { x: clamp(number(item.focus_x, faceCentre?.x ?? 0.5), 0, 1), y: clamp(number(item.focus_y, faceCentre?.y ?? 0.5), 0, 1) },
+      faceCount: faces.length, faces, protectedBoxes, people,
+      groupPortrait: faces.length > 1 || /group/.test(subjectTags),
+      subjectKind: /stained.?glass|tall.?architecture|window|tower/.test(subjectTags) ? "tall" : /wide.?interior|interior|panorama/.test(subjectTags) ? "wide" : /detail|macro|specimen/.test(subjectTags) ? "detail" : people ? "people" : "unknown",
+      focus: { x: clamp(number(item.focus_x, 0.5), 0, 1), y: clamp(number(item.focus_y, 0.5), 0, 1) },
       time: String(item.captured || item.capture_datetime || ""),
     };
   }
@@ -118,14 +135,41 @@
     return out;
   }
 
-  function layoutFamily(family, count, aspect, sequenceRoles = []) {
+  // A supporting group has a local lead and a pair/trail, not a residual grid.
+  // Only subdivide within the reserved region; no extra image is introduced.
+  function cluster(region, count, aspect, reverse = false) {
+    if (count <= 3) return pack(region, count, aspect, { varied: true, gap: 1.5 });
+    const gap = 1.5;
+    const wide = region.w * aspect / region.h > 1.2;
+    const lead = { ...region }, tail = { ...region };
+    if (wide) {
+      lead.w = (region.w - gap) * 0.42; tail.w = region.w - gap - lead.w;
+      if (reverse) { lead.x += tail.w + gap; } else { tail.x += lead.w + gap; }
+    } else {
+      lead.h = (region.h - gap) * 0.42; tail.h = region.h - gap - lead.h;
+      if (reverse) { lead.y += tail.h + gap; } else { tail.y += lead.h + gap; }
+    }
+    // At high counts, keep a readable rhythm without protecting an oversized
+    // support anchor at the expense of all other photographs.
+    const leadCount = Math.max(1, Math.floor(count / 8));
+    return [...pack(lead, leadCount, aspect, { varied: true, gap }), ...pack(tail, count - leadCount, aspect, { varied: true, gap })];
+  }
+
+  function captureRange(values) {
+    const stamps = values.map(value => String(value || "").match(/(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/) || null).filter(Boolean);
+    if (!stamps.length) return "";
+    const first = stamps[0], last = stamps[stamps.length - 1];
+    return first[1] === last[1] ? `${first[1]} · ${first[2]}–${last[2]}` : `${first[1]} ${first[2]} – ${last[1]} ${last[2]}`;
+  }
+
+  function layoutFamily(family, count, aspect, sequenceRoles = [], sequenceTimes = []) {
     const id = family.id;
     const wide = aspect > 1.1;
     const slots = [], decorations = [];
     const add = (...r) => slots.push(...r);
     const regions = (list, options = {}) => {
       const counts = splitCounts(count - slots.length, list.map((r) => r.weight || area(r)));
-      list.forEach((r, i) => add(...pack(r, counts[i], aspect, options)));
+      list.forEach((r, i) => add(...(options.cluster ? cluster(r, counts[i], aspect, i % 2 === 1) : pack(r, counts[i], aspect, options))));
     };
     if (id === "kew") {
       if (count < 10) {
@@ -145,8 +189,9 @@
       return { slots: subdivide([...cards, ...ribbon], count, aspect), decorations };
     }
     if (id === "magazine") {
-      add(rect(0, 0, wide ? 66 : 68, 65, "hero"), rect(70, 0, 30, 32, "secondary"));
-      regions([rect(70, 34, 30, 31), rect(0, 68, 100, 32)], { varied: true });
+      add(rect(0, 0, 62, 58, "hero"), rect(66, 0, 34, 30, "secondary"));
+      regions([rect(66, 53, 34, 47), rect(0, 61, 62, 39)], { cluster: true });
+      decorations.push({ ...rect(66, 31, 34, 20), note: 0, noteType: "caption" });
     } else if (id === "diptych") {
       // The right story opens lower: two independent tracks, not a hero row.
       add(rect(0, 0, 48, 53, "hero"), rect(52, 47, 48, 53, "hero"));
@@ -159,9 +204,11 @@
       counts.forEach((n, row) => {
         const h = (100 - 4 * (lanes - 1)) / lanes, y = row * (h + 4);
         decorations.push({ ...rect(0, y, 100, h), fill: "#242824" });
+        const laneStart = sequence;
+        if (h >= 16) decorations.push({ ...rect(2, y + 0.35, 96, 3.1), note: 0, noteType: "film", start: laneStart, count: n, timeRange: captureRange(sequenceTimes.slice(laneStart, laneStart + n)) });
         const weights = Array.from({ length: n }, (_, i) => sequenceRoles[sequence + i] === "hero" ? 1.8 : sequenceRoles[sequence + i] === "secondary" ? 1.4 : 1);
         const sum = weights.reduce((a, b) => a + b, 0); let x = 2;
-        const inset = Math.min(3, h * 0.16);
+        const inset = Math.min(h >= 16 ? 5.2 : 3, h * 0.22);
         weights.forEach((weight) => {
           const w = (96 - (n - 1) * 1.6) * weight / sum;
           add(rect(x, y + inset, w, h - 2 * inset, sequenceRoles[sequence] || "sequence", { sequence: sequence++, film: true })); x += w + 1.6;
@@ -174,21 +221,21 @@
       regions([rect(0, 0, 28, 14), rect(0, 60, 28, 40), rect(72, 0, 28, 100), rect(32, 81, 36, 19)]);
       if (wide) slots.forEach((r) => { [r.x, r.y, r.w, r.h] = [r.y, r.x, r.h, r.w]; });
     } else if (id === "journal") {
-      add(rect(0, 0, 63, 41, "hero"), rect(39, 45, 61, 32, "secondary"));
-      regions([rect(0, 66, 35, 34), rect(39, 81, 61, 19), rect(67, 20, 33, 21)], { varied: true, gap: 2 });
-      decorations.push({ ...rect(67, 0, 33, 17), note: 0 }, { ...rect(0, 45, 35, 17), note: 1 });
+      add(rect(0, 0, 59, 42, "hero"), rect(34, 58, 66, 42, "secondary"));
+      regions([rect(0, 47, 29, 53), rect(64, 24, 36, 27)], { cluster: true });
+      decorations.push({ ...rect(64, 0, 36, 21), note: 0, noteType: "caption" }, { ...rect(34, 44, 25, 14), note: 1, noteType: "caption" });
     } else if (id === "family") {
       add(rect(24, 27, 52, 47, "hero"), rect(0, 0, 43, 23, "secondary", { rotation: -1 }), rect(78, 54, 21, 43, "secondary", { rotation: 1 }));
       regions([rect(47, 0, 52, 23), rect(0, 28, 20, 72), rect(24, 78, 50, 22), rect(80, 28, 19, 22)], { varied: true, gap: 2 });
     } else if (id === "horizon") {
       add(rect(0, 27, 100, 43, "hero"), rect(0, 0, 39, 24, "secondary"), rect(70, 73, 30, 27, "secondary"));
-      regions([rect(42, 0, 58, 24), rect(0, 73, 67, 27)], { varied: true });
+      regions([rect(42, 0, 58, 24), rect(0, 73, 67, 27)], { cluster: true });
     } else if (id === "gallery") {
-      add(rect(0, 0, 70, 58, "hero"));
-      // Intentional margin for a small vertical folio, not an unused hero zone.
-      decorations.push({ ...rect(81, 9, 0.5, 28), fill: "#b5b5b0" });
-      decorations.push({ ...rect(85, 10, 15, 43), note: 0 });
-      regions([rect(0, 66, 30, 34), rect(35, 72, 30, 28), rect(70, 64, 30, 36)], { gap: 2 });
+      add(rect(0, 0, 64, 70, "hero"));
+      // Studies run beside the main photograph, with a caption pause between
+      // them. They are part of the reading path, not a footer contact sheet.
+      decorations.push({ ...rect(70, 49, 30, 20), note: 0, noteType: "caption" });
+      regions([rect(70, 0, 30, 44), rect(0, 77, 37, 23), rect(41, 77, 23, 23), rect(70, 76, 30, 24)], { cluster: true });
     } else if (id === "mosaic") {
       return { slots: subdivide([
         rect(0, 0, 61, 41, "secondary", { protected: true }),
@@ -198,15 +245,17 @@
     } else if (id === "botanical") {
       add(rect(29, 0, 42, 31, "secondary"), rect(29, 35, 42, 30, "secondary"), rect(29, 69, 42, 31, "secondary"));
       regions([rect(0, 0, 24, 72), rect(76, 28, 24, 72)], { gap: 2.5, role: "detail" });
-      decorations.push({ ...rect(0, 78, 24, 22), note: 0 }, { ...rect(76, 0, 24, 22), note: 1 });
+      decorations.push({ ...rect(0, 78, 24, 22), note: 0, noteType: "caption" }, { ...rect(76, 0, 24, 22), note: 1, noteType: "caption" });
     } else if (id === "chapters") {
       const counts = splitCounts(count, [1, 1, 1]);
       let sequence = 0;
       counts.forEach((n, i) => {
         const chapter = wide ? rect(i * 34, 0, 32, 100) : rect(0, i * 34, 100, 32);
-        const first = wide ? rect(chapter.x, 0, 32, 46, "sequence") : rect(0, chapter.y, 42, 32, "sequence");
         const start = sequence;
-        const tail = wide ? rect(chapter.x, 49, 32, 51) : rect(45, chapter.y, 55, 32);
+        const labelH = wide ? 8 : 4.6;
+        decorations.push({ ...rect(wide ? chapter.x : 0, wide ? 0 : chapter.y, wide ? 32 : 100, labelH), note: 0, noteType: "chapter", start, count: n, chapter: i + 1, timeRange: captureRange(sequenceTimes.slice(start, start + n)) });
+        const first = wide ? rect(chapter.x, labelH + 1, 32, 45, "sequence") : rect(0, chapter.y + labelH, 42, 32 - labelH, "sequence");
+        const tail = wide ? rect(chapter.x, labelH + 49, 32, 42) : rect(45, chapter.y + labelH, 55, 32 - labelH);
         const rest = pack(tail, n - 1, aspect, { role: "sequence" });
         const anchor = Math.max(0, sequenceRoles.slice(start, start + n).findIndex((role) => role === "hero" || role === "secondary"));
         const chapterSlots = rest; chapterSlots.splice(anchor, 0, first);
@@ -242,6 +291,34 @@
 
   function cropRetention(photo, slot) { return Math.min(photo.aspect / (slot.w / slot.h), (slot.w / slot.h) / photo.aspect); }
 
+  function cropPlan(photo, slot) {
+    const target = slot.w / slot.h;
+    const w = Math.min(1, target / photo.aspect), h = Math.min(1, photo.aspect / target);
+    const boxes = photo.protectedBoxes;
+    const centre = boxes.length ? {
+      x:(Math.min(...boxes.map(b=>b.left))+Math.max(...boxes.map(b=>b.right)))/2,
+      y:(Math.min(...boxes.map(b=>b.top))+Math.max(...boxes.map(b=>b.bottom)))/2,
+    } : photo.focus;
+    const x = clamp(centre.x,w/2,1-w/2), y = clamp(centre.y,h/2,1-h/2);
+    const bounds = {left:x-w/2,top:y-h/2,right:x+w/2,bottom:y+h/2};
+    const losses = boxes.map(b=>1-Math.max(0,Math.min(b.right,bounds.right)-Math.max(b.left,bounds.left))*Math.max(0,Math.min(b.bottom,bounds.bottom)-Math.max(b.top,bounds.top))/((b.right-b.left)*(b.bottom-b.top)));
+    return {focus:{x,y},bounds,retained:w*h,protectedLoss:Math.max(0,...losses),atRisk:losses.filter(v=>v>0.001).length};
+  }
+
+  function affinity(photo, slot, prominence) {
+    const crop = cropPlan(photo,slot), ratio = slot.w / slot.h;
+    const resolution = photo.dimensionsKnown ? clamp(Math.sqrt(photo.width*photo.height)/4000,0,1) : 0.5;
+    const preference = photo.preference + photo.quality*0.35 + resolution*0.25;
+    const axisMismatch = (ratio>1.4 && photo.aspect<0.9) || (ratio<0.75 && photo.aspect>1.2);
+    const subjectPenalty = photo.subjectKind === "tall" ? Math.max(0,ratio-0.8)*2
+      : photo.subjectKind === "wide" ? Math.max(0,1.4-ratio)*2
+      : photo.subjectKind === "people" && photo.aspect<0.95 ? Math.max(0,ratio-1.15)*3 : 0;
+    const semanticFit = photo.semanticRole === slot.role ? 1.7 : photo.semanticRole === "hero" && slot.role === "secondary" ? 0.7 : 0;
+    return (1-crop.retained)*(4+prominence*(photo.groupPortrait?20:photo.people?13:6))
+      + crop.protectedLoss*100 + (axisMismatch?prominence*2.5:0) + subjectPenalty*prominence
+      - prominence*(preference+semanticFit) + photo.index*0.00001;
+  }
+
   function assignPhotos(photos, slots, family, overrides) {
     const heroes = overrides.heroIds || [], secondary = overrides.subheroIds || [];
     const chosen = [...heroes, ...secondary].map(String);
@@ -256,22 +333,24 @@
       });
     }
     const byArea = slots.map((slot, i) => ({ slot, i })).sort((a, b) => area(b.slot) - area(a.slot) || a.i - b.i);
-    const forced = new Map();
-    chosen.forEach((id, i) => { forced.set(byArea[i].i, id); byArea[i].slot.role = i < heroes.length ? "hero" : "secondary"; });
-    if (chosen.length) slots.forEach((slot, i) => { if (!forced.has(i) && ["hero", "secondary"].includes(slot.role)) slot.role = "supporting"; });
     const largest = Math.max(...slots.map(area));
+    const forced = new Map();
+    if (chosen.length) {
+      // Pick the best compatible prominent positions jointly. The first hero
+      // is no longer forced into the largest (possibly panoramic) frame.
+      const candidates = byArea.filter(({slot},i)=>i<chosen.length || area(slot)>=largest*0.3).slice(0,Math.max(chosen.length,6));
+      const costs = candidates.map((_,i)=>candidates.map(({slot})=>i<chosen.length
+        ? affinity(photos.find(p=>p.asset_id===chosen[i]),slot,1) + (1-area(slot)/largest)*2.5 : 0));
+      const matched = assignment(costs);
+      chosen.forEach((id,i)=>{const target=candidates[matched[i]];forced.set(target.i,id);target.slot.role=i<heroes.length?"hero":"secondary";});
+    }
+    if (chosen.length) slots.forEach((slot, i) => { if (!forced.has(i) && ["hero", "secondary"].includes(slot.role)) slot.role = "supporting"; });
     const costs = slots.map((slot, i) => photos.map((photo) => {
       if (forced.has(i)) return forced.get(i) === photo.asset_id ? -100 : 10000;
       if (chosen.includes(photo.asset_id)) return 10000;
       const prominence = area(slot) / largest;
-      const crop = 1 - cropRetention(photo, slot);
-      const resolution = photo.dimensionsKnown ? clamp(Math.sqrt(photo.width * photo.height) / 4000, 0, 1) : 0.5;
-      const preference = photo.preference + photo.quality * 0.35 + resolution * 0.25;
       const people = family.id === "family" ? Math.min(photo.faceCount, 3) * 0.15 : 0;
-      const slotAspect = slot.w / slot.h;
-      const axisMismatch = (slotAspect > 1.4 && photo.aspect < 0.9) || (slotAspect < 0.75 && photo.aspect > 1.2);
-      const semanticFit = photo.semanticRole === slot.role ? 1.7 : photo.semanticRole === "hero" && slot.role === "secondary" ? 0.7 : 0;
-      return crop * (4 + prominence * 6) + (axisMismatch ? prominence * 2.5 : 0) - prominence * (preference + people + semanticFit) + photo.index * 0.00001;
+      return affinity(photo,slot,prominence) - prominence*people;
     }));
     return assignment(costs).map((i) => photos[i]);
   }
@@ -302,7 +381,7 @@
     const footer = family.footer;
     const titleHeight = 14, contextHeight = subtitle ? 7 : 0;
     const headerReserve = footer ? 0 : titleHeight + contextHeight + 7;
-    const inlineNotes = ["journal", "gallery", "botanical"].includes(family.id);
+    const inlineNotes = ["magazine", "journal", "gallery", "botanical"].includes(family.id);
     const footerReserve = footer ? titleHeight + contextHeight + (caption ? 12 : 0) + 9 : caption && !inlineNotes ? 16 : 5;
     const photoY = margin + headerReserve, photoHeight = height - margin * 2 - headerReserve - footerReserve;
     const slots = [], decorative = [], panelCounts = splitCounts(photos.length, Array(panels).fill(1));
@@ -314,7 +393,8 @@
       const inset = panels > 1 ? page.gutter_mm / 2 : 0;
       const x = panel * page.width_mm + margin + (panel ? inset : 0);
       const w = page.width_mm - margin * 2 - inset;
-      const layout = layoutFamily(family, count, w / photoHeight, sequenceRoles.slice(sequenceOffset, sequenceOffset + count));
+      const panelOrdered = ordered.slice(sequenceOffset, sequenceOffset + count);
+      const layout = layoutFamily(family, count, w / photoHeight, sequenceRoles.slice(sequenceOffset, sequenceOffset + count), panelOrdered.map(p => p.time));
       sequenceOffset += count;
       const scale = (r) => ({ ...r, x: x + r.x / 100 * w, y: photoY + r.y / 100 * photoHeight, w: r.w / 100 * w, h: r.h / 100 * photoHeight, panel });
       slots.push(...layout.slots.map(scale)); decorative.push(...layout.decorations.map(scale));
@@ -323,13 +403,14 @@
     const assigned = assignPhotos(photos, slots, family, { heroIds, subheroIds });
     const photoElements = slots.map((slot, i) => {
       const photo = assigned[i];
+      const crop = cropPlan(photo,slot);
       return {
         id: `photo-${i + 1}`, type: "photo", asset_id: photo.asset_id, role: slot.role,
         x_mm: slot.x, y_mm: slot.y, width_mm: slot.w, height_mm: slot.h,
         rotation_deg: slot.rotation || 0, z_index: 20 + i,
         allow_photo_overlap: Boolean(family.overlap || slot.rotation),
-        image: { focus_x: photo.focus.x, focus_y: photo.focus.y, zoom: 1 },
-        mask: { type: slot.mask || "rectangle" },
+        image: { focus_x: crop.focus.x, focus_y: crop.focus.y, zoom: 1 },
+        mask: { type: photo.protectedBoxes.length && ["circle","ellipse"].includes(slot.mask) ? "rectangle" : slot.mask || "rectangle" },
         border: { width_mm: family.border || 0, color: "#ffffff", opacity: 1 },
         shadow: family.shadow ? { color: "#000000", opacity: 0.13, blur_mm: 1.5, offset_x_mm: 0.5, offset_y_mm: 0.7 } : {},
       };
@@ -339,11 +420,64 @@
       text_style: { font_id: "serif", font_size_pt: 12, weight: "normal", alignment: "left", line_height: 1.05, letter_spacing: 0, text_fit: "wrap_and_shrink", color: family.ink, ...style },
     });
     const titleY = footer ? height - margin - footerReserve + 7 : margin;
-    const texts = [text("title", title, margin, titleY, page.width_mm - margin * 2, titleHeight, "title", { font_id: family.font, font_size_pt: 27, weight: family.font === "script" ? "normal" : "bold" })];
-    if (subtitle) texts.push(text("subtitle", subtitle, margin, titleY + titleHeight + 1, page.width_mm - margin * 2, contextHeight, "subtitle", { font_id: "sans", font_size_pt: 12 }));
+    const headerStyle = {
+      magazine: { alignment: "left", titleSize: 30, subtitleSize: 12 },
+      diptych: { alignment: "center", titleSize: 25, subtitleSize: 12 },
+      film: { alignment: "left", titleSize: 24, subtitleSize: 10 },
+      architecture: { alignment: "left", titleSize: 28, subtitleSize: 12 },
+      journal: { alignment: "left", titleSize: 25, subtitleSize: 12 },
+      family: { alignment: "center", titleSize: 28, subtitleSize: 12 },
+      horizon: { alignment: "left", titleSize: 27, subtitleSize: 12 },
+      gallery: { alignment: "left", titleSize: 26, subtitleSize: 12 },
+      botanical: { alignment: "left", titleSize: 24, subtitleSize: 12 },
+      chapters: { alignment: "left", titleSize: 26, subtitleSize: 12 },
+    }[family.id] || { alignment: "left", titleSize: 27, subtitleSize: 12 };
+    const titleInset = ["diptych", "family"].includes(family.id) ? margin + (page.width_mm - margin * 2) * 0.08 : margin;
+    const titleWidth = page.width_mm - margin * 2 - (titleInset - margin);
+    const texts = [text("title", title, titleInset, titleY, titleWidth, titleHeight, "title", { font_id: family.font, font_size_pt: headerStyle.titleSize, alignment: headerStyle.alignment, weight: family.font === "script" ? "normal" : "bold" })];
+    if (subtitle) texts.push(text("subtitle", subtitle, titleInset, titleY + titleHeight + 1, titleWidth, contextHeight, "subtitle", { font_id: "sans", font_size_pt: headerStyle.subtitleSize, alignment: headerStyle.alignment }));
     if (caption && !inlineNotes) texts.push(text("caption", caption, margin, height - margin - 9, totalWidth - margin * 2, 9, "caption", { font_size_pt: 11, italic: true }));
     const notes = decorative.filter((r) => r.note !== undefined);
-    notes.forEach((r, i) => texts.push(text(`fieldnote-${i}`, i === 0 ? (caption || subtitle || title) : `${String(i + 1).padStart(2, "0")}\n${photos.length} photographs`, r.x, r.y, r.w, r.h, "caption", { font_size_pt: 11, italic: true })));
+    const splitCaption = (value, count) => {
+      const source = String(value || "").trim();
+      if (!source || count <= 0) return [];
+      const chunks = source.split(/\n\s*\n/).flatMap(paragraph => paragraph.match(/[^。！？.!?]+[。！？.!?]?/g)?.map(part=>part.trim()).filter(Boolean) || [paragraph.trim()]).filter(Boolean);
+      if (chunks.length <= count) return chunks;
+      const result = Array(count).fill("");
+      chunks.forEach((part,index)=>{ const target=Math.min(count-1,Math.floor(index*count/chunks.length)); result[target]+=(result[target]?" ":"")+part; });
+      if (result.some(part=>!part)) {
+        const words=source.split(/\s+/), balanced=Array(count).fill("");
+        words.forEach((word,index)=>{const target=Math.min(count-1,Math.floor(index*count/words.length));balanced[target]+=(balanced[target]?" ":"")+word;});
+        return balanced.filter(Boolean);
+      }
+      return result;
+    };
+    const wrapAtWordBoundaries = (value, maxCharacters) => {
+      const paragraphs = String(value).split("\n");
+      return paragraphs.map(paragraph => {
+        const words = paragraph.trim().split(/\s+/).filter(Boolean), lines = [];
+        let line = "";
+        for (const word of words) {
+          if (line && line.length + 1 + word.length > maxCharacters) { lines.push(line); line = word; }
+          else line += (line ? " " : "") + word;
+        }
+        if (line) lines.push(line);
+        return lines.join("\n");
+      }).join("\n");
+    };
+    let captionIndex = 0;
+    const captionSlots = notes.filter(r=>r.noteType === "caption").length;
+    const captionParts = splitCaption(caption, captionSlots);
+    notes.forEach((r, i) => {
+      let content = "";
+      if (r.noteType === "chapter") content = `${String(r.chapter).padStart(2,"0")} · ${String(r.start+1).padStart(2,"0")}–${String(r.start+r.count).padStart(2,"0")}${r.timeRange ? ` · ${r.timeRange}` : ""}`;
+      else if (r.noteType === "film") content = `${String(r.start+1).padStart(2,"0")}–${String(r.start+r.count).padStart(2,"0")}${r.timeRange ? ` · ${r.timeRange}` : ""}`;
+      else content = captionParts[captionIndex++] || "";
+      if (!content) return;
+      const sequenceLabel = ["chapter", "film"].includes(r.noteType);
+      if (!sequenceLabel) content = wrapAtWordBoundaries(content, Math.max(12, Math.floor(r.w / 2.3)));
+      texts.push(text(`fieldnote-${i}`, content, r.x, r.y, r.w, r.h, "caption", { font_size_pt: sequenceLabel ? 8 : 11, italic: !sequenceLabel, weight: sequenceLabel ? "bold" : "normal", color: family.ink }));
+    });
     const elements = [
       { id: "paper", type: "rectangle", role: "background", locked: true, x_mm: 0, y_mm: 0, width_mm: totalWidth, height_mm: height, fill: family.paper, z_index: 0 },
       ...decorative.filter((r) => r.note === undefined).map((r, i) => ({ id: `decoration-${i}`, type: "rectangle", role: "accent", x_mm: r.x, y_mm: r.y, width_mm: r.w, height_mm: r.h, fill: r.fill, z_index: 2 })),
@@ -354,6 +488,8 @@
       heroes: photoElements.filter((p) => p.role === "hero").map((p) => p.asset_id),
       subheroes: photoElements.filter((p) => p.role === "secondary").map((p) => p.asset_id),
       cropWarnings: assigned.map((p, i) => ({ asset_id: p.asset_id, retained: cropRetention(p, slots[i]), role: slots[i].role })).filter((p) => p.retained < 0.55),
+      safetyWarnings: assigned.map((p,i)=>({asset_id:p.asset_id,atRisk:cropPlan(p,slots[i]).atRisk,role:slots[i].role})).filter(p=>p.atRisk>0),
+      faceMetadataCount: photos.filter(p=>p.faces.length).length,
       smallestEdgeMm: Math.min(...slots.map((s) => Math.min(s.w, s.h))),
       estimatedCoverage: slots.reduce((sum, s) => sum + area(s), 0) / (totalWidth * height),
       unknownDimensions: photos.filter((p) => !p.dimensionsKnown).length,

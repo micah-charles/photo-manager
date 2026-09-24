@@ -2,7 +2,7 @@
 
 The existing topic/section → design validation → editable Fabric variant workflow
 is unchanged. `collage_template_library.js` supplies the creative layer as a pure,
-versioned engine; `collage_sample_workflow.js` adapts the existing editor controls.
+versioned engine (version 3); `collage_sample_workflow.js` adapts the existing editor controls.
 Output remains CollageDesignSpec v2. No new storage or rendering infrastructure.
 
 ## Twelve composition families
@@ -56,10 +56,23 @@ and generation disables source controls to prevent duplicate submissions.
   section-title keywords as a fallback hint. It does not search all saved project
   variants for earlier analyses of another section.
 - Non-sequence families use minimum-cost assignment based on oriented aspect
-  ratio, crop retention, resolution, ratings and optional quality/face metadata.
-  Manual heroes are placed in the largest slots; no fourth hero is dropped.
+  ratio, crop retention, resolution, ratings, subject tags and optional quality/
+  face-box metadata. Manual heroes are matched jointly to prominent positions
+  by crop safety and shape instead of always receiving the largest position.
+  No fourth hero is dropped.
+- Crop focus is constrained to the image area that fills each frame. Supplied
+  face/person boxes affect assignment and produce a review warning when the
+  frame still cuts them; absent analysis remains unknown. No face recognition
+  runs in the template engine.
 - Film Diary and Story Chapters retain capture order (stable source order when
-  times are absent), adapting frame prominence for selected roles.
+  times are absent), adapt frame prominence for selected roles, and label strips
+  and chapters with real sequence ranges and available capture times.
+- Editorial Opening distributes supporting pictures through its sidebar and a
+  deeper closing composition. Notebook captions split into editable text islands;
+  other caption-led families put the full source caption in their own reading
+  path. Generated photo-count filler is not substituted for a caption.
+- Header alignment and type scale vary by family while keeping title and subtitle
+  editable. The source caption is retained in full.
 - Automatic placement is a metadata/fit recommendation, **not visual recognition
   or an aesthetic judgement**. Review faces and important details before printing.
 
@@ -89,13 +102,20 @@ PYTHONPATH=src python3 -m unittest tests.test_collage_template_library tests.tes
   production renderer and local photo metadata. It saves 84 actual rendered pages
   and seven family comparison boards (10/15/20 photos on A4 portrait/landscape,
   plus 12 photos on square pages). It never saves documents to the live catalog.
+- `tests/render_collage_quality.cjs` replays a fixed snapshot from five real
+  sections across all 12 families (72 pages, including A4 portrait and landscape)
+  and saves one comparison board per section and page orientation.
 
 ```sh
 PLAYWRIGHT_MODULE=/path/to/playwright node tests/render_collage_templates.cjs /path/to/photos.json /path/to/review-output
 ```
 
-Visual review on 2026-09-22 checked distinct page silhouettes, text wrapping and
-photo coverage. The 84-page run had no JavaScript errors, failed elements or
-renderer warnings. Private source photos and review renders are not committed.
-This is sampled visual evidence, not a guarantee that every count or crop will
-be aesthetically optimal; the editor retains manual hero and crop control.
+Visual review on 2026-09-22 checked distinct page silhouettes, real section
+content, text wrapping and photo coverage. The 84-page template run and 72-page
+real-section replay had no JavaScript errors, failed elements or renderer
+warnings. The replay reported crop-retention warnings for 205 page/photo
+placements; these do not omit photos, and Crop mode remains available for
+adjustment. The source sections did not include face-box analysis, so that path
+was exercised with synthetic regression fixtures. Private source photos and
+review renders are not committed. This is sampled visual evidence, not a
+guarantee that every count or crop will be aesthetically optimal.

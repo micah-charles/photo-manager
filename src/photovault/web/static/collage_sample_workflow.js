@@ -237,6 +237,7 @@
     const d = workflow.diagnostics;
     workflowStatus(`Opened ${spec.assets.length} photos, each exactly once. Save variant to keep this editable design.` +
       (d?.cropWarnings.length ? ` ${d.cropWarnings.length} crops need review in Crop mode.` : "") +
+      (d?.safetyWarnings?.length ? ` ${d.safetyWarnings.length} crop${d.safetyWarnings.length === 1 ? "" : "s"} may cut through a detected face or person; review those frames in Crop mode.` : "") +
       (d?.smallestEdgeMm < 15 ? " Small print frames: consider a larger page." : ""));
   }
 
