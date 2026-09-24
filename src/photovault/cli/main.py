@@ -210,6 +210,9 @@ def parser() -> argparse.ArgumentParser:
     collage.add_argument("output", type=Path, help="new/output directory for previews and metadata")
     collage.add_argument("--limit", type=int, default=15, help="maximum photographs to use (default: 15)")
     collage.add_argument("--seed", type=int, default=42, help="reproducible candidate seed")
+    vision = sub.add_parser("vision-poc", help="explicitly detect local face/person regions with macOS Vision (read-only)")
+    vision.add_argument("images", nargs="+", type=Path, help="local still-image files; originals and catalog are never changed")
+    vision.add_argument("--output", type=Path, help="create a new JSON result file; an existing file is never overwritten")
     mcp = sub.add_parser("mcp-server", help="serve PhotoVault semantic tools over MCP stdio")
     mcp.add_argument("--catalog", type=Path, dest="mcp_catalog", required=True)
     sub.add_parser("gui", help="launch the optional PySide6 desktop UI")
@@ -242,6 +245,24 @@ def main() -> int:
         result = run_poc(args.folder, args.output, args.limit, args.seed)
         print("COLLAGE_POC\t" + "\t".join(f"{key}={value}" for key, value in result.items()))
         return 0
+    if args.command == "vision-poc":
+        import json
+        import sys
+        from photovault.vision_poc import VisionPocError, analyze_images
+
+        try:
+            payload = analyze_images(args.images)
+            serialized = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+            if args.output:
+                with args.output.expanduser().open("x", encoding="utf-8") as output:
+                    output.write(serialized)
+                print(f"Vision observations written to {args.output.expanduser()}")
+            else:
+                print(serialized, end="")
+            return 1 if payload["errors"] else 0
+        except (VisionPocError, OSError) as exc:
+            print(f"VISION_POC_ERROR\t{exc}", file=sys.stderr)
+            return 2
     connection = connect(args.catalog)
 
     try:
